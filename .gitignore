@@ -1,5 +1,8 @@
 # Maven
 target/
+
+# jpackage local outputs (also under target/)
+# Keep ignored via target/; documented here for clarity.
 pom.xml.tag
 pom.xml.releaseBackup
 pom.xml.versionsBackup

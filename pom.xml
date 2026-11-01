@@ -29,6 +29,12 @@
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.release>17</maven.compiler.release>
+    <main.class>com.williammeitzen.peps.HelloWorld</main.class>
+    <!-- jpackage app-version must be numeric (no -SNAPSHOT). -->
+    <jpackage.appVersion>0.0.1</jpackage.appVersion>
+    <jpackage.appName>PlanStudio</jpackage.appName>
+    <jpackage.vendor>William Meitzen</jpackage.vendor>
+    <jpackage.description>PostgreSQL Explain Plan Studio</jpackage.description>
   </properties>
 
   <build>
@@ -45,7 +51,7 @@
         <configuration>
           <archive>
             <manifest>
-              <mainClass>com.williammeitzen.peps.HelloWorld</mainClass>
+              <mainClass>${main.class}</mainClass>
             </manifest>
           </archive>
         </configuration>
@@ -55,9 +61,99 @@
         <artifactId>exec-maven-plugin</artifactId>
         <version>3.5.0</version>
         <configuration>
-          <mainClass>com.williammeitzen.peps.HelloWorld</mainClass>
+          <mainClass>${main.class}</mainClass>
         </configuration>
       </plugin>
     </plugins>
   </build>
+
+  <profiles>
+    <!--
+      Bundled-runtime Windows package via jpackage (app-image + zip).
+      MSI requires WiX 3 (candle.exe/light.exe) on PATH; until that is installed,
+      app-image is the supported release artifact on this machine.
+      Usage: mvnw -P jpackage -DskipTests verify
+    -->
+    <profile>
+      <id>jpackage</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-antrun-plugin</artifactId>
+            <version>3.1.0</version>
+            <executions>
+              <execution>
+                <id>jpackage-prepare-input</id>
+                <phase>package</phase>
+                <goals>
+                  <goal>run</goal>
+                </goals>
+                <configuration>
+                  <target>
+                    <delete dir="${project.build.directory}/jpackage-input" quiet="true"/>
+                    <delete dir="${project.build.directory}/jpackage" quiet="true"/>
+                    <mkdir dir="${project.build.directory}/jpackage-input"/>
+                    <copy file="${project.build.directory}/${project.build.finalName}.jar"
+                          todir="${project.build.directory}/jpackage-input"/>
+                  </target>
+                </configuration>
+              </execution>
+              <execution>
+                <id>jpackage-zip-app-image</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>run</goal>
+                </goals>
+                <configuration>
+                  <target>
+                    <zip destfile="${project.build.directory}/${jpackage.appName}-${jpackage.appVersion}-windows-x64.zip"
+                         basedir="${project.build.directory}/jpackage"
+                         includes="${jpackage.appName}/**"/>
+                  </target>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>exec-maven-plugin</artifactId>
+            <version>3.5.0</version>
+            <executions>
+              <execution>
+                <id>jpackage-app-image</id>
+                <phase>package</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <executable>jpackage</executable>
+                  <arguments>
+                    <argument>--type</argument>
+                    <argument>app-image</argument>
+                    <argument>--name</argument>
+                    <argument>${jpackage.appName}</argument>
+                    <argument>--app-version</argument>
+                    <argument>${jpackage.appVersion}</argument>
+                    <argument>--vendor</argument>
+                    <argument>${jpackage.vendor}</argument>
+                    <argument>--description</argument>
+                    <argument>${jpackage.description}</argument>
+                    <argument>--dest</argument>
+                    <argument>${project.build.directory}/jpackage</argument>
+                    <argument>--input</argument>
+                    <argument>${project.build.directory}/jpackage-input</argument>
+                    <argument>--main-jar</argument>
+                    <argument>${project.build.finalName}.jar</argument>
+                    <argument>--main-class</argument>
+                    <argument>${main.class}</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>

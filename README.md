@@ -6,8 +6,8 @@ Right now this repo contains a **Hello World** Maven Java app so we can practice
 
 ## Requirements
 
-- JDK 17 or newer
-- Apache Maven 3.9+ (or the Maven Wrapper once generated: `mvnw` / `mvnw.cmd`)
+- JDK 17 or newer (`java`, `javac`, and `jpackage` on `PATH`)
+- Apache Maven 3.9+ (or the Maven Wrapper: `mvnw` / `mvnw.cmd`)
 
 ## Build and run
 
@@ -28,16 +28,37 @@ Expected output:
 Hello, PostgreSQL Explain Plan Studio!
 ```
 
+## Windows package with bundled runtime (jpackage)
+
+End users should not need to install Java. Use the `jpackage` Maven profile to build a Windows **app-image** (folder with `PlanStudio.exe` plus a bundled runtime) and a zip for GitHub Releases:
+
+```powershell
+.\mvnw.cmd -P jpackage -DskipTests verify
+```
+
+Outputs:
+
+- `target/jpackage/PlanStudio/PlanStudio.exe` — run locally
+- `target/PlanStudio-0.0.1-windows-x64.zip` — attach to a GitHub Release
+
+```powershell
+.\target\jpackage\PlanStudio\PlanStudio.exe
+```
+
+### MSI note
+
+A Windows `.msi` from `jpackage` needs **WiX Toolset 3.x** (`candle.exe` / `light.exe`) on `PATH`. That installer requires administrator rights (and .NET Framework 3.5 features). Until WiX 3 is available, the **app-image zip** is the release artifact.
+
 ## Open in Cursor
 
 `File → Open Folder` → `F:\docs\github\wmeitzen\postgresql-explain-plan-studio`
 
 Optional: install the **Extension Pack for Java** in Cursor for Run/Debug buttons.
 
-## Source vs releases (later)
+## Source vs releases
 
-- **Source:** clone this repo or use GitHub’s “Download ZIP”
-- **Release:** a tagged installable build (jar/zip) — not set up yet
+- **Source:** clone this repo or use GitHub’s “Download ZIP” (developers need a JDK)
+- **Release:** download the `PlanStudio-*-windows-x64.zip` asset from [Releases](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases) — includes a bundled Java runtime
 
 ## License
 
