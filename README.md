@@ -45,6 +45,10 @@ Outputs:
 .\target\jpackage\PostgreSQLExplainPlanStudio\PostgreSQLExplainPlanStudio.exe
 ```
 
+### Windows console apps
+
+The jpackage build uses `--win-console` so Hello World output appears in Command Prompt / a console window. (Without that flag, Windows treats the exe as a GUI app and `System.out` is invisible.)
+
 ### Windows SmartScreen
 
 Unsigned downloads often show **“Windows protected your PC”**. That is normal for a new private app that is not code-signed. Click **More info** → **Run anyway** (only if you trust the build you downloaded from your own repo). A paid code-signing certificate is what removes that warning for other people later.

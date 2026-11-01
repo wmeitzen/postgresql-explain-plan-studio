@@ -139,6 +139,8 @@
                     <argument>${jpackage.vendor}</argument>
                     <argument>--description</argument>
                     <argument>${jpackage.description}</argument>
+                    <!-- Required so System.out is visible when running from Explorer/cmd. -->
+                    <argument>--win-console</argument>
                     <argument>--dest</argument>
                     <argument>${project.build.directory}/jpackage</argument>
                     <argument>--input</argument>
