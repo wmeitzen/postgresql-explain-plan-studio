@@ -19,7 +19,7 @@ Or package a jar and run it:
 
 ```bash
 mvn -q package
-java -jar target/postgresql-explain-plan-studio-0.0.1-SNAPSHOT.jar
+java -jar target/postgresql-explain-plan-studio-0.0.2-SNAPSHOT.jar
 ```
 
 Expected output:
@@ -30,7 +30,7 @@ Hello, PostgreSQL Explain Plan Studio!
 
 ## Windows package with bundled runtime (jpackage)
 
-End users should not need to install Java. Use the `jpackage` Maven profile to build a Windows **app-image** (folder with `PlanStudio.exe` plus a bundled runtime) and a zip for GitHub Releases:
+End users should not need to install Java. Use the `jpackage` Maven profile to build a Windows **app-image** (folder with `PostgreSQLExplainPlanStudio.exe` plus a bundled runtime) and a zip for GitHub Releases:
 
 ```powershell
 .\mvnw.cmd -P jpackage -DskipTests verify
@@ -38,12 +38,16 @@ End users should not need to install Java. Use the `jpackage` Maven profile to b
 
 Outputs:
 
-- `target/jpackage/PlanStudio/PlanStudio.exe` — run locally
-- `target/PlanStudio-0.0.1-windows-x64.zip` — attach to a GitHub Release
+- `target/jpackage/PostgreSQLExplainPlanStudio/PostgreSQLExplainPlanStudio.exe` — run locally
+- `target/PostgreSQLExplainPlanStudio-0.0.2-windows-x64.zip` — attach to a GitHub Release
 
 ```powershell
-.\target\jpackage\PlanStudio\PlanStudio.exe
+.\target\jpackage\PostgreSQLExplainPlanStudio\PostgreSQLExplainPlanStudio.exe
 ```
+
+### Windows SmartScreen
+
+Unsigned downloads often show **“Windows protected your PC”**. That is normal for a new private app that is not code-signed. Click **More info** → **Run anyway** (only if you trust the build you downloaded from your own repo). A paid code-signing certificate is what removes that warning for other people later.
 
 ### MSI note
 
@@ -58,7 +62,7 @@ Optional: install the **Extension Pack for Java** in Cursor for Run/Debug button
 ## Source vs releases
 
 - **Source:** clone this repo or use GitHub’s “Download ZIP” (developers need a JDK)
-- **Release:** download the `PlanStudio-*-windows-x64.zip` asset from [Releases](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases) — includes a bundled Java runtime
+- **Release:** download the `PostgreSQLExplainPlanStudio-*-windows-x64.zip` asset from [Releases](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases) — includes a bundled Java runtime
 
 ## License
 
