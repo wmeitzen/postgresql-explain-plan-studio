@@ -1,8 +1,6 @@
 # PostgreSQL Explain Plan Studio
 
-Private bootstrap repository for a graphical PostgreSQL `EXPLAIN` plan tool.
-
-Right now this repo contains a **Hello World** Maven Java app so we can practice building, running, and pushing with GitHub. The real Plan Studio application will land here later.
+Graphical viewer for PostgreSQL `EXPLAIN` plans (migrated from the earlier PEG / PostgreSQL Explain Graph Swing app).
 
 ## Requirements
 
@@ -11,26 +9,21 @@ Right now this repo contains a **Hello World** Maven Java app so we can practice
 
 ## Build and run
 
-```bash
-mvn -q compile exec:java
+```powershell
+.\mvnw.cmd -q compile exec:java
 ```
 
-Or package a jar and run it:
+The app creates/opens `postgresql-explain-plan-studio.sqlite` in the **current working directory**.
 
-```bash
-mvn -q package
-java -jar target/postgresql-explain-plan-studio-0.0.2-SNAPSHOT.jar
+To try with saved plans from the old PEG database, copy (do not commit):
+
+```powershell
+Copy-Item "\\maurice\Cee\docs\bitbucket\peg\peg.sqlite" ".\postgresql-explain-plan-studio.sqlite"
 ```
 
-Expected output:
-
-```text
-Hello, PostgreSQL Explain Plan Studio!
-```
+Then run from that directory and open a plan → **Show JSON Plan Graph**.
 
 ## Windows package with bundled runtime (jpackage)
-
-End users should not need to install Java. Use the `jpackage` Maven profile to build a Windows **app-image** (folder with `PostgreSQLExplainPlanStudio.exe` plus a bundled runtime) and a zip for GitHub Releases:
 
 ```powershell
 .\mvnw.cmd -P jpackage -DskipTests verify
@@ -38,35 +31,17 @@ End users should not need to install Java. Use the `jpackage` Maven profile to b
 
 Outputs:
 
-- `target/jpackage/PostgreSQLExplainPlanStudio/PostgreSQLExplainPlanStudio.exe` — run locally
-- `target/PostgreSQLExplainPlanStudio-0.0.2-windows-x64.zip` — attach to a GitHub Release
-
-```powershell
-.\target\jpackage\PostgreSQLExplainPlanStudio\PostgreSQLExplainPlanStudio.exe
-```
-
-### Windows console apps
-
-The jpackage build uses `--win-console` so Hello World output appears in Command Prompt / a console window. (Without that flag, Windows treats the exe as a GUI app and `System.out` is invisible.)
+- `target/jpackage/PostgreSQLExplainPlanStudio/PostgreSQLExplainPlanStudio.exe`
+- `target/PostgreSQLExplainPlanStudio-0.0.2-windows-x64.zip`
 
 ### Windows SmartScreen
 
-Unsigned downloads often show **“Windows protected your PC”**. That is normal for a new private app that is not code-signed. Click **More info** → **Run anyway** (only if you trust the build you downloaded from your own repo). A paid code-signing certificate is what removes that warning for other people later.
-
-### MSI note
-
-A Windows `.msi` from `jpackage` needs **WiX Toolset 3.x** (`candle.exe` / `light.exe`) on `PATH`. That installer requires administrator rights (and .NET Framework 3.5 features). Until WiX 3 is available, the **app-image zip** is the release artifact.
-
-## Open in Cursor
-
-`File → Open Folder` → `F:\docs\github\wmeitzen\postgresql-explain-plan-studio`
-
-Optional: install the **Extension Pack for Java** in Cursor for Run/Debug buttons.
+Unsigned downloads often show **Windows protected your PC**. Click **More info** → **Run anyway**, or right‑click the exe/zip → **Properties** → **Unblock** when present.
 
 ## Source vs releases
 
-- **Source:** clone this repo or use GitHub’s “Download ZIP” (developers need a JDK)
-- **Release:** download the `PostgreSQLExplainPlanStudio-*-windows-x64.zip` asset from [Releases](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases) — includes a bundled Java runtime
+- **Source:** clone this repo (developers need a JDK)
+- **Release:** download the Windows zip from [Releases](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases) — includes a bundled Java runtime
 
 ## License
 

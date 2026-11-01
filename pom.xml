@@ -8,7 +8,7 @@
   <artifactId>postgresql-explain-plan-studio</artifactId>
   <version>0.0.2-SNAPSHOT</version>
   <name>PostgreSQL Explain Plan Studio</name>
-  <description>Graphical PostgreSQL EXPLAIN plan explorer (bootstrap Hello World).</description>
+  <description>Graphical PostgreSQL EXPLAIN plan studio.</description>
   <url>https://github.com/wmeitzen/postgresql-explain-plan-studio</url>
 
   <licenses>
@@ -29,13 +29,41 @@
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.release>17</maven.compiler.release>
-    <main.class>com.williammeitzen.peps.HelloWorld</main.class>
-    <!-- jpackage app-version must be numeric (no -SNAPSHOT). -->
+    <main.class>com.williammeitzen.peps.PostgreSQLExplainPlanStudio</main.class>
     <jpackage.appVersion>0.0.2</jpackage.appVersion>
     <jpackage.appName>PostgreSQLExplainPlanStudio</jpackage.appName>
     <jpackage.vendor>William Meitzen</jpackage.vendor>
     <jpackage.description>PostgreSQL Explain Plan Studio</jpackage.description>
+    <batik.version>1.17</batik.version>
   </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.postgresql</groupId>
+      <artifactId>postgresql</artifactId>
+      <version>42.7.4</version>
+    </dependency>
+    <dependency>
+      <groupId>org.xerial</groupId>
+      <artifactId>sqlite-jdbc</artifactId>
+      <version>3.46.1.3</version>
+    </dependency>
+    <dependency>
+      <groupId>com.github.cliftonlabs</groupId>
+      <artifactId>json-simple</artifactId>
+      <version>2.3.1</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.xmlgraphics</groupId>
+      <artifactId>batik-transcoder</artifactId>
+      <version>${batik.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.xmlgraphics</groupId>
+      <artifactId>batik-codec</artifactId>
+      <version>${batik.version}</version>
+    </dependency>
+  </dependencies>
 
   <build>
     <plugins>
@@ -57,6 +85,38 @@
         </configuration>
       </plugin>
       <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>3.6.0</version>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals>
+              <goal>shade</goal>
+            </goals>
+            <configuration>
+              <createDependencyReducedPom>false</createDependencyReducedPom>
+              <transformers>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                  <mainClass>${main.class}</mainClass>
+                </transformer>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+              </transformers>
+              <filters>
+                <filter>
+                  <artifact>*:*</artifact>
+                  <excludes>
+                    <exclude>META-INF/*.SF</exclude>
+                    <exclude>META-INF/*.DSA</exclude>
+                    <exclude>META-INF/*.RSA</exclude>
+                  </excludes>
+                </filter>
+              </filters>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>exec-maven-plugin</artifactId>
         <version>3.5.0</version>
@@ -70,8 +130,6 @@
   <profiles>
     <!--
       Bundled-runtime Windows package via jpackage (app-image + zip).
-      MSI requires WiX 3 (candle.exe/light.exe) on PATH; until that is installed,
-      app-image is the supported release artifact on this machine.
       Usage: mvnw -P jpackage -DskipTests verify
     -->
     <profile>
@@ -139,8 +197,6 @@
                     <argument>${jpackage.vendor}</argument>
                     <argument>--description</argument>
                     <argument>${jpackage.description}</argument>
-                    <!-- Required so System.out is visible when running from Explorer/cmd. -->
-                    <argument>--win-console</argument>
                     <argument>--dest</argument>
                     <argument>${project.build.directory}/jpackage</argument>
                     <argument>--input</argument>
