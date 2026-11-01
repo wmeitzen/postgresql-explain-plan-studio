@@ -6,6 +6,7 @@ import java.awt.Graphics;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.awt.Rectangle;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.util.Hashtable;
@@ -15,6 +16,8 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JRadioButton;
 import javax.swing.JSlider;
+import javax.swing.Scrollable;
+import javax.swing.SwingConstants;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
 //import javax.swing.event.DocumentEvent;
@@ -26,7 +29,13 @@ import org.json.simple.JsonObject;
 //import gui.Utils.PercentageBy;
 import com.williammeitzen.peps.model.Database;
 
-public class SliderPanel extends JPanel {
+public class SliderPanel extends JPanel implements Scrollable {
+
+	private static final long serialVersionUID = 1L;
+
+	private static final int SLIDER_PREFERRED_WIDTH = 600;
+	private static final int SLIDER_PREFERRED_HEIGHT = 80;
+	private static final int PANEL_MINIMUM_WIDTH = 320;
 	
 	private JLabel timeSliderLabel;
 	private JLabel costSliderLabel;
@@ -49,10 +58,7 @@ public class SliderPanel extends JPanel {
 	
 	public SliderPanel(PlanGraphPanel graphPanel) {
 		planGraphPanel = graphPanel;
-		Dimension dim = getPreferredSize();
-		dim.width = 200;
-		setPreferredSize(dim);
-		setMinimumSize(dim);
+		setMinimumSize(new Dimension(PANEL_MINIMUM_WIDTH, 120));
 
 		//createComponents_OLD();
 		createComponents();
@@ -279,68 +285,58 @@ public class SliderPanel extends JPanel {
 		
 		GridBagConstraints gc = new GridBagConstraints();
 		
-		// first row - radio buttons - time slider and cost slider
+		// Radio buttons — no vertical weight so a short pane doesn't compress the slider
 		gc.gridy = 0;
-
-		gc.weightx = 1;
-		gc.weighty = 2;
-		
 		gc.gridx = 0;
-		gc.insets = new Insets(0, 0, 0, 0);
+		gc.weightx = 1;
+		gc.weighty = 0;
+		gc.fill = GridBagConstraints.NONE;
+		gc.insets = new Insets(4, 8, 0, 8);
 		gc.anchor = GridBagConstraints.FIRST_LINE_START;
 
-		//add(sliderLabelButtonGroup, gc);
 		add(timeSliderRB, gc);
 
 		gc.gridy++;
-		//gc.add(sliderLabelButtonGroup);
 		add(costSliderRB, gc);
-		
-		// second row - slider (either time slider or cost slider)
-		gc.gridy++;
-		
-		gc.weightx = 1;
-		gc.weighty = 0.1;
-		
-		gc.gridx = 0;
-		gc.fill = GridBagConstraints.NONE;
-		//gc.gridwidth = 2;
-		gc.insets = new Insets(0, 0, 0, 0);
-		gc.anchor = GridBagConstraints.FIRST_LINE_START;
 		
 		clearSliderComponent(costSlider);
 		clearSliderComponent(costSliderLabel);
-		
 		clearSliderComponent(timeSlider);
 		clearSliderComponent(timeSliderLabel);
-		
+
+		JLabel activeLabel = null;
+		JSlider activeSlider = null;
 		if (planGraphPanel.getSliderType() == SliderPanel.SLIDER_TYPE_TIME) {
-			add(timeSliderLabel, gc);
-			timeSlider.setPreferredSize(new Dimension(600, 80));
-			add(timeSlider, gc);
-			
-			//clearSliderComponent(costSlider);
-			//clearSliderComponent(costSliderLabel);
-			
+			activeLabel = timeSliderLabel;
+			activeSlider = timeSlider;
 		} else if (planGraphPanel.getSliderType() == SliderPanel.SLIDER_TYPE_COST) {
-			add(costSliderLabel, gc);
-			costSlider.setPreferredSize(new Dimension(600, 80));
-			add(costSlider, gc);
-			
-			//clearSliderComponent(timeSlider);
-			//clearSliderComponent(timeSliderLabel);
-			
+			activeLabel = costSliderLabel;
+			activeSlider = costSlider;
 		} else {
 			System.out.println("Error in SliderPanel.layoutComponents(): Unknown slider type");
 		}
+
+		if (activeLabel != null && activeSlider != null) {
+			gc.gridy++;
+			gc.fill = GridBagConstraints.NONE;
+			gc.weightx = 0;
+			add(activeLabel, gc);
+
+			gc.gridy++;
+			gc.fill = GridBagConstraints.HORIZONTAL;
+			gc.weightx = 1;
+			gc.weighty = 0;
+			gc.insets = new Insets(0, 8, 0, 8);
+			activeSlider.setPreferredSize(new Dimension(SLIDER_PREFERRED_WIDTH, SLIDER_PREFERRED_HEIGHT));
+			activeSlider.setMinimumSize(new Dimension(PANEL_MINIMUM_WIDTH, SLIDER_PREFERRED_HEIGHT));
+			add(activeSlider, gc);
+		}
 		
 		gc.gridy++;
-		
 		gc.weightx = 1;
-		gc.weighty = 2;
-		
-		gc.gridx = 0;
-		gc.insets = new Insets(0, 0, 0, 0);
+		gc.weighty = 1; // leftover space below current-value label
+		gc.fill = GridBagConstraints.NONE;
+		gc.insets = new Insets(0, 8, 8, 8);
 		gc.anchor = GridBagConstraints.FIRST_LINE_START;
 		
 		clearSliderComponent(formattedCurrentCost);
@@ -351,23 +347,44 @@ public class SliderPanel extends JPanel {
 				formattedCurrentTime = new JLabel("0 sec");
 			}
 			add(formattedCurrentTime, gc);
-			
-			//clearSliderComponent(formattedCurrentCost);
-			
 			setPlanTotalTimeMs(planGraphPanel.getIdExplainPlan());
 		} else if (planGraphPanel.getSliderType() == SliderPanel.SLIDER_TYPE_COST) {
 			if (formattedCurrentCost == null) {
 				formattedCurrentCost = new JLabel("0");
 			}
 			add(formattedCurrentCost, gc);
-			
-			//clearSliderComponent(formattedCurrentTime);
-			
 			setPlanTotalCost(planGraphPanel.getIdExplainPlan());
 		} else {
 			System.out.println("Error in SliderPanel.layoutComponents(): Unknown slider type");
 		}
 		
+	}
+
+	@Override
+	public Dimension getPreferredScrollableViewportSize() {
+		return new Dimension(SLIDER_PREFERRED_WIDTH, 160);
+	}
+
+	@Override
+	public int getScrollableUnitIncrement(Rectangle visibleRect, int orientation, int direction) {
+		return 16;
+	}
+
+	@Override
+	public int getScrollableBlockIncrement(Rectangle visibleRect, int orientation, int direction) {
+		return orientation == SwingConstants.VERTICAL ? Math.max(visibleRect.height - 16, 16) : Math.max(visibleRect.width - 16, 16);
+	}
+
+	@Override
+	public boolean getScrollableTracksViewportWidth() {
+		// Stay as wide as the viewport so a short height (vertical scrollbar) does not
+		// collapse the slider to the old fixed ~200px preferred width.
+		return true;
+	}
+
+	@Override
+	public boolean getScrollableTracksViewportHeight() {
+		return false;
 	}
 	
 	private void clearSliderComponent(Component component)

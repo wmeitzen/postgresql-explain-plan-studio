@@ -56,6 +56,9 @@ import javax.swing.event.DocumentListener;
 import com.williammeitzen.peps.model.Database;
 
 public class PlanSourcePanel extends JPanel {
+
+	public static final String SHOW_JSON_PLAN_DIAGRAM = "Show JSON Plan Diagram";
+	public static final String EXECUTE_AND_SHOW_PLAN_DIAGRAM = "Execute and Show Plan Diagram";
 	
 	//private JButton okBtn;
 	private FormListener formListener;
@@ -319,20 +322,24 @@ public class PlanSourcePanel extends JPanel {
 					//((FormPanel) ((JSplitPane) objCurrentPlanTabs.getParent()).getComponent(0)).setSelectedPlanName(strNewPlanName); // weird, but equivalent
 				}
 				objCurrentPlanTabs.setTitleAt(0, strNewPlanName + " - Plan Source");
-				objCurrentPlanTabs.setTitleAt(2, strNewPlanName + " - Plan Graph");
+				objCurrentPlanTabs.setTitleAt(2, strNewPlanName + " - Plan Diagram");
 			}
 		});
 
 		//jsonPlanTextArea.addComponentListener(jsonPlanTextAreaListener);
 		jsonPlanTextArea.getDocument().addDocumentListener(jsonPlanTextAreaDocumentListener);
 
-		showPlanGraphButton = new JButton("Show JSON Plan Graph");
+		showPlanGraphButton = new JButton(SHOW_JSON_PLAN_DIAGRAM);
 		showPlanGraphButton.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
 				if (bolShowTiming == true) { System.out.println("before PlanSourcePanel.showPlanGraphButton.addActionListener(): " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
-				setPlanSourceButtonClicked(showPlanGraphButton.getText());
+				PlanGraphPanel.setDiagramBusyCursor(PlanSourcePanel.this, true);
+				setPlanSourceButtonClicked(SHOW_JSON_PLAN_DIAGRAM);
 
 				objCurrentPlanTabs.setEnabled(true);
+				if (objCurrentPlanTabs.getTabCount() > 2) {
+					objCurrentPlanTabs.setEnabledAt(2, true);
+				}
 				objCurrentPlanTabs.setSelectedIndex(2);
 				if (bolShowTiming == true) { System.out.println("after PlanSourcePanel.showPlanGraphButton.addActionListener(): " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
 			}
@@ -354,14 +361,14 @@ public class PlanSourcePanel extends JPanel {
 
 		};
 
-		planSourceFromQueryButton = new JButton("Execute and Show Plan Graph");
+		planSourceFromQueryButton = new JButton(EXECUTE_AND_SHOW_PLAN_DIAGRAM);
 		planSourceFromQueryButton.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
 				boolean bolShowProperties = false;
 				boolean bolShowSQL = false;
 				
 				if (bolShowProperties == true) { System.out.println("planSourceFromQueryPlanNameField.addFocusListener"); }
-				setPlanSourceButtonClicked(planSourceFromQueryButton.getText());
+				setPlanSourceButtonClicked(EXECUTE_AND_SHOW_PLAN_DIAGRAM);
 				
 				// prompt for password
 				if (getPlanSourceFromQueryPasswordField().equals("") == true) {
@@ -381,7 +388,11 @@ public class PlanSourcePanel extends JPanel {
 					}
 				}
 
+				PlanGraphPanel.setDiagramBusyCursor(PlanSourcePanel.this, true);
 				objCurrentPlanTabs.setEnabled(true);
+				if (objCurrentPlanTabs.getTabCount() > 2) {
+					objCurrentPlanTabs.setEnabledAt(2, true);
+				}
 				objCurrentPlanTabs.setSelectedIndex(2);
 				if (bolShowTiming == true) { System.out.println("after PlanSourcePanel.planSourceFromQueryButton.addActionListener(): " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
 			}
@@ -619,7 +630,10 @@ public class PlanSourcePanel extends JPanel {
 	public void setPlanTextIsDirty(boolean planTextIsDirty) {
 		boolean bolShowProperties = false;
 		if (bolShowProperties == true) { System.out.println("setPlanTextIsDirty(" + planTextIsDirty + ")"); }
-		objCurrentPlanTabs.setEnabledAt(2, !planTextIsDirty);
+		// Keep Plan Diagram tab enabled so selecting it can generate the diagram
+		if (objCurrentPlanTabs != null && objCurrentPlanTabs.getTabCount() > 2) {
+			objCurrentPlanTabs.setEnabledAt(2, true);
+		}
 		this.planTextIsDirty = planTextIsDirty;
 	}
 

@@ -67,6 +67,27 @@ public class FormPanel extends JPanel {
 	public FormPanel(JTabbedPane tabPane) {
 		
 		tabPaneToLink = tabPane;
+		// Selecting Plan Diagram generates from JSON (same as "Show JSON Plan Diagram"),
+		// unless Execute-and-show already set a button action.
+		tabPaneToLink.addChangeListener(new ChangeListener() {
+			private static final int PLAN_DIAGRAM_TAB = 2;
+
+			public void stateChanged(ChangeEvent e) {
+				if (tabPaneToLink.getSelectedIndex() != PLAN_DIAGRAM_TAB || tabPaneToLink.getTabCount() <= PLAN_DIAGRAM_TAB) {
+					return;
+				}
+				Component sourceComp = tabPaneToLink.getComponentAt(0);
+				if (!(sourceComp instanceof PlanSourcePanel)) {
+					return;
+				}
+				PlanSourcePanel planSource = (PlanSourcePanel) sourceComp;
+				if (planSource.getPlanSourceButtonClicked() == null) {
+					planSource.setPlanSourceButtonClicked(PlanSourcePanel.SHOW_JSON_PLAN_DIAGRAM);
+				}
+				PlanGraphPanel.setDiagramBusyCursor(tabPaneToLink, true);
+				repaintPlanGraphPanels(tabPaneToLink.getComponentAt(PLAN_DIAGRAM_TAB));
+			}
+		});
 		Dimension dim = getPreferredSize();
 		//System.out.println(dim);
 		dim.width = 150;
@@ -159,48 +180,9 @@ public class FormPanel extends JPanel {
 		        }
 			});
 
-		    // 1. create the scrollpanel as usual
-			//JScrollPane planGraphScrollPane = new JScrollPane(pEvent.getPlanGraphPanel(), JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_ALWAYS);
-		    JScrollPane planGraphScrollPane_1 = new JScrollPane(pEvent.getPlanGraphPanel(), JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_ALWAYS);
-			//planGraphScrollPane.setPreferredSize(new Dimension(320, 480));
-		    planGraphScrollPane_1.setPreferredSize(new Dimension(320, 480));
-			
-		    // 2. create the toolbars here with the split
-		    JSplitPane toolbarPanel = new JSplitPane(JSplitPane.VERTICAL_SPLIT, new Toolbars(), planGraphScrollPane_1);
-		    //JSplitPane toolbarPanel = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, new Toolbars(), planGraphScrollPane_1);
-		    toolbarPanel.setOneTouchExpandable(true);
-		    //toolbarPanel.setDividerLocation(100); // nope
-		    toolbarPanel.setDividerLocation(300); // nope
-		    //toolbarPanel.setDividerLocation(500); // nope
-		    //toolbarPanel.setDividerLocation(1000); // nope
-		    
-		    // 3. show operator properties (no change)
-			// show operator properties
-			OperationPropertiesPanel operationPropertiesPanel = new OperationPropertiesPanel(pEvent.getPlanGraphPanel());
-			JScrollPane propertiesPanelScrollPane = new JScrollPane(operationPropertiesPanel, JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_ALWAYS);
-			propertiesPanelScrollPane.setPreferredSize(new Dimension(520, 680));
-			
-			// 4. for horizontal split - pass in toolbarPanel
-			//for horizontal split
-			//JSplitPane graphAndPropertiesSplitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, planGraphScrollPane, propertiesPanelScrollPane);
-			JSplitPane graphAndPropertiesSplitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, toolbarPanel, propertiesPanelScrollPane);
-			graphAndPropertiesSplitPane.setOneTouchExpandable(true);
-			graphAndPropertiesSplitPane.setDividerLocation(600);
-			//graphAndPropertiesSplitPane.setDividerLocation(propertiesPanelScrollPane.getWidth() / 2);
-			
-			// changes by Akila
-			SliderPanel sliderPanel = new SliderPanel(pEvent.getPlanGraphPanel());
-			//sliderPanel.setSliderType(sliderType);
-			
-			JScrollPane sliderPanelScrollPane = new JScrollPane(sliderPanel, JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_ALWAYS);
-			
-			//for vertical split
-			JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, graphAndPropertiesSplitPane, sliderPanelScrollPane);
-			//splitPane.setDividerLocation(500);
-			splitPane.setDividerLocation(600);
-			splitPane.setOneTouchExpandable(true);
-			
-			tabPaneToLink.addTab(getPlanGraphTabName(newPlanName), splitPane);
+			// Properties full height on the right; graph + sliders on the left
+			JSplitPane splitPane = createPlanDiagramSplitPane(pEvent.getPlanGraphPanel(), 600, 600);
+			tabPaneToLink.addTab(getPlanDiagramTabName(newPlanName), splitPane);
 			
 			//strSQL = "select id_explain_plan, plan_name, server, port, database, username, password\n"
 			//		+ ", pre_explain_command, explain_sql_command, post_explain_command, plan_text\n"
@@ -225,8 +207,8 @@ public class FormPanel extends JPanel {
 			//newPlanGraphPanel.setIDExplainPlan(jsnRow.getString("plan_name"));
 			newPlanGraphPanel.setIDExplainPlan(newPlanName);
 			
-			// disable the graph tab until we generate a plan from a query or JSON
-			tabPaneToLink.setEnabledAt(2, false);
+			// Plan Diagram tab stays enabled; selecting it generates the diagram from JSON
+			tabPaneToLink.setEnabledAt(2, true);
 		}
 		
 		addPlanBtn = new JButton("Add Plan");
@@ -309,44 +291,12 @@ public class FormPanel extends JPanel {
 
 				    //tabPaneToLink.addChangeListener(new ChangeListener() {
 
-					JScrollPane planGraphScrollPane = new JScrollPane(pEvent.getPlanGraphPanel(), JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_ALWAYS);
-					//planGraphScrollPane.setMinimumSize(new Dimension(320, 480));
-					planGraphScrollPane.setPreferredSize(new Dimension(320, 480));
+					if (bolShowProperties == true) { System.out.println("before createPlanDiagramSplitPane()"); }
+					JSplitPane splitPane = createPlanDiagramSplitPane(pEvent.getPlanGraphPanel(), 1000, 500);
+					if (bolShowProperties == true) { System.out.println("after createPlanDiagramSplitPane()"); }
+					tabPaneToLink.addTab(getPlanDiagramTabName(selectedPlanName), splitPane);
 					
-					// show operator properties
-					OperationPropertiesPanel operationPropertiesPanel = new OperationPropertiesPanel(pEvent.getPlanGraphPanel());
-					JScrollPane propertiesPanelScrollPane = new JScrollPane(operationPropertiesPanel, JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_ALWAYS);
-					//propertiesPanelScrollPane.setMinimumSize(new Dimension(320, 480));
-					propertiesPanelScrollPane.setPreferredSize(new Dimension(320, 480));
-					
-					//for horizontal split
-					JSplitPane graphAndPropertiesSplitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, planGraphScrollPane, propertiesPanelScrollPane);
-					graphAndPropertiesSplitPane.setOneTouchExpandable(true);
-					graphAndPropertiesSplitPane.setDividerLocation(1000);
-					
-					// changes by Akila
-					//SliderPanel sliderPanel = new SliderPanel();
-					SliderPanel sliderPanel = new SliderPanel(pEvent.getPlanGraphPanel());
-					//sliderPanel.setSliderType(sliderType);
-
-					if (bolShowProperties == true) { System.out.println("before sliderPanel.setPlanTotalTimeMs()"); }
-					
-					if (bolShowProperties == true) { System.out.println("after sliderPanel.setPlanTotalTimeMs()"); }
-					//sliderPanel.setCurrentPlanTimeMs(0);
-					//JScrollPane timeSliderPanelScrollPane = new JScrollPane(new SliderPanel(), JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_ALWAYS);
-					JScrollPane timeSliderPanelScrollPane = new JScrollPane(sliderPanel, JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_ALWAYS);
-					
-					//for vertical split
-					JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, graphAndPropertiesSplitPane, timeSliderPanelScrollPane);
-					splitPane.setDividerLocation(500);
-					splitPane.setOneTouchExpandable(true);
-					
-					tabPaneToLink.addTab(getPlanGraphTabName(selectedPlanName), splitPane);
-					
-					// disable the graph tab until we generate a plan from a query or JSON
-					if (pEvent.getPlanSourcePanel().getPlanTextIsDirty() == true) {
-						tabPaneToLink.setEnabledAt(2, false);
-					}
+					tabPaneToLink.setEnabledAt(2, true);
 					
 					// TODO: disable thickness by and percentage by buttons
 					//JSplitPane currentPane = (JSplitPane) objCurrentPlanTabs.getSelectedComponent();
@@ -447,38 +397,11 @@ public class FormPanel extends JPanel {
 				statisticsPane.setPreferredSize(new Dimension(320, 480));
 				tabPaneToLink.addTab(getPlanStatisticsTabName(), statisticsPane);
 
-				JScrollPane planGraphScrollPane = new JScrollPane(pEvent.getPlanGraphPanel(), JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_ALWAYS);
-				//planGraphScrollPane.setMinimumSize(new Dimension(320, 480));
-				planGraphScrollPane.setPreferredSize(new Dimension(320, 480));
-				
-				// show operator properties
-				OperationPropertiesPanel operationPropertiesPanel = new OperationPropertiesPanel(pEvent.getPlanGraphPanel());
-				JScrollPane propertiesPanelScrollPane = new JScrollPane(operationPropertiesPanel, JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_ALWAYS);
-				//propertiesPanelScrollPane.setMinimumSize(new Dimension(320, 480));
-				propertiesPanelScrollPane.setPreferredSize(new Dimension(320, 480));
-				
-				//for horizontal split
-				JSplitPane graphAndPropertiesSplitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, planGraphScrollPane, propertiesPanelScrollPane);
-				graphAndPropertiesSplitPane.setOneTouchExpandable(true);
-				graphAndPropertiesSplitPane.setDividerLocation(1000);
-				
-				// changes by Akila
-				//SliderPanel sliderPanel = new SliderPanel();
-				SliderPanel sliderPanel = new SliderPanel(pEvent.getPlanGraphPanel());
-				//sliderPanel.setSliderType(sliderType);
-
-				JScrollPane timeSliderPanelScrollPane = new JScrollPane(sliderPanel, JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_ALWAYS);
-				
-				//for vertical split
-				JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, graphAndPropertiesSplitPane, timeSliderPanelScrollPane);
-				splitPane.setDividerLocation(500);
-				splitPane.setOneTouchExpandable(true);
-				
-				tabPaneToLink.addTab(getPlanGraphTabName(newPlanName), splitPane);
+				JSplitPane splitPane = createPlanDiagramSplitPane(pEvent.getPlanGraphPanel(), 1000, 500);
+				tabPaneToLink.addTab(getPlanDiagramTabName(newPlanName), splitPane);
 				duplicatePlanBtn.setEnabled(true);
 
-				// disable the graph tab until we generate a plan from a query or JSON
-				tabPaneToLink.setEnabledAt(2, false);
+				tabPaneToLink.setEnabledAt(2, true);
 
 			}
 		});
@@ -628,32 +551,8 @@ public class FormPanel extends JPanel {
 						statisticsPane.setPreferredSize(new Dimension(320, 480));
 						tabPaneToLink.addTab(getPlanStatisticsTabName(), statisticsPane);
 						
-						JScrollPane planGraphScrollPane = new JScrollPane(newPlnEvent.getPlanGraphPanel(), JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_ALWAYS);
-						//planGraphScrollPane.setMinimumSize(new Dimension(320, 480));
-						planGraphScrollPane.setPreferredSize(new Dimension(320, 480));
-						
-						// show operator properties
-						OperationPropertiesPanel operationPropertiesPanel = new OperationPropertiesPanel(newPlnEvent.getPlanGraphPanel());
-						JScrollPane propertiesPanelScrollPane = new JScrollPane(operationPropertiesPanel, JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_ALWAYS);
-						//propertiesPanelScrollPane.setMinimumSize(new Dimension(320, 480));
-						propertiesPanelScrollPane.setPreferredSize(new Dimension(320, 480));
-						
-						//for horizontal split
-						JSplitPane graphAndPropertiesSplitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, planGraphScrollPane, propertiesPanelScrollPane);
-						graphAndPropertiesSplitPane.setOneTouchExpandable(true);
-						graphAndPropertiesSplitPane.setDividerLocation(1000);
-						
-						SliderPanel sliderPanel = new SliderPanel(newPlnEvent.getPlanGraphPanel());
-						//sliderPanel.setSliderType(sliderType);
-
-						JScrollPane timeSliderPanelScrollPane = new JScrollPane(sliderPanel, JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_ALWAYS);
-						
-						//for vertical split
-						JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, graphAndPropertiesSplitPane, timeSliderPanelScrollPane);
-						splitPane.setDividerLocation(500);
-						splitPane.setOneTouchExpandable(true);
-						
-						tabPaneToLink.addTab(getPlanGraphTabName(newPlanName), splitPane);
+						JSplitPane splitPane = createPlanDiagramSplitPane(newPlnEvent.getPlanGraphPanel(), 1000, 500);
+						tabPaneToLink.addTab(getPlanDiagramTabName(newPlanName), splitPane);
 						
 						// copy over data
 						if (existingPlanSource != null) {
@@ -753,11 +652,23 @@ public class FormPanel extends JPanel {
 		return "Compare Plans";
 	}
 	
-	private String getPlanGraphTabName(String planName) {
+	private String getPlanDiagramTabName(String planName) {
 		String strPlan = planName;
 		if (strPlan.length() > 30)
 			strPlan = strPlan.substring(0, 25) + " ... " + strPlan.substring(strPlan.length() - 5);
-		return strPlan + " - Plan Graph";
+		return strPlan + " - Plan Diagram";
+	}
+
+	private void repaintPlanGraphPanels(Component root) {
+		if (root instanceof PlanGraphPanel) {
+			root.repaint();
+			return;
+		}
+		if (root instanceof Container) {
+			for (Component child : ((Container) root).getComponents()) {
+				repaintPlanGraphPanels(child);
+			}
+		}
 	}
 	
 	private Integer addPlanNameToDatabase(String planName, PlanSourcePanel planSource, PlanGraphPanel planGraphPanel) {
@@ -827,6 +738,37 @@ public class FormPanel extends JPanel {
 
 	}
 	
+	/**
+	 * Plan Diagram tab layout: properties pane full height on the right;
+	 * graph and time/cost sliders stacked on the left only.
+	 * Zoom / Line Thickness / Percentage stay in MainFrame's top toolbar.
+	 */
+	private JSplitPane createPlanDiagramSplitPane(PlanGraphPanel graphPanel,
+			int horizontalDivider, int verticalDivider) {
+		JScrollPane planGraphScrollPane = new JScrollPane(graphPanel,
+				JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_ALWAYS);
+		planGraphScrollPane.setPreferredSize(new Dimension(320, 480));
+
+		OperatorDetailsPanel operatorDetailsPanel = new OperatorDetailsPanel(graphPanel);
+		operatorDetailsPanel.setPreferredSize(new Dimension(520, 680));
+
+		SliderPanel sliderPanel = new SliderPanel(graphPanel);
+		JScrollPane sliderPanelScrollPane = new JScrollPane(sliderPanel,
+				JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+		sliderPanelScrollPane.setMinimumSize(new Dimension(320, 120));
+
+		JSplitPane graphAndSlidersSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, planGraphScrollPane, sliderPanelScrollPane);
+		graphAndSlidersSplitPane.setOneTouchExpandable(true);
+		graphAndSlidersSplitPane.setDividerLocation(verticalDivider);
+		graphAndSlidersSplitPane.setResizeWeight(1.0);
+
+		JSplitPane rootSplitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, graphAndSlidersSplitPane, operatorDetailsPanel);
+		rootSplitPane.setOneTouchExpandable(true);
+		rootSplitPane.setDividerLocation(horizontalDivider);
+		rootSplitPane.setResizeWeight(0.65);
+		return rootSplitPane;
+	}
+
 	public JList getPlanList() { 
 		return planList;
 	}

@@ -21,7 +21,7 @@ To try with saved plans from the old PEG database, copy (do not commit):
 Copy-Item "\\maurice\Cee\docs\bitbucket\peg\peg.sqlite" ".\postgresql-explain-plan-studio.sqlite"
 ```
 
-Then run from that directory and open a plan → **Show JSON Plan Graph**.
+Then run from that directory and open a plan → **Show JSON Plan Diagram** (or select the Plan Diagram tab).
 
 ## Windows package with bundled runtime (jpackage)
 

@@ -4,6 +4,7 @@ package com.williammeitzen.peps.gui;
 import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Component;
+import java.awt.Container;
 import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.Font;
@@ -14,9 +15,11 @@ import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.Shape;
+import java.awt.Window;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseListener;
 import java.awt.event.MouseMotionListener;
+import java.awt.geom.Path2D;
 import java.awt.geom.Rectangle2D;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
@@ -165,6 +168,31 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 		}
 	}
 
+	/**
+	 * Wait cursor for diagram construction. Avoids the glass pane — showing it
+	 * mid-paint re-enters painting and can leave the diagram blank.
+	 */
+	static void setDiagramBusyCursor(Component source, boolean busy) {
+		if (source == null) {
+			return;
+		}
+		Window window = SwingUtilities.getWindowAncestor(source);
+		if (window == null) {
+			window = source instanceof Window ? (Window) source : null;
+		}
+		if (window == null) {
+			return;
+		}
+		window.setCursor(busy
+				? Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR)
+				: Cursor.getDefaultCursor());
+	}
+
+	private static boolean isPlanDiagramConstructionAction(String buttonClicked) {
+		return PlanSourcePanel.SHOW_JSON_PLAN_DIAGRAM.equals(buttonClicked)
+				|| PlanSourcePanel.EXECUTE_AND_SHOW_PLAN_DIAGRAM.equals(buttonClicked);
+	}
+
 	public void paintComponent(Graphics g) { // what's the difference between paint and paintComponent?
 		boolean bolShowSQL = false;
 		boolean bolShowProperties = false;
@@ -183,6 +211,7 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 		JsonArray jsonArray = null;
 		boolean bolExceptionOccurred;
 		String strError;
+		boolean busyCursorShown = false;
 
 		if (bolShowTiming == true) { System.out.println("before PlanGraphPanel.paintComponent(): " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
 
@@ -192,6 +221,13 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 
 		PlanSourcePanel objComponent = (PlanSourcePanel) objCurrentPlanTabs.getComponentAt(0);
 		strPlanSourceButtonClicked = objComponent.getPlanSourceButtonClicked();
+
+		if (isPlanDiagramConstructionAction(strPlanSourceButtonClicked) || objComponent.getPlanTextIsDirty()) {
+			setDiagramBusyCursor(this, true);
+			busyCursorShown = true;
+		}
+
+		try {
 		
 		if (strPlanSourceButtonClicked != null) {
 			
@@ -287,7 +323,7 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 		}
 		
 		// get json text from sql command
-		if (strPlanSourceButtonClicked != null && strPlanSourceButtonClicked.equals("Execute and Show Plan Graph")) {
+		if (strPlanSourceButtonClicked != null && strPlanSourceButtonClicked.equals(PlanSourcePanel.EXECUTE_AND_SHOW_PLAN_DIAGRAM)) {
 			// pg_init(String strServer, String strPort, String strDatabase, String strUser, String strPassword, String strPreCommand) 
 			//Database.pg_init();
 			List<Object> objPGInit = Database.pg_init(objComponent.getPlanSourceFromQueryServerField()
@@ -390,7 +426,7 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 		}
 
 		// get json text from textbox
-		if (strPlanSourceButtonClicked != null && strPlanSourceButtonClicked.equals("Show JSON Plan Graph")) {
+		if (strPlanSourceButtonClicked != null && strPlanSourceButtonClicked.equals(PlanSourcePanel.SHOW_JSON_PLAN_DIAGRAM)) {
 			planText = objComponent.getJsonPlanText();
 
 			//remove trailing spaces, +, CR, "QUERY PLAN", hyphens, "(1 row)"
@@ -648,6 +684,11 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 		if (bolShowTiming == true) { System.out.println("after drawOperations: " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
 
 		if (bolShowTiming == true) { System.out.println("after PlanGraphPanel.paintComponent(): " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
+		} finally {
+			if (busyCursorShown) {
+				setDiagramBusyCursor(this, false);
+			}
+		}
 	}
 
 	public String generateExplainPlanPropertiesData(Object object, int intIDExplainPlan, int parentOperatorCount) {
@@ -1328,35 +1369,29 @@ select id_explain_plan_property, parent_id_explain_plan_property, x_cart, y_cart
 	}
 	
 	public void setTotalExecutionTimeSlider(int idExplainPlan) {
-		JSplitPane splitPane = (JSplitPane) objCurrentPlanTabs.getSelectedComponent();
-		
-		if (splitPane != null) {
-			if (splitPane.getBottomComponent() instanceof JScrollPane) {
-				JScrollPane scrollPane = (JScrollPane) splitPane.getBottomComponent();
-				if (scrollPane.getViewport().getComponent(0) instanceof SliderPanel) {
-					SliderPanel sliderPanel = (SliderPanel) scrollPane.getViewport().getComponent(0);
-					sliderPanel.setPlanTotalTimeMs(idExplainPlan);
-					setSliderType(sliderPanel.SLIDER_TYPE_TIME);  // SLIDER_TYPE_TIME or SLIDER_TYPE_COST
-					sliderPanel.refreshComponents(); // new
-				}
-			}
+		SliderPanel sliderPanel = findSliderPanelInSelectedTab();
+		if (sliderPanel != null) {
+			sliderPanel.setPlanTotalTimeMs(idExplainPlan);
+			setSliderType(sliderPanel.SLIDER_TYPE_TIME);  // SLIDER_TYPE_TIME or SLIDER_TYPE_COST
+			sliderPanel.refreshComponents();
 		}
 	}
 	
 	public void setTotalExecutionCostSlider(int idExplainPlan) {
-		JSplitPane splitPane = (JSplitPane) objCurrentPlanTabs.getSelectedComponent();
-		
-		if (splitPane != null) {
-			if (splitPane.getBottomComponent() instanceof JScrollPane) {
-				JScrollPane scrollPane = (JScrollPane) splitPane.getBottomComponent();
-				if (scrollPane.getViewport().getComponent(0) instanceof SliderPanel) {
-					SliderPanel sliderPanel = (SliderPanel) scrollPane.getViewport().getComponent(0);
-					sliderPanel.setPlanTotalCost(idExplainPlan);
-					setSliderType(sliderPanel.SLIDER_TYPE_COST);
-					sliderPanel.refreshComponents(); // new
-				}
-			}
+		SliderPanel sliderPanel = findSliderPanelInSelectedTab();
+		if (sliderPanel != null) {
+			sliderPanel.setPlanTotalCost(idExplainPlan);
+			setSliderType(sliderPanel.SLIDER_TYPE_COST);
+			sliderPanel.refreshComponents();
 		}
+	}
+
+	private SliderPanel findSliderPanelInSelectedTab() {
+		Component selected = objCurrentPlanTabs.getSelectedComponent();
+		if (!(selected instanceof Container)) {
+			return null;
+		}
+		return findComponentOfType((Container) selected, SliderPanel.class);
 	}
 	
 /*
@@ -4206,7 +4241,7 @@ order by id_explain_plan_property;
 	
 	// include time slider
 	public void drawOperatorBox(Graphics2D g, int id_explain_plan_property, int box_left, int box_right, int box_top, int box_bottom
-		, boolean has_workers, int intSliderType, Double sliderMs, Double startMs, Double durationMs, Double costSlider, Double startupCost, Double costDifferential) {
+		, boolean has_workers, boolean workers_expanded, int intSliderType, Double sliderMs, Double startMs, Double durationMs, Double costSlider, Double startupCost, Double costDifferential) {
 
 		// draw box
 		g.setColor(OPERATOR_BOX_COLOR);
@@ -4256,12 +4291,44 @@ order by id_explain_plan_property;
 		updateShapesMap(id_explain_plan_property, rctOperatorBox);
 		g.draw(rctOperatorBox);
 		
-		if (has_workers == true) {
-			// remember bounding box for gear (or something like that) to toggle worker info
-			Rectangle2D rctWorkerToggleBox = new Rectangle2D.Float(GRAPH_LEFT_MARGIN + box_right - withZoom(15), GRAPH_TOP_MARGIN + box_top, withZoom(15), withZoom(15));
-			updateWorkerToggleShapesMap(id_explain_plan_property, rctWorkerToggleBox);
-			g.draw(rctWorkerToggleBox);
+		// Worker toggle is drawn after operator icons so it stays on top.
+	}
+
+	/** Draws the worker expand/collapse control above icons (box + up/down caret). */
+	private void drawWorkerToggleControl(Graphics2D g, int id_explain_plan_property, int box_right, int box_top, boolean workers_expanded) {
+		g.setColor(OPERATOR_BOX_COLOR);
+		g.setStroke(new BasicStroke(OPERATOR_BOX_THICKNESS));
+		Rectangle2D rctWorkerToggleBox = new Rectangle2D.Float(GRAPH_LEFT_MARGIN + box_right - withZoom(15), GRAPH_TOP_MARGIN + box_top, withZoom(15), withZoom(15));
+		updateWorkerToggleShapesMap(id_explain_plan_property, rctWorkerToggleBox);
+		// Fill so the icon does not show through the control
+		Color previous = g.getColor();
+		g.setColor(Color.WHITE);
+		g.fill(rctWorkerToggleBox);
+		g.setColor(OPERATOR_BOX_COLOR);
+		g.draw(rctWorkerToggleBox);
+		drawWorkerToggleCaret(g, rctWorkerToggleBox, workers_expanded);
+		g.setColor(previous);
+	}
+
+	private void drawWorkerToggleCaret(Graphics2D g, Rectangle2D box, boolean expanded) {
+		double cx = box.getCenterX();
+		double cy = box.getCenterY();
+		double halfWidth = box.getWidth() * 0.28;
+		double halfHeight = box.getHeight() * 0.22;
+		Path2D caret = new Path2D.Double();
+		if (expanded) {
+			// point up — click to collapse
+			caret.moveTo(cx, cy - halfHeight);
+			caret.lineTo(cx + halfWidth, cy + halfHeight);
+			caret.lineTo(cx - halfWidth, cy + halfHeight);
+		} else {
+			// point down — click to expand
+			caret.moveTo(cx, cy + halfHeight);
+			caret.lineTo(cx - halfWidth, cy - halfHeight);
+			caret.lineTo(cx + halfWidth, cy - halfHeight);
 		}
+		caret.closePath();
+		g.fill(caret);
 	}
 	
 	// map node type to icon file
@@ -4392,7 +4459,12 @@ order by id_explain_plan_property;
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
-		g.drawImage(objImage, GRAPH_LEFT_MARGIN + box_left, GRAPH_TOP_MARGIN + box_top, null);
+		if (objImage == null) {
+			return;
+		}
+		// Match SVG icons: fill the operator box (Server.png is 16x16; without scaling it looks tiny)
+		int iconSize = withZoom(OPERATOR_BOX_WIDTH);
+		g.drawImage(objImage, GRAPH_LEFT_MARGIN + box_left, GRAPH_TOP_MARGIN + box_top, iconSize, iconSize, null);
 	}
 
 	class BufferedImageTranscoder extends ImageTranscoder {
@@ -4748,9 +4820,12 @@ order by id_explain_plan_property;
 				", EPOA.startup_cost * 1.0 as startup_cost\n" +
 				", EPOA.total_cost * 1.0 - EPOA.startup_cost * 1.0 as cost_differential\n" +
 				", case when count(EPOW.id_explain_plan_property) = 0 then 0 else 1 end as has_workers\n" + 
+				", case when count(EPOSW.id_explain_plan_property) = 0 then 0 else 1 end as workers_expanded\n" + 
 				"from explain_plan_operator_annotations as EPOA\n" + 
 				"left outer join explain_plan_operator_workers as EPOW on EPOA.id_explain_plan = EPOW.id_explain_plan\n" + 
 				"  and EPOA.id_explain_plan_property = EPOW.id_explain_plan_property\n" + 
+				"left outer join explain_plan_operator_show_workers as EPOSW on EPOA.id_explain_plan = EPOSW.id_explain_plan\n" + 
+				"  and EPOA.id_explain_plan_property = EPOSW.id_explain_plan_property\n" + 
 				"where EPOA.id_explain_plan = " + idExplainPlan + "\n" + 
 				"group by EPOA.id_explain_plan_property\n" + 
 				";";
@@ -4772,7 +4847,8 @@ order by id_explain_plan_property;
 				Double startupCost = (Double) jsnRow.get("startup_cost");
 				Double costDifferential = (Double) jsnRow.get("cost_differential");
 				boolean has_workers = (jsnRow.getInteger("has_workers") == 1);
-				drawOperatorBox(g, id_explain_plan_property, box_left, box_right, box_top, box_bottom, has_workers, getSliderType()
+				boolean workers_expanded = (jsnRow.getInteger("workers_expanded") == 1);
+				drawOperatorBox(g, id_explain_plan_property, box_left, box_right, box_top, box_bottom, has_workers, workers_expanded, getSliderType()
 					, getPlanTimeSliderValueMs(), startMs, durationMs, getPlanCostSlider(), startupCost, costDifferential);
 			}
 		}
@@ -4832,6 +4908,29 @@ order by id_explain_plan_property;
 				previous_operation = operation;
 				previous_strategy = strategy;
 				previous_command = command;
+			}
+		}
+
+		// worker toggles after icons so the caret control is not obscured
+		strSQL = "select\n" +
+				"EPOA.id_explain_plan_property\n" +
+				", EPOA.box_right\n" +
+				", EPOA.box_top\n" +
+				", case when count(EPOSW.id_explain_plan_property) = 0 then 0 else 1 end as workers_expanded\n" +
+				"from explain_plan_operator_annotations as EPOA\n" +
+				"inner join explain_plan_operator_workers as EPOW on EPOA.id_explain_plan = EPOW.id_explain_plan\n" +
+				"  and EPOA.id_explain_plan_property = EPOW.id_explain_plan_property\n" +
+				"left outer join explain_plan_operator_show_workers as EPOSW on EPOA.id_explain_plan = EPOSW.id_explain_plan\n" +
+				"  and EPOA.id_explain_plan_property = EPOSW.id_explain_plan_property\n" +
+				"where EPOA.id_explain_plan = " + idExplainPlan + "\n" +
+				"group by EPOA.id_explain_plan_property\n" +
+				";";
+		if (bolShowSQL == true) { System.out.println(strSQL); }
+		jsnRows = Database.rows(strSQL);
+		if (jsnRows != null) {
+			for (int intRow = 0; intRow < jsnRows.size(); intRow++) {
+				jsnRow = (JsonObject) jsnRows.get(intRow);
+				drawWorkerToggleControl(g, jsnRow.getInteger("id_explain_plan_property"), jsnRow.getInteger("box_right"), jsnRow.getInteger("box_top"), jsnRow.getInteger("workers_expanded") == 1);
 			}
 		}
 
@@ -5531,29 +5630,293 @@ order by id_explain_plan_property;
 		this.sliderType = sliderType;
 	}
 
-//	private String[][] getOperatorProperties(int intIDExplainPlanProperty) {
-	private Object[][] getOperatorProperties(int intIDExplainPlanProperty) {
+	/** EXPLAIN JSON fields that are string arrays of expressions (shown as expandable lists). */
+	public static final String[] EXPRESSION_LIST_PROPERTIES = {
+			"Output", "Group Key", "Sort Key", "Presorted Key"
+	};
+
+	public static boolean isExpressionListProperty(String propertyName) {
+		if (propertyName == null) {
+			return false;
+		}
+		for (String name : EXPRESSION_LIST_PROPERTIES) {
+			if (name.equals(propertyName)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static String expressionListUnit(String propertyName, boolean plural) {
+		if ("Output".equals(propertyName)) {
+			return plural ? "columns" : "column";
+		}
+		return plural ? "keys" : "key";
+	}
+
+	private static String sqlLiteral(String value) {
+		return "'" + value.replace("'", "''") + "'";
+	}
+
+	/**
+	 * Notes for the properties panel: explain scaled diagram totals such as
+	 * "~591 rows removed by filter" versus the raw EXPLAIN property value.
+	 */
+	public String getOperatorNotes(int intIDExplainPlanProperty) {
+		if (idExplainPlan == null || intIDExplainPlanProperty < 0) {
+			return "";
+		}
+		String strSQL = "select\n"
+				+ "  id_explain_plan_property\n"
+				+ ", parent_id_explain_plan_property\n"
+				+ ", node_type\n"
+				+ ", actual_loops\n"
+				+ ", workers_planned\n"
+				+ ", workers_launched\n"
+				+ ", ancestor_workers_planned\n"
+				+ ", ancestor_workers_launched\n"
+				+ ", exact_actual_worker_count\n"
+				+ ", rows_removed_by_filter\n"
+				+ ", total_rows_removed_by_filter\n"
+				+ ", total_rows_removed_by_filter_is_exact\n"
+				+ ", rows_removed_by_join_filter\n"
+				+ ", total_rows_removed_by_join_filter\n"
+				+ ", total_rows_removed_by_join_filter_is_exact\n"
+				+ ", rows_removed_by_index_recheck\n"
+				+ ", total_rows_removed_by_index_recheck\n"
+				+ ", total_rows_removed_by_index_recheck_is_exact\n"
+				+ "from explain_plan_operator_annotations\n"
+				+ "where id_explain_plan = " + idExplainPlan + "\n"
+				+ "and id_explain_plan_property = " + intIDExplainPlanProperty + "\n";
+		JsonObject row = Database.row(strSQL);
+		if (row == null) {
+			return "";
+		}
+
+		StringBuilder notes = new StringBuilder();
+		appendRowsRemovedNote(notes, row, intIDExplainPlanProperty,
+				"removed by filter", "Rows Removed by Filter",
+				"rows_removed_by_filter", "total_rows_removed_by_filter",
+				"total_rows_removed_by_filter_is_exact");
+		appendRowsRemovedNote(notes, row, intIDExplainPlanProperty,
+				"removed by join filter", "Rows Removed by Join Filter",
+				"rows_removed_by_join_filter", "total_rows_removed_by_join_filter",
+				"total_rows_removed_by_join_filter_is_exact");
+		appendRowsRemovedNote(notes, row, intIDExplainPlanProperty,
+				"removed by index recheck", "Rows Removed by Index Recheck",
+				"rows_removed_by_index_recheck", "total_rows_removed_by_index_recheck",
+				"total_rows_removed_by_index_recheck_is_exact");
+		return notes.toString().trim();
+	}
+
+	private void appendRowsRemovedNote(StringBuilder notes, JsonObject row, int operatorId,
+			String diagramPhrase, String explainPropertyName,
+			String rawKey, String totalKey, String exactKey) {
+		Integer raw = parseAnnotationInt(row.get(rawKey));
+		Integer total = parseAnnotationInt(row.get(totalKey));
+		if (raw == null || total == null || total <= 0) {
+			return;
+		}
+		boolean exact = parseAnnotationInt(row.get(exactKey)) != null
+				&& parseAnnotationInt(row.get(exactKey)).intValue() == 1;
+		if (exact && raw.intValue() == total.intValue()) {
+			return;
+		}
+
+		Integer actualLoops = parseAnnotationInt(row.get("actual_loops"));
+		Integer ancestorLaunched = parseAnnotationInt(row.get("ancestor_workers_launched"));
+		Integer ancestorPlanned = parseAnnotationInt(row.get("ancestor_workers_planned"));
+		Integer exactWorkers = parseAnnotationInt(row.get("exact_actual_worker_count"));
+
+		int multiplier;
+		String multiplierExplain;
+		JsonObject gather = findGatherAncestor(operatorId);
+		Integer gatherId = gather == null ? null : parseAnnotationInt(gather.get("id_explain_plan_property"));
+		Integer gatherLaunched = gather == null ? null : parseAnnotationInt(gather.get("workers_launched"));
+		Integer gatherPlanned = gather == null ? null : parseAnnotationInt(gather.get("workers_planned"));
+		String gatherType = gather == null ? "Gather" : nullToEmpty(gather.getString("node_type"));
+
+		if (actualLoops != null && actualLoops.intValue() > 1
+				&& raw.intValue() * actualLoops.intValue() == total.intValue()) {
+			multiplier = actualLoops.intValue();
+			int workers = Math.max(0, multiplier - 1);
+			if (gatherId != null) {
+				multiplierExplain = multiplier + " (Actual Loops = leader + " + workers
+						+ " worker" + (workers == 1 ? "" : "s")
+						+ " from " + gatherType + " operator " + gatherId + ")";
+			} else {
+				multiplierExplain = multiplier + " (Actual Loops)";
+			}
+		} else if (exactWorkers != null && exactWorkers.intValue() > 0
+				&& raw.intValue() * (1 + exactWorkers.intValue()) == total.intValue()) {
+			multiplier = 1 + exactWorkers.intValue();
+			multiplierExplain = multiplier + " (1 leader + " + exactWorkers
+					+ " worker" + (exactWorkers.intValue() == 1 ? "" : "s") + ")";
+		} else if (ancestorLaunched != null
+				&& raw.intValue() * (1 + ancestorLaunched.intValue()) == total.intValue()) {
+			multiplier = 1 + ancestorLaunched.intValue();
+			if (gatherId != null) {
+				multiplierExplain = multiplier + " (1 leader + " + ancestorLaunched
+						+ " Workers Launched on " + gatherType + " operator " + gatherId + ")";
+			} else {
+				multiplierExplain = multiplier + " (1 leader + " + ancestorLaunched
+						+ " ancestor Workers Launched)";
+			}
+		} else if (ancestorPlanned != null
+				&& raw.intValue() * (1 + ancestorPlanned.intValue()) == total.intValue()) {
+			multiplier = 1 + ancestorPlanned.intValue();
+			if (gatherId != null) {
+				multiplierExplain = multiplier + " (1 leader + " + ancestorPlanned
+						+ " Workers Planned on " + gatherType + " operator " + gatherId + ")";
+			} else {
+				multiplierExplain = multiplier + " (1 leader + " + ancestorPlanned
+						+ " ancestor Workers Planned)";
+			}
+		} else {
+			// Fallback: describe whatever total we show even if factors don't divide cleanly
+			multiplier = (raw.intValue() == 0) ? 0 : Math.max(1, (int) Math.round(total.doubleValue() / raw.doubleValue()));
+			StringBuilder fb = new StringBuilder();
+			fb.append(multiplier).append(" (scaled for parallel workers");
+			if (actualLoops != null) {
+				fb.append("; Actual Loops=").append(actualLoops);
+			}
+			if (gatherId != null && gatherLaunched != null) {
+				fb.append("; Workers Launched on ").append(gatherType).append(" operator ")
+						.append(gatherId).append("=").append(gatherLaunched);
+			} else if (gatherId != null && gatherPlanned != null) {
+				fb.append("; Workers Planned on ").append(gatherType).append(" operator ")
+						.append(gatherId).append("=").append(gatherPlanned);
+			} else if (ancestorLaunched != null) {
+				fb.append("; ancestor Workers Launched=").append(ancestorLaunched);
+			}
+			fb.append(")");
+			multiplierExplain = fb.toString();
+		}
+
+		if (notes.length() > 0) {
+			notes.append("\n\n");
+		}
+		if (!exact) {
+			notes.append("~");
+		}
+		// Utils.units already includes a " rows" / "k rows" suffix
+		notes.append(Utils.units(total.doubleValue()));
+		notes.append(" ").append(diagramPhrase);
+		notes.append(" ≈ ").append(raw);
+		notes.append(" (").append(explainPropertyName).append(")");
+		notes.append(" × ").append(multiplierExplain);
+	}
+
+	private JsonObject findGatherAncestor(int operatorId) {
+		Integer currentId = operatorId;
+		for (int depth = 0; depth < 64 && currentId != null && currentId.intValue() >= 0; depth++) {
+			String strSQL = "select id_explain_plan_property, parent_id_explain_plan_property, node_type,\n"
+					+ "workers_planned, workers_launched\n"
+					+ "from explain_plan_operator_annotations\n"
+					+ "where id_explain_plan = " + idExplainPlan + "\n"
+					+ "and id_explain_plan_property = " + currentId + "\n";
+			JsonObject node = Database.row(strSQL);
+			if (node == null) {
+				return null;
+			}
+			String nodeType = node.getString("node_type");
+			if (nodeType != null
+					&& (nodeType.equalsIgnoreCase("Gather") || nodeType.equalsIgnoreCase("Gather Merge"))) {
+				return node;
+			}
+			currentId = parseAnnotationInt(node.get("parent_id_explain_plan_property"));
+			if (currentId != null && currentId.intValue() == operatorId) {
+				return null; // safety
+			}
+		}
+		return null;
+	}
+
+	private static Integer parseAnnotationInt(Object value) {
+		if (value == null) {
+			return null;
+		}
+		if (value instanceof Number) {
+			return ((Number) value).intValue();
+		}
+		String text = value.toString().trim();
+		if (text.isEmpty() || text.equalsIgnoreCase("null")) {
+			return null;
+		}
+		try {
+			if (text.contains(".")) {
+				return (int) Math.round(Double.parseDouble(text));
+			}
+			return Integer.parseInt(text);
+		} catch (NumberFormatException ex) {
+			return null;
+		}
+	}
+
+	private static String nullToEmpty(String value) {
+		return value == null ? "" : value;
+	}
+
+	public Object[][] getOperatorProperties(int intIDExplainPlanProperty, java.util.Set<String> expandedLists, boolean expandWorkers) {
 		
 		String strSQL;
 		JsonArray jsnRows;
 		JsonObject jsnRow;
-		//String[][] aryReturn = null;
 		Object[][] aryReturn = null;
 		boolean bolShowSQL = false;
 		boolean bolShowProperties = false;
 		int intNewRow;
+		boolean isRoot = (intIDExplainPlanProperty == -1);
+		String workersCaret = expandWorkers ? "▲ " : "▼ ";
+		if (expandedLists == null) {
+			expandedLists = java.util.Collections.emptySet();
+		}
+		// Root summaries (2-6) sit between Operator (1) and remaining EXPLAIN keys (10)
+		int propertySortKey = isRoot ? 10 : 2;
+		String operatorValueSql = isRoot ? "'User or Application'" : String.valueOf(intIDExplainPlanProperty);
 
-		strSQL = "select 0, 1, 'Operator' as operator_name, " + intIDExplainPlanProperty + " as operator_value\n" + 
-				"UNION ALL\n" + 
-				"select 0, 2, EPP.operator_name\n" + 
+		strSQL = "select 0, 1, 'Operator' as operator_name, " + operatorValueSql + " as operator_value\n";
+		if (isRoot) {
+			// Mirror the five south_* lines already drawn on the root canvas box
+			strSQL += "UNION ALL\n" +
+					"select 0, 2, 'Actual rows',\n" +
+					"  case when instr(south_1_text, ': ') > 0 then substr(south_1_text, instr(south_1_text, ': ') + 2) else south_1_text end\n" +
+					"from explain_plan_operator_annotations\n" +
+					"where id_explain_plan = " + idExplainPlan + " and id_explain_plan_property = -1 and south_1_text is not null\n" +
+					"UNION ALL\n" +
+					"select 0, 3, 'Estimated rows',\n" +
+					"  case when instr(south_2_text, ': ') > 0 then substr(south_2_text, instr(south_2_text, ': ') + 2) else south_2_text end\n" +
+					"from explain_plan_operator_annotations\n" +
+					"where id_explain_plan = " + idExplainPlan + " and id_explain_plan_property = -1 and south_2_text is not null\n" +
+					"UNION ALL\n" +
+					"select 0, 4, 'Actual data mass',\n" +
+					"  case when instr(south_3_text, ': ') > 0 then substr(south_3_text, instr(south_3_text, ': ') + 2) else south_3_text end\n" +
+					"from explain_plan_operator_annotations\n" +
+					"where id_explain_plan = " + idExplainPlan + " and id_explain_plan_property = -1 and south_3_text is not null\n" +
+					"UNION ALL\n" +
+					"select 0, 5, 'Estimated data mass',\n" +
+					"  case when instr(south_4_text, ': ') > 0 then substr(south_4_text, instr(south_4_text, ': ') + 2) else south_4_text end\n" +
+					"from explain_plan_operator_annotations\n" +
+					"where id_explain_plan = " + idExplainPlan + " and id_explain_plan_property = -1 and south_4_text is not null\n" +
+					"UNION ALL\n" +
+					"select 0, 6, 'Total execution time',\n" +
+					"  case when instr(south_5_text, ': ') > 0 then substr(south_5_text, instr(south_5_text, ': ') + 2) else south_5_text end\n" +
+					"from explain_plan_operator_annotations\n" +
+					"where id_explain_plan = " + idExplainPlan + " and id_explain_plan_property = -1 and south_5_text is not null\n";
+		}
+		strSQL += "UNION ALL\n" + 
+				"select 0, " + propertySortKey + ", EPP.operator_name\n" + 
 				", case\n" + 
-				"	when EPP.operator_name = 'Workers' and WNUM.num_workers = 1 then '(' || cast(WNUM.num_workers as varchar(2)) || ' worker)'\n" + 
-				"	when EPP.operator_name = 'Workers' then '(' || cast(WNUM.num_workers as varchar(2)) || ' workers)'\n" + 
-				"	when EPP.operator_name = 'Output' and ONUM.num_columns = 1 then '(' || cast(ONUM.num_columns as varchar(2)) || ' column)'\n" + 
-				"		|| coalesce(' ' || OLIST.column_list, '')\n" + 
-				"	when EPP.operator_name = 'Output' then '(' || cast(ONUM.num_columns as varchar(2)) || ' columns)'\n" + 
-				"		|| coalesce(' ' || OLIST.column_list, '')\n" + 
-				"	else EPP.operator_value\n" + 
+				"	when EPP.operator_name = 'Workers' and WNUM.num_workers = 1 then '" + workersCaret + "(' || cast(WNUM.num_workers as varchar(10)) || ' worker)'\n" + 
+				"	when EPP.operator_name = 'Workers' then '" + workersCaret + "(' || cast(WNUM.num_workers as varchar(10)) || ' workers)'\n";
+		for (String listName : EXPRESSION_LIST_PROPERTIES) {
+			String caret = expandedLists.contains(listName) ? "▲ " : "▼ ";
+			String singular = expressionListUnit(listName, false);
+			String plural = expressionListUnit(listName, true);
+			strSQL += "	when EPP.operator_name = " + sqlLiteral(listName) + " and LISTNUM.num_items = 1 then '" + caret + "(1 " + singular + ")'\n" +
+					"	when EPP.operator_name = " + sqlLiteral(listName) + " and LISTNUM.num_items is not null then '" + caret + "(' || cast(LISTNUM.num_items as varchar(10)) || ' " + plural + ")'\n";
+		}
+		strSQL += "	else EPP.operator_value\n" + 
 				"end as operator_value\n" + 
 				"from explain_plan_properties as EPP\n" + 
 				"left outer join (\n" + 
@@ -5567,38 +5930,64 @@ order by id_explain_plan_property;
 				"on EPP.id_explain_plan = WNUM.id_explain_plan\n" + 
 				"	and EPP.parent_id_explain_plan_property = WNUM.id_explain_plan_property\n" + 
 				"left outer join (\n" + 
-				"	select EPOO.id_explain_plan, EPOO.id_explain_plan_property, count(*) as num_columns\n" + 
-				"	from explain_plan_properties as SUB_EPP\n" + 
-				"	inner join explain_plan_operator_outputs as EPOO on SUB_EPP.id_explain_plan = EPOO.id_explain_plan\n" + 
-				"		and SUB_EPP.id_explain_plan_property = EPOO.id_explain_plan_property\n" + 
-				"	where SUB_EPP.operator_name = 'Output'\n" + 
-				"	group by EPOO.id_explain_plan, EPOO.id_explain_plan_property\n" + 
-				") as ONUM\n" + 
-				"on EPP.id_explain_plan = ONUM.id_explain_plan\n" + 
-				"	and EPP.id_explain_plan_property = ONUM.id_explain_plan_property\n" + 
-				"left outer join (\n" + 
-				"	select EPOO.id_explain_plan, EPOO.id_explain_plan_property, group_concat(EPOO.column_name, ', ') as column_list\n" + 
-				"	from explain_plan_properties as SUB_EPP\n" + 
-				"	inner join explain_plan_operator_outputs as EPOO on SUB_EPP.id_explain_plan = EPOO.id_explain_plan\n" + 
-				"		and SUB_EPP.id_explain_plan_property = EPOO.id_explain_plan_property\n" + 
-				"	where SUB_EPP.operator_name = 'Output'\n" + 
-				"	group by EPOO.id_explain_plan, EPOO.id_explain_plan_property\n" + 
-				"	order by EPOO.column_order\n" + 
-				") as OLIST\n" + 
-				"on EPP.id_explain_plan = OLIST.id_explain_plan\n" + 
-				"	and EPP.id_explain_plan_property = OLIST.id_explain_plan_property\n" + 
+				"	select LIST_PROP.id_explain_plan, LIST_PROP.id_explain_plan_property, count(*) as num_items\n" + 
+				"	from explain_plan_properties as LIST_PROP\n" + 
+				"	inner join explain_plan_properties as ITEM on LIST_PROP.id_explain_plan = ITEM.id_explain_plan\n" + 
+				"		and LIST_PROP.id_explain_plan_property = ITEM.parent_id_explain_plan_property\n" + 
+				"	where LIST_PROP.operator_name in ('Output', 'Group Key', 'Sort Key', 'Presorted Key')\n" + 
+				"	group by LIST_PROP.id_explain_plan, LIST_PROP.id_explain_plan_property\n" + 
+				") as LISTNUM\n" + 
+				"on EPP.id_explain_plan = LISTNUM.id_explain_plan\n" + 
+				"	and EPP.id_explain_plan_property = LISTNUM.id_explain_plan_property\n" + 
 				"where EPP.id_explain_plan = " + idExplainPlan + " -- id_explain_plan\n" + 
 				"and (\n" + 
 				"  EPP.parent_id_explain_plan_property = " + intIDExplainPlanProperty + "\n" + 
 				"  or (EPP.parent_id_explain_plan_property = 0 and -1 = " + intIDExplainPlanProperty + ")\n" + 
 				")\n" + 
-				"and EPP.operator_name not in ('Plans')\n" + 
-				"UNION ALL\n" + 
+				"and EPP.operator_name not in ('Plans', 'P_CONTAINER')\n";
+		if (isRoot) {
+			// Hide empty structural shells; Environment/Settings children are unioned below
+			strSQL += "and EPP.operator_name not in ('Plan', 'Triggers', 'PostgreSQL Environment', 'Settings')\n" +
+					"and EPP.operator_value is not null\n";
+			// Flatten pg_settings / EXPLAIN Settings into the root property grid
+			strSQL += "UNION ALL\n" +
+					"select 0, " + propertySortKey + ", ITEM.operator_name, ITEM.operator_value\n" +
+					"from explain_plan_properties as ENV\n" +
+					"inner join explain_plan_properties as ITEM on ENV.id_explain_plan = ITEM.id_explain_plan\n" +
+					"  and ENV.id_explain_plan_property = ITEM.parent_id_explain_plan_property\n" +
+					"where ENV.id_explain_plan = " + idExplainPlan + "\n" +
+					"and ENV.parent_id_explain_plan_property = 0\n" +
+					"and ENV.operator_name in ('PostgreSQL Environment', 'Settings')\n" +
+					"and ITEM.operator_value is not null\n";
+		}
+		for (String listName : EXPRESSION_LIST_PROPERTIES) {
+			if (!expandedLists.contains(listName)) {
+				continue;
+			}
+			// Children live under the list property in explain_plan_properties (same for Output / Group Key / …)
+			strSQL += "UNION ALL\n" +
+					"select\n" +
+					"0\n" +
+					", " + propertySortKey + "\n" +
+					", " + sqlLiteral(listName) + " || x'01' || printf('%010d', ITEM.id_explain_plan_property)\n" +
+					", ITEM.operator_name\n" +
+					"from explain_plan_properties as LIST_PROP\n" +
+					"inner join explain_plan_properties as ITEM on LIST_PROP.id_explain_plan = ITEM.id_explain_plan\n" +
+					"  and LIST_PROP.id_explain_plan_property = ITEM.parent_id_explain_plan_property\n" +
+					"where LIST_PROP.id_explain_plan = " + idExplainPlan + "\n" +
+					"and LIST_PROP.parent_id_explain_plan_property = " + intIDExplainPlanProperty + "\n" +
+					"and LIST_PROP.operator_name = " + sqlLiteral(listName) + "\n";
+		}
+		if (expandWorkers) {
+			// Sort under Workers, then by each worker parent (PAR.id), Worker Number first within worker
+			strSQL += "UNION ALL\n" + 
 				"select\n" + 
-				"PAR.id_explain_plan_property\n" + 
-				",case when EPP.operator_name = 'Worker Number' then 0 else 1 end\n" + 
-				",EPP.operator_name\n" + 
-				",EPP.operator_value\n" + 
+				"0\n" + 
+				", 2\n" + 
+				", 'Workers' || x'01' || printf('%010d', PAR.id_explain_plan_property)" +
+				" || x'01' || printf('%04d', case when EPP.operator_name = 'Worker Number' then 0 else 1 end)" +
+				" || EPP.operator_name\n" + 
+				", EPP.operator_value\n" + 
 				"from explain_plan_properties as EPP\n" + 
 				"left outer join explain_plan_properties as PAR on EPP.parent_id_explain_plan_property = PAR.id_explain_plan_property\n" + 
 				"  and EPP.id_explain_plan = PAR.id_explain_plan\n" + 
@@ -5608,8 +5997,9 @@ order by id_explain_plan_property;
 				"  and PAR_PAR.id_explain_plan = PAR_PAR_PAR.id_explain_plan \n" + 
 				"where EPP.id_explain_plan = " + idExplainPlan + " -- id_explain_plan\n" + 
 				"  and PAR_PAR.parent_id_explain_plan_property = " + intIDExplainPlanProperty + " -- parent_id_explain_plan_property\n" + 
-				"  and PAR_PAR.operator_name = 'Workers'\n" + 
-				"order by 1, 2, 3\n" + 
+				"  and PAR_PAR.operator_name = 'Workers'\n";
+		}
+		strSQL += "order by 1, 2, 3\n" + 
 				";";
 		if (bolShowSQL == true) { System.out.println(strSQL); }
 		jsnRows = Database.rows(strSQL);
@@ -5617,27 +6007,40 @@ order by id_explain_plan_property;
 			intNewRow = -1;
 			for (int intRow = 0; intRow < jsnRows.size(); intRow++) {
 				jsnRow = (JsonObject) jsnRows.get(intRow);
-				// ugly way to create a gap
+				String operatorName = jsnRow.getString("operator_name");
+				// ugly way to create a gap before each worker block
 				intNewRow++;
-				if (jsnRow.getString("operator_name") != null && jsnRow.getString("operator_name").equalsIgnoreCase("Worker Number") == true)
+				if (operatorName != null && operatorName.startsWith("Workers\u0001")
+						&& operatorName.endsWith("Worker Number")) {
 					intNewRow++;
+				}
 			}
-			//aryReturn = new String[jsnRows.size()][2];
-			// size the array
-			//aryReturn = new String[intNewRow + 1][2];
-			//String[][] aryReturn = null;
 			aryReturn = new String[intNewRow + 1][2];
-			//Object[][] aryReturn = new Object[intNewRow + 1][2];
 			if (bolShowProperties == true) { System.out.println(jsnRows.size() + " rows"); } 
 			intNewRow = -1;
 			for (int intRow = 0; intRow < jsnRows.size(); intRow++) {
 				jsnRow = (JsonObject) jsnRows.get(intRow);
-				// ugly way to create a gap
+				String operatorName = jsnRow.getString("operator_name");
+				String operatorValue = jsnRow.getString("operator_value");
 				intNewRow++;
-				if (jsnRow.getString("operator_name") != null && jsnRow.getString("operator_name").equalsIgnoreCase("Worker Number") == true)
+				if (operatorName != null && operatorName.startsWith("Workers\u0001")
+						&& operatorName.endsWith("Worker Number")) {
 					intNewRow++;
-				aryReturn[intNewRow][0] = jsnRow.getString("operator_name");
-				aryReturn[intNewRow][1] = jsnRow.getString("operator_value");
+				}
+				if (operatorName != null && operatorName.indexOf('\u0001') > 0
+						&& isExpressionListProperty(operatorName.substring(0, operatorName.indexOf('\u0001')))) {
+					// Expanded Output / Group Key / Sort Key / Presorted Key child → Value column
+					aryReturn[intNewRow][0] = null;
+					aryReturn[intNewRow][1] = operatorValue;
+				} else if (operatorName != null && operatorName.startsWith("Workers\u0001")) {
+					// Strip sort prefix: Workers + SOH + 10-digit parent id + SOH + 4-digit order
+					int secondSoh = operatorName.indexOf('\u0001', operatorName.indexOf('\u0001') + 1);
+					aryReturn[intNewRow][0] = "  " + operatorName.substring(secondSoh + 5);
+					aryReturn[intNewRow][1] = operatorValue;
+				} else {
+					aryReturn[intNewRow][0] = operatorName;
+					aryReturn[intNewRow][1] = operatorValue;
+				}
 			}
 			//return aryReturn;
 		}
@@ -5868,15 +6271,10 @@ order by id_explain_plan_property;
 			}
 		}
 
-		// since buttons changed, update cost and time sliders 
-		if (currentPane != null) {
-			if (currentPane.getBottomComponent() instanceof JScrollPane) {
-				JScrollPane scrollPane = (JScrollPane) currentPane.getBottomComponent();
-				if (scrollPane.getViewport().getComponent(0) instanceof SliderPanel) {
-					SliderPanel sliderPanel = (SliderPanel) scrollPane.getViewport().getComponent(0);
-					sliderPanel.refreshComponents();
-				}
-			}
+		// since buttons changed, update cost and time sliders
+		SliderPanel sliderPanel = findSliderPanelInSelectedTab();
+		if (sliderPanel != null) {
+			sliderPanel.refreshComponents();
 		}
 	}
 	
@@ -5985,24 +6383,8 @@ order by id_explain_plan_property;
 						objComponent.repaint();
 						
 						if (bolShowProperties == true) { System.out.println("repainted"); }
-						
-						JSplitPane graphPane = (JSplitPane) objCurrentPlanTabs.getSelectedComponent();
-						if (graphPane != null) {
-							if (graphPane.getLeftComponent() instanceof JSplitPane) {
-								
-								JSplitPane leftSplitPane = (JSplitPane) graphPane.getLeftComponent();
-								if (leftSplitPane.getLeftComponent() instanceof JScrollPane) {
-									JScrollPane scrollPane1 = (JScrollPane) leftSplitPane.getLeftComponent();
-									if (scrollPane1.getViewport().getComponent(0) instanceof PlanGraphPanel) {
-										PlanGraphPanel planGraphPanel = (PlanGraphPanel) scrollPane1.getViewport().getComponent(0);
-										//objComponent.setPlanTextIsDirty(true); // test, has no effect
-										//objComponent.setPlanGraphIsSynced(false); // test 2
-										planGraphPanel.repaint();
-										if (bolShowProperties == true) { System.out.println("repainted"); }
-									}
-								}
-							}
-						}
+
+						repaint();
 						return;
 					}
 				}
@@ -6022,19 +6404,15 @@ order by id_explain_plan_property;
 						// begin request
 						//String[] operationDataColumnHeaders = { "Properties", "Values" };
 						//String operationData[][] = getOperatorProperties(intIDExplainPlanProperty.intValue());
-						Object operationData[][] = getOperatorProperties(intIDExplainPlanProperty.intValue());
 						PlanGraphPanel currentComponent = (PlanGraphPanel) e.getSource();
-						JViewport vPort = (JViewport) currentComponent.getParent();
-						JScrollPane scrPane = (JScrollPane) vPort.getParent();
-						JSplitPane splitPane = (JSplitPane) scrPane.getParent();
-						JScrollPane scrollPane = (JScrollPane) splitPane.getRightComponent();
-						JViewport viewPort = (JViewport) scrollPane.getViewport();
-						
-						// fix: after adding toolbars panel, exception when clicking on an operator
-						//   to see properties
-						if (viewPort.getComponent(0) instanceof OperationPropertiesPanel) {
-							OperationPropertiesPanel planPropertiesPanel = (OperationPropertiesPanel) viewPort.getComponent(0);
-							planPropertiesPanel.setPropertiesDetails(operationData);
+						OperatorDetailsPanel detailsPanel = findOperatorDetailsPanel(currentComponent);
+						if (detailsPanel != null) {
+							detailsPanel.showOperatorProperties(intIDExplainPlanProperty.intValue());
+						} else {
+							OperationPropertiesPanel propertiesPanel = findOperationPropertiesPanel(currentComponent);
+							if (propertiesPanel != null) {
+								propertiesPanel.showOperatorProperties(intIDExplainPlanProperty.intValue());
+							}
 						}
 						
 						return;
@@ -6043,6 +6421,46 @@ order by id_explain_plan_property;
 			}
 		}
 
+	}
+
+	private OperatorDetailsPanel findOperatorDetailsPanel(Component start) {
+		Container root = start.getParent();
+		while (root != null && !(root instanceof JTabbedPane) && root.getParent() != null) {
+			root = root.getParent();
+		}
+		if (root == null) {
+			return null;
+		}
+		return findComponentOfType(root, OperatorDetailsPanel.class);
+	}
+
+	private OperationPropertiesPanel findOperationPropertiesPanel(Component start) {
+		Container root = start.getParent();
+		while (root != null && !(root instanceof JTabbedPane) && root.getParent() != null) {
+			root = root.getParent();
+		}
+		if (root == null) {
+			return null;
+		}
+		return findComponentOfType(root, OperationPropertiesPanel.class);
+	}
+
+	private static <T> T findComponentOfType(Container root, Class<T> type) {
+		if (type.isInstance(root)) {
+			return type.cast(root);
+		}
+		for (Component child : root.getComponents()) {
+			if (type.isInstance(child)) {
+				return type.cast(child);
+			}
+			if (child instanceof Container) {
+				T found = findComponentOfType((Container) child, type);
+				if (found != null) {
+					return found;
+				}
+			}
+		}
+		return null;
 	}
 
 	private Point origin;
