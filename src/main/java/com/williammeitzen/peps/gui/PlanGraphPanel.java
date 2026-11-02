@@ -11,6 +11,7 @@ import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+import java.awt.LinearGradientPaint;
 import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
@@ -21,6 +22,8 @@ import java.awt.event.MouseListener;
 import java.awt.event.MouseMotionListener;
 import java.awt.geom.Path2D;
 import java.awt.geom.Rectangle2D;
+import java.awt.geom.RectangularShape;
+import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.net.URL;
@@ -76,6 +79,8 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 	private int maxUnitIncrement = 50;
 	private Map<Integer, List<Shape>> propertyVsShapesMap = new HashMap<>();
 	private Map<Integer, List<Shape>> showWorkerToggleVsShapesMap = new HashMap<>();
+	private Integer hoveredOperatorId = null;
+	private Integer selectedOperatorId = null;
 	
 	private Integer idExplainPlan;
 	private Integer intXDimension = 5000;
@@ -85,42 +90,44 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 	private Integer GRAPH_LEFT_MARGIN = 0; // zoom has no effect on margins
 	private Integer GRAPH_BOTTOM_MARGIN = 50; // zoom has no effect on margins
 	private Integer GRAPH_RIGHT_MARGIN = 50; // zoom has no effect on margins
-	private Color OPERATOR_BOX_COLOR = Color.black;
+	private Color OPERATOR_BOX_COLOR = new Color(0x47, 0x55, 0x69); // slate
 	private Integer OPERATOR_BOX_THICKNESS = 1; // zoom has no effect on operator box thickness
+	private Integer OPERATOR_BOX_CORNER_RADIUS = 8;
 	private Integer OPERATOR_BOX_WIDTH = 40; // zoom affects box dimensions
 	private Integer OPERATOR_BOX_HEIGHT = 40; // zoom affects box dimensions
 	private Integer HORIZONTAL_SPACE = 40; // zoom affects empty space between operators
 	private Integer VERTICAL_SPACE = 60; // zoom affects empty space between operators
-	private String OPERATOR_FONT_NAME = "Verdana";
+	private String OPERATOR_FONT_NAME = Font.DIALOG; // matched to Plan Source labels via Label.font
 	private int OPERATOR_FONT_STYLE = Font.PLAIN;
-	private int OPERATOR_FONT_SIZE = 10;
-	private Color OPERATOR_FONT_FOREGROUND_COLOR = Color.blue;
+	private int OPERATOR_FONT_SIZE = 12;
+	private Color OPERATOR_FONT_FOREGROUND_COLOR = new Color(0x1D, 0x4E, 0x89);
 	
 	// arrow fonts and colors
-	private Color ARROW_LINE_COLOR = Color.blue;
+	private Color ARROW_LINE_COLOR = new Color(0x25, 0x63, 0xEB);
+	private Color ARROW_LINE_COLOR_END = new Color(0x93, 0xC5, 0xFD);
 	private int ARROW_MINIMUM_HORIZONTAL_DISTANCE = 15;
 	
 	private String ACTUAL_MASS_ARROW_FONT_NAME = "Arial";
 	private int ACTUAL_MASS_ARROW_FONT_STYLE = Font.BOLD;
 	private int ACTUAL_MASS_ARROW_FONT_SIZE = 13;
-	private Color ACTUAL_MASS_ARROW_FONT_COLOR = Color.red;
+	private Color ACTUAL_MASS_ARROW_FONT_COLOR = new Color(0xDC, 0x26, 0x26);
 	
 	private String ESTIMATED_MASS_ARROW_FONT_NAME = "Arial";
 	private int ESTIMATED_MASS_ARROW_FONT_STYLE = Font.PLAIN;
 	private int ESTIMATED_MASS_ARROW_FONT_SIZE = 12;
-	private Color ESTIMATED_MASS_ARROW_FONT_COLOR = Color.red;
+	private Color ESTIMATED_MASS_ARROW_FONT_COLOR = new Color(0xDC, 0x26, 0x26);
 	
 	private String ACTUAL_ROWS_ARROW_FONT_NAME = "Arial";
 	private int ACTUAL_ROWS_ARROW_FONT_STYLE = Font.BOLD;
 	private int ACTUAL_ROWS_ARROW_FONT_SIZE = 13;
-	private Color ACTUAL_ROWS_ARROW_FONT_COLOR = Color.red;
+	private Color ACTUAL_ROWS_ARROW_FONT_COLOR = new Color(0xDC, 0x26, 0x26);
 	
 	private String ESTIMATED_ROWS_ARROW_FONT_NAME = "Arial";
 	private int ESTIMATED_ROWS_ARROW_FONT_STYLE = Font.PLAIN;
 	private int ESTIMATED_ROWS_ARROW_FONT_SIZE = 12;
-	private Color ESTIMATED_ROWS_ARROW_FONT_COLOR = Color.red;
-
-	private Color PLAN_WIDTH_0_ARROW_FONT_COLOR = Color.black;
+	private Color ESTIMATED_ROWS_ARROW_FONT_COLOR = new Color(0xDC, 0x26, 0x26);
+	
+	private Color PLAN_WIDTH_0_ARROW_FONT_COLOR = new Color(0x33, 0x41, 0x55);
 	
 	private Color HIGHLIGHT_1_FONT_FOREGROUND_COLOR = Color.yellow;
 	private Color HIGHLIGHT_1_FONT_BACKGROUND_COLOR = Color.red;
@@ -295,27 +302,17 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 			// write fields to database
 			// then get the plan name again, just in case it changed
 		
-			strSQL = "update explain_plans set\n";
-			strSQL += "plan_name = case when exists(select * from explain_plans where plan_name = '" + strPlanName.replace("'",  "''") + "' and id_explain_plan <> " + idExplainPlan + ") then '" + newPlanName.replace("'",  "''") + "' else '" + strPlanName.replace("'",  "''") + "' end\n";
-			//strSQL += "plan_name = '" + strPlanName.replace("'",  "''") + "'\n";
-			strSQL += ",server = '" + objComponent.getPlanSourceFromQueryServerField() + "'\n";
-			strSQL += ",port = case when '" + objComponent.getPlanSourceFromQueryPortField() + "' = '' then null else 0" + objComponent.getPlanSourceFromQueryPortField() + " end\n";
-			strSQL += ",database = '" + objComponent.getPlanSourceFromQueryDatabaseField() + "'\n";
-			strSQL += ",username = '" + objComponent.getPlanSourceFromQueryUserField() + "'\n";
-			if (objComponent.getPlanSourceFromQueryRememberPasswordCheckbox() == true) {
-				strSQL += ",password = '" + objComponent.getPlanSourceFromQueryPasswordField().replace("'",  "''") + "'\n";
-			} else {
-				strSQL += ",password = ''\n";
-			}
-			strSQL += ",remember_password = case when lower('" + objComponent.getPlanSourceFromQueryRememberPasswordCheckbox() + "') = 'true' then 1 else 0 end\n";
-			strSQL += ",pre_explain_command = '" + objComponent.getPlanSourceFromQueryPreCommandField().replace("'",  "''") + "'\n";
-			strSQL += ",explain_sql_command = '" + objComponent.getSQLQueryText().replace("'",  "''") + "'\n";
-			strSQL += ",post_explain_command = '" + objComponent.getPlanSourceFromQueryPostCommandField().replace("'",  "''") + "'\n";
-			strSQL += ",plan_text = '" + objComponent.getJsonPlanText().replace("'",  "''") + "'\n";
-			strSQL += "where id_explain_plan = " + idExplainPlan + "\n";
-			strSQL += ";\n";
-			if (bolShowSQL == true) { System.out.println(strSQL); }
-			Database.dml(strSQL);
+			Database.updateExplainPlan(idExplainPlan, strPlanName, newPlanName,
+					objComponent.getPlanSourceFromQueryServerField(),
+					objComponent.getPlanSourceFromQueryPortField(),
+					objComponent.getPlanSourceFromQueryDatabaseField(),
+					objComponent.getPlanSourceFromQueryUserField(),
+					objComponent.getPlanSourceFromQueryPasswordField(),
+					objComponent.getPlanSourceFromQueryRememberPasswordCheckbox(),
+					objComponent.getPlanSourceFromQueryPreCommandField(),
+					objComponent.getSQLQueryText(),
+					objComponent.getPlanSourceFromQueryPostCommandField(),
+					objComponent.getJsonPlanText());
 
 			strSQL = "select plan_name from explain_plans where id_explain_plan = " + idExplainPlan + ";\n";
 			if (bolShowSQL == true) { System.out.println(strSQL); }
@@ -410,11 +407,7 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 			planText = planText.replace("\"Plan\": {", strPostgreSQLEnvironment + ", \"Plan\": {");
 			objComponent.setJsonPlanText(planText);
 
-			strSQL = "update explain_plans set\n";
-			strSQL += "plan_text = '" + objComponent.getJsonPlanText().replace("'",  "''") + "'\n";
-			strSQL += "where id_explain_plan = " + idExplainPlan + "\n";
-			if (bolShowSQL == true) { System.out.println(strSQL); }
-			Database.dml(strSQL);
+			Database.updateExplainPlanText(idExplainPlan, objComponent.getJsonPlanText());
 
 			if (bolShowRetrievedJsonPlan == true) { System.out.println(planText); }
 			
@@ -3314,7 +3307,7 @@ from explain_plan_operator_annotations order by id_explain_plan_property, worker
 		//FontMetrics arrowFontMetrics;
 		//FontMetrics actualMassArrowFontMetrics;
 		
-		defaultFontMetrics = getFontMetrics(new Font(OPERATOR_FONT_NAME, OPERATOR_FONT_STYLE, withZoom(OPERATOR_FONT_SIZE)));
+		defaultFontMetrics = getFontMetrics(operatorLabelFont());
 		//arrowFontMetrics = getFontMetrics(new Font(ARROW_TEXT_FONT_NAME, ARROW_TEXT_FONT_STYLE, withZoom(ARROW_TEXT_FONT_SIZE)));
 		//actualMassArrowFontMetrics = getFontMetrics(new Font(ARROW_TEXT_FONT_NAME, ARROW_TEXT_FONT_STYLE, withZoom(ARROW_TEXT_FONT_SIZE)));
 		
@@ -3369,7 +3362,7 @@ from explain_plan_operator_annotations order by id_explain_plan_property, worker
 		FontMetrics defaultFontMetrics;
 		//FontMetrics arrowFontMetrics;
 		
-		defaultFontMetrics = getFontMetrics(new Font(OPERATOR_FONT_NAME, OPERATOR_FONT_STYLE, withZoom(OPERATOR_FONT_SIZE)));
+		defaultFontMetrics = getFontMetrics(operatorLabelFont());
 		//arrowFontMetrics = getFontMetrics(new Font(ARROW_TEXT_FONT_NAME, ARROW_TEXT_FONT_STYLE, withZoom(ARROW_TEXT_FONT_SIZE)));
 		
 		int defaultMaxAscent = defaultFontMetrics.getMaxAscent();
@@ -3447,7 +3440,7 @@ from explain_plan_operator_annotations order by id_explain_plan_property, worker
 		FontMetrics actualRowsArrowFontMetrics;
 		FontMetrics estimatedRowsArrowFontMetrics;
 		
-		defaultFontMetrics = getFontMetrics(new Font(OPERATOR_FONT_NAME, OPERATOR_FONT_STYLE, withZoom(OPERATOR_FONT_SIZE)));
+		defaultFontMetrics = getFontMetrics(operatorLabelFont());
 		actualMassArrowFontMetrics = getFontMetrics(new Font(ACTUAL_MASS_ARROW_FONT_NAME, ACTUAL_MASS_ARROW_FONT_STYLE, withZoom(ACTUAL_MASS_ARROW_FONT_SIZE)));
 		estimatedMassArrowFontMetrics = getFontMetrics(new Font(ESTIMATED_MASS_ARROW_FONT_NAME, ESTIMATED_MASS_ARROW_FONT_STYLE, withZoom(ESTIMATED_MASS_ARROW_FONT_SIZE)));
 		actualRowsArrowFontMetrics = getFontMetrics(new Font(ACTUAL_ROWS_ARROW_FONT_NAME, ACTUAL_ROWS_ARROW_FONT_STYLE, withZoom(ACTUAL_ROWS_ARROW_FONT_SIZE)));
@@ -3686,7 +3679,7 @@ from explain_plan_operator_annotations order by id_explain_plan_property, worker
 		String strGetPercentageBy, strRootOperator, strWithCTEOperator;
 		FontMetrics defaultFontMetrics;
 
-		defaultFontMetrics = getFontMetrics(new Font(OPERATOR_FONT_NAME, OPERATOR_FONT_STYLE, withZoom(OPERATOR_FONT_SIZE)));
+		defaultFontMetrics = getFontMetrics(operatorLabelFont());
 		int defaultMaxAscent = defaultFontMetrics.getMaxAscent();
 
 		// copy PercentageBy labels to north fields
@@ -4342,12 +4335,31 @@ order by id_explain_plan_property;
 	public void drawOperatorBox(Graphics2D g, int id_explain_plan_property, int box_left, int box_right, int box_top, int box_bottom
 		, boolean has_workers, boolean workers_expanded, int intSliderType, Double sliderMs, Double startMs, Double durationMs, Double costSlider, Double startupCost, Double costDifferential) {
 
-		// draw box
-		g.setColor(OPERATOR_BOX_COLOR);
-		g.setStroke(new BasicStroke(OPERATOR_BOX_THICKNESS));
+		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		float arc = withZoom(OPERATOR_BOX_CORNER_RADIUS);
+		float x = GRAPH_LEFT_MARGIN + box_left;
+		float y = GRAPH_TOP_MARGIN + box_top;
+		float w = box_right - box_left;
+		float h = box_bottom - box_top;
+		RoundRectangle2D rctOperatorBox = new RoundRectangle2D.Float(x, y, w, h, arc, arc);
 
-		// partially fill box if timer slider is being used
-		//if (sliderMs > 0 && startMs != null) {
+		// Soft drop shadow (not used for hit-testing)
+		int shadowOffset = Math.max(1, withZoom(2));
+		g.setColor(new Color(0, 0, 0, UiTheme.isDark() ? 90 : 45));
+		g.fill(new RoundRectangle2D.Float(x + shadowOffset, y + shadowOffset, w, h, arc, arc));
+
+		boolean hovered = hoveredOperatorId != null && hoveredOperatorId.intValue() == id_explain_plan_property;
+		boolean selected = selectedOperatorId != null && selectedOperatorId.intValue() == id_explain_plan_property;
+		if (hovered || selected) {
+			g.setColor(selected
+					? new Color(0xDB, 0xEA, 0xFE, UiTheme.isDark() ? 120 : 180)
+					: new Color(0xF1, 0xF5, 0xF9, UiTheme.isDark() ? 80 : 160));
+			g.fill(rctOperatorBox);
+		}
+
+		g.setStroke(new BasicStroke(selected ? OPERATOR_BOX_THICKNESS + 1 : OPERATOR_BOX_THICKNESS));
+
+		// partially fill box if timer / cost slider is being used
 		if (getSliderType() == SliderPanel.SLIDER_TYPE_TIME && sliderMs > 0 && startMs != null) {
 			double sliderMsMinusStartMs = sliderMs - startMs;
 			double percentageOfBoxFilled = sliderMsMinusStartMs / durationMs; 
@@ -4362,9 +4374,10 @@ order by id_explain_plan_property;
 			else
 				g.setColor(TIME_SLIDER_BACKGROUND_COLOR);
 
+			Shape priorClip = g.getClip();
+			g.clip(rctOperatorBox);
 			g.fillRect(GRAPH_LEFT_MARGIN + pixelsBoxLeft, GRAPH_TOP_MARGIN + box_top, box_right - pixelsBoxLeft, box_bottom - box_top);
-
-			g.setColor(OPERATOR_BOX_COLOR);
+			g.setClip(priorClip);
 		} else if (getSliderType() == SliderPanel.SLIDER_TYPE_COST && costSlider > 0 && startupCost != null) {
 			double sliderCostMinusStartupCost = costSlider - startupCost;
 			double percentageOfBoxFilled = sliderCostMinusStartupCost / costDifferential; 
@@ -4379,14 +4392,17 @@ order by id_explain_plan_property;
 			else
 				g.setColor(COST_SLIDER_BACKGROUND_COLOR);
 
+			Shape priorClip = g.getClip();
+			g.clip(rctOperatorBox);
 			g.fillRect(GRAPH_LEFT_MARGIN + pixelsBoxLeft, GRAPH_TOP_MARGIN + box_top, box_right - pixelsBoxLeft, box_bottom - box_top);
-
-			g.setColor(OPERATOR_BOX_COLOR);
+			g.setClip(priorClip);
 		}
-		
-		
-		// remember bounding box for operator to show properties
-		Rectangle2D rctOperatorBox = new Rectangle2D.Float(GRAPH_LEFT_MARGIN + box_left, GRAPH_TOP_MARGIN + box_top, box_right - box_left, box_bottom - box_top);
+
+		Color boxStroke = UiTheme.isDark() ? new Color(0xCB, 0xD5, 0xE1) : OPERATOR_BOX_COLOR;
+		if (selected) {
+			boxStroke = new Color(0x25, 0x63, 0xEB);
+		}
+		g.setColor(boxStroke);
 		updateShapesMap(id_explain_plan_property, rctOperatorBox);
 		g.draw(rctOperatorBox);
 		
@@ -4395,21 +4411,21 @@ order by id_explain_plan_property;
 
 	/** Draws the worker expand/collapse control above icons (box + up/down caret). */
 	private void drawWorkerToggleControl(Graphics2D g, int id_explain_plan_property, int box_right, int box_top, boolean workers_expanded) {
-		g.setColor(OPERATOR_BOX_COLOR);
 		g.setStroke(new BasicStroke(OPERATOR_BOX_THICKNESS));
-		Rectangle2D rctWorkerToggleBox = new Rectangle2D.Float(GRAPH_LEFT_MARGIN + box_right - withZoom(15), GRAPH_TOP_MARGIN + box_top, withZoom(15), withZoom(15));
+		float arc = withZoom(4);
+		RoundRectangle2D rctWorkerToggleBox = new RoundRectangle2D.Float(
+				GRAPH_LEFT_MARGIN + box_right - withZoom(15), GRAPH_TOP_MARGIN + box_top, withZoom(15), withZoom(15), arc, arc);
 		updateWorkerToggleShapesMap(id_explain_plan_property, rctWorkerToggleBox);
-		// Fill so the icon does not show through the control
 		Color previous = g.getColor();
-		g.setColor(Color.WHITE);
+		g.setColor(UiTheme.isDark() ? new Color(0x1E, 0x29, 0x3B) : Color.WHITE);
 		g.fill(rctWorkerToggleBox);
-		g.setColor(OPERATOR_BOX_COLOR);
+		g.setColor(UiTheme.isDark() ? new Color(0xCB, 0xD5, 0xE1) : OPERATOR_BOX_COLOR);
 		g.draw(rctWorkerToggleBox);
 		drawWorkerToggleCaret(g, rctWorkerToggleBox, workers_expanded);
 		g.setColor(previous);
 	}
 
-	private void drawWorkerToggleCaret(Graphics2D g, Rectangle2D box, boolean expanded) {
+	private void drawWorkerToggleCaret(Graphics2D g, RectangularShape box, boolean expanded) {
 		double cx = box.getCenterX();
 		double cy = box.getCenterY();
 		double halfWidth = box.getWidth() * 0.28;
@@ -4631,6 +4647,15 @@ order by id_explain_plan_property;
 		return objImage;
 	}
 	
+	/** Same typeface as Plan Source field labels (UIManager Label.font). */
+	private Font operatorLabelFont() {
+		Font labelFont = javax.swing.UIManager.getFont("Label.font");
+		if (labelFont == null) {
+			labelFont = new Font(OPERATOR_FONT_NAME, OPERATOR_FONT_STYLE, OPERATOR_FONT_SIZE);
+		}
+		return labelFont.deriveFont(OPERATOR_FONT_STYLE, (float) withZoom(Math.max(labelFont.getSize(), OPERATOR_FONT_SIZE)));
+	}
+
 	public void drawNorthText(Graphics2D g, int x_center, int y_baseline, String north_1_text
 			, int north_1_fontmetrics_width, int north_1_fontmetrics_height, int outside_box_top_margin
 			, boolean north_1_highlight_1, boolean north_1_highlight_2
@@ -4641,7 +4666,7 @@ order by id_explain_plan_property;
 		int highlightMargin = withZoom(5);
 		
 		// draw text
-		g.setFont(new Font(OPERATOR_FONT_NAME, OPERATOR_FONT_STYLE, withZoom(OPERATOR_FONT_SIZE)));
+		g.setFont(operatorLabelFont());
 		if (north_1_highlight_1 == true) {
 			g.setColor(HIGHLIGHT_1_FONT_BACKGROUND_COLOR);
 			g.fillRect(GRAPH_LEFT_MARGIN + x_center - (north_1_fontmetrics_width / 2) - highlightMargin
@@ -4762,7 +4787,7 @@ order by id_explain_plan_property;
 		) {
 	
 		// draw text
-		g.setFont(new Font(OPERATOR_FONT_NAME, OPERATOR_FONT_STYLE, withZoom(OPERATOR_FONT_SIZE)));
+		g.setFont(operatorLabelFont());
 		g.setColor(OPERATOR_FONT_FOREGROUND_COLOR);
 		y_baseline += south_1_fontmetrics_height; // bump it down
 		if (south_1_text != null)
@@ -4805,12 +4830,15 @@ order by id_explain_plan_property;
         //double yDelta = 0.5 * withZoom(OPERATOR_BOX_HEIGHT) / 2.5; // sin(30) * length; was "/ 2.5"
 		double xDelta = 0.866025 * Math.max(withZoom(OPERATOR_BOX_HEIGHT) / 1.8, arrow_line_thickness * 1.9);
         double yDelta = 0.5 * Math.max(withZoom(OPERATOR_BOX_HEIGHT) / 2.0, arrow_line_thickness * 1.9);
-		g.setColor(ARROW_LINE_COLOR);
+		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		// Flat shaft end flush against the child operator; tip against the parent.
+		// Overlap shaft into the arrowhead so antialiasing does not leave a hairline gap
+		int shaftIntoHead = Math.max(2, (int) (xDelta * 0.45));
 		int[] xLines = {
-			GRAPH_LEFT_MARGIN + box_left - arrow_line_thickness / 2
-			, GRAPH_LEFT_MARGIN + column_boundary_left - arrow_line_thickness / 2
-			, GRAPH_LEFT_MARGIN + previous_column_boundary_right + arrow_line_thickness / 2
-			, GRAPH_LEFT_MARGIN + previous_box_right + (int) xDelta //+ arrow_line_thickness //* 2
+			GRAPH_LEFT_MARGIN + box_left
+			, GRAPH_LEFT_MARGIN + column_boundary_left
+			, GRAPH_LEFT_MARGIN + previous_column_boundary_right
+			, GRAPH_LEFT_MARGIN + previous_box_right + shaftIntoHead
 		};
 		int[] yLines = {
 			GRAPH_TOP_MARGIN + box_top + withZoom(OPERATOR_BOX_HEIGHT) / 2
@@ -4818,9 +4846,25 @@ order by id_explain_plan_property;
 			, GRAPH_TOP_MARGIN + previous_box_top + withZoom(OPERATOR_BOX_HEIGHT) / 2
 			, GRAPH_TOP_MARGIN + previous_box_top + withZoom(OPERATOR_BOX_HEIGHT) / 2
 		};
-		//g.setStroke(new BasicStroke(arrow_line_thickness)); // hard angle
-		g.setStroke(new BasicStroke(arrow_line_thickness, BasicStroke.CAP_SQUARE, BasicStroke.JOIN_ROUND)); // best so far
-        g.drawPolyline(xLines, yLines, xLines.length);
+		Path2D shaft = new Path2D.Float();
+		shaft.moveTo(xLines[0], yLines[0]);
+		for (int i = 1; i < xLines.length; i++) {
+			shaft.lineTo(xLines[i], yLines[i]);
+		}
+		// Light near the flat (operator) end; dark at the arrow tip
+		Color arrowFlatEnd = UiTheme.isDark() ? new Color(0x93, 0xC5, 0xFD) : ARROW_LINE_COLOR_END;
+		Color arrowTip = UiTheme.isDark() ? new Color(0x1D, 0x4E, 0xD8) : ARROW_LINE_COLOR;
+		if (xLines[0] != xLines[xLines.length - 1] || yLines[0] != yLines[yLines.length - 1]) {
+			g.setPaint(new LinearGradientPaint(
+					(float) xLines[0], (float) yLines[0],
+					(float) xLines[xLines.length - 1], (float) yLines[yLines.length - 1],
+					new float[] { 0f, 1f },
+					new Color[] { arrowFlatEnd, arrowTip }));
+		} else {
+			g.setColor(arrowTip);
+		}
+		g.setStroke(new BasicStroke(arrow_line_thickness, BasicStroke.CAP_BUTT, BasicStroke.JOIN_ROUND));
+		g.draw(shaft);
 
 		int[] xTriangle = {
 			GRAPH_LEFT_MARGIN + previous_box_right
@@ -4832,7 +4876,7 @@ order by id_explain_plan_property;
 			,GRAPH_TOP_MARGIN + previous_box_top + withZoom(OPERATOR_BOX_HEIGHT) / 2 - (int) yDelta
 			,GRAPH_TOP_MARGIN + previous_box_top + withZoom(OPERATOR_BOX_HEIGHT) / 2 + (int) yDelta
 		};
-		//g.setColor(Color.red);
+		g.setColor(arrowTip);
 		g.setStroke(new BasicStroke(1));
 		g.fillPolygon(xTriangle, yTriangle, xTriangle.length);
 
@@ -5557,6 +5601,21 @@ order by id_explain_plan_property;
 	public int getZoomPercentage() {
 		return intZoomPercentage;
 	}
+
+	/** Visible size of the JScrollPane that contains this diagram, if any. */
+	private Dimension findEnclosingViewportSize() {
+		Container parent = getParent();
+		while (parent != null) {
+			if (parent instanceof JViewport) {
+				return ((JViewport) parent).getExtentSize();
+			}
+			if (parent instanceof JScrollPane) {
+				return ((JScrollPane) parent).getViewport().getExtentSize();
+			}
+			parent = parent.getParent();
+		}
+		return null;
+	}
 	
 	public void setZoomPercentage(int intZoomPercentage) {
 		String strSQL;
@@ -5572,16 +5631,13 @@ order by id_explain_plan_property;
 		double verticalScreenToPlanRatio;
 		double screenToPlanRatio;
 		
-		// -1 will fit the entire plan to the window, eventually
+		// -1 fits the entire plan into the enclosing scroll pane viewport
 		if (intZoomPercentage < 0) {
-			// this doesn't work yet
-
-			// set dimensions
-			strSQL = "select\n";
-			strSQL += "max(row_boundary_bottom) as row_boundary_bottom\n";
-			strSQL += ", max(column_boundary_right) as column_boundary_right\n";
-			strSQL += "from explain_plan_operator_annotations\n";
-			strSQL += "where id_explain_plan = " + idExplainPlan;
+			strSQL = "select\n"
+					+ "max(row_boundary_bottom) as row_boundary_bottom\n"
+					+ ", max(column_boundary_right) as column_boundary_right\n"
+					+ "from explain_plan_operator_annotations\n"
+					+ "where id_explain_plan = " + idExplainPlan;
 			if (bolShowSQL == true) { System.out.println(strSQL); }
 			jsnRows = Database.rows(strSQL);
 			if (jsnRows != null) {
@@ -5591,25 +5647,30 @@ order by id_explain_plan_property;
 					column_boundary_right = jsnRow.getInteger("column_boundary_right");
 				}
 			}
-			
-			row_boundary_bottom += GRAPH_LEFT_MARGIN + GRAPH_RIGHT_MARGIN;
-			column_boundary_right += GRAPH_TOP_MARGIN + GRAPH_BOTTOM_MARGIN;
 
-			// how do I get the height and width of the scroll pane?
-			// getPreferredScrollableViewportSize() doesn't seem to be correct
-			Dimension d = getPreferredScrollableViewportSize();
+			// Stored extents are at the current zoom; normalize to 100% content size
+			double currentZoomFactor = Math.max(this.intZoomPercentage, 1) / 100.0;
+			double planWidth100 = (column_boundary_right / currentZoomFactor)
+					+ GRAPH_LEFT_MARGIN + GRAPH_RIGHT_MARGIN;
+			double planHeight100 = (row_boundary_bottom / currentZoomFactor)
+					+ GRAPH_TOP_MARGIN + GRAPH_BOTTOM_MARGIN;
 
-			horizontalScreenToPlanRatio = (double) column_boundary_right / d.width;
-			verticalScreenToPlanRatio = (double) row_boundary_bottom / d.height;
-
-			screenToPlanRatio = horizontalScreenToPlanRatio;
-			if (screenToPlanRatio > verticalScreenToPlanRatio)
-				screenToPlanRatio = verticalScreenToPlanRatio;
-			intZoomPercentage = (int) (screenToPlanRatio * 100);
-			
-			//System.out.println("Height : " + scrollPane.getViewport().getSize().height + "\nWidth :" + scrollPane.getViewport().getSize().width);
-
-			//intZoomPercentage = 100;
+			Dimension viewportSize = findEnclosingViewportSize();
+			if (viewportSize == null || viewportSize.width <= 0 || viewportSize.height <= 0
+					|| planWidth100 <= 0 || planHeight100 <= 0) {
+				intZoomPercentage = 100;
+			} else {
+				horizontalScreenToPlanRatio = viewportSize.width / planWidth100;
+				verticalScreenToPlanRatio = viewportSize.height / planHeight100;
+				screenToPlanRatio = Math.min(horizontalScreenToPlanRatio, verticalScreenToPlanRatio);
+				intZoomPercentage = (int) Math.floor(screenToPlanRatio * 100.0);
+				if (intZoomPercentage < 10) {
+					intZoomPercentage = 10;
+				}
+				if (intZoomPercentage > 400) {
+					intZoomPercentage = 400;
+				}
+			}
 		}
 		this.intZoomPercentage = intZoomPercentage;
 
@@ -6458,6 +6519,7 @@ order by id_explain_plan_property;
 						//String operationData[][] = getOperatorProperties(intIDExplainPlanProperty.intValue());
 						PlanGraphPanel currentComponent = (PlanGraphPanel) e.getSource();
 						OperatorDetailsPanel detailsPanel = findOperatorDetailsPanel(currentComponent);
+						selectedOperatorId = intIDExplainPlanProperty;
 						if (detailsPanel != null) {
 							detailsPanel.showOperatorProperties(intIDExplainPlanProperty.intValue());
 						} else {
@@ -6466,7 +6528,7 @@ order by id_explain_plan_property;
 								propertiesPanel.showOperatorProperties(intIDExplainPlanProperty.intValue());
 							}
 						}
-						
+						repaint();
 						return;
 					}
 				}
@@ -6553,10 +6615,31 @@ order by id_explain_plan_property;
 
 	@Override
 	public void mouseMoved(MouseEvent e) {
-		// TODO Auto-generated method stub
-//		int i = 0;
-//		i = 1;
-		
+		Integer under = findOperatorIdAt(e.getX(), e.getY());
+		if ((hoveredOperatorId == null && under == null)
+				|| (hoveredOperatorId != null && hoveredOperatorId.equals(under))) {
+			return;
+		}
+		hoveredOperatorId = under;
+		repaint();
+	}
+
+	private Integer findOperatorIdAt(int x, int y) {
+		if (propertyVsShapesMap == null) {
+			return null;
+		}
+		for (Integer id : propertyVsShapesMap.keySet()) {
+			List<Shape> shapeList = propertyVsShapesMap.get(id);
+			if (shapeList == null) {
+				continue;
+			}
+			for (Shape shape : shapeList) {
+				if (shape.contains(x, y)) {
+					return id;
+				}
+			}
+		}
+		return null;
 	}
 
 	@Override
@@ -6573,6 +6656,10 @@ order by id_explain_plan_property;
 
 	@Override
 	public void mouseExited(MouseEvent e) {
+		if (hoveredOperatorId != null) {
+			hoveredOperatorId = null;
+			repaint();
+		}
 		boolean bolShowProperties = false;
 		if (bolShowProperties == true) { System.out.println("mouse exited"); }
 	}

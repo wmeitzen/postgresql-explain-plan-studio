@@ -108,8 +108,8 @@ public class PlanSourcePanel extends JPanel {
 	private String jsonRenderedInDiagram = null;
 	public int intZoomPercentage = 100;
 	
-	private final Insets EAST_INSETS = new Insets(0, 0, 10, 10);
-	private final Insets WEST_INSETS = new Insets(0, 10, 10, 0);
+	private final Insets EAST_INSETS = new Insets(2, 4, 12, 12);
+	private final Insets WEST_INSETS = new Insets(2, 12, 12, 4);
 	private final ArrayList<Component> labels = new ArrayList<Component>();
 	private final ArrayList<Component> fields = new ArrayList<Component>();
 	

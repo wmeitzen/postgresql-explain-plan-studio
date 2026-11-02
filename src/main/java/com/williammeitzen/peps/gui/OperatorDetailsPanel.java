@@ -18,6 +18,7 @@ import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 import javax.swing.JViewport;
 import javax.swing.SwingUtilities;
+import javax.swing.BorderFactory;
 import javax.swing.border.EmptyBorder;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
@@ -45,9 +46,14 @@ public class OperatorDetailsPanel extends JPanel {
 
 	public OperatorDetailsPanel(PlanGraphPanel graphPanel) {
 		super(new BorderLayout());
+		setBorder(BorderFactory.createCompoundBorder(
+				BorderFactory.createEmptyBorder(6, 6, 6, 6),
+				BorderFactory.createCompoundBorder(
+						BorderFactory.createLineBorder(new Color(0xE2, 0xE8, 0xF0)),
+						new EmptyBorder(4, 4, 4, 4))));
 		propertiesPanel = new OperationPropertiesPanel(graphPanel);
 
-		Color notesBg = new Color(0xF5, 0xF5, 0xF5);
+		Color notesBg = new Color(0xF8, 0xFA, 0xFC);
 
 		expandAllCheckbox = new JCheckBox("Expand all");
 		expandAllCheckbox.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));

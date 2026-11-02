@@ -84,11 +84,15 @@ public class MainFrame extends JFrame {
 
 		if (bolShowProperties == true) { System.out.println("MainFrame(): Database.init()"); }
 		Database.init();
+		UiTheme.apply(UiTheme.loadSavedScheme());
 
 		setLayout(new BorderLayout());
 		
 		planDiagramToolbar = new PlanDiagramToolbar();
 		tabPane = new JTabbedPane();
+		// Prefer full tab titles (no "...") — FlatLaf uses preferred width of each tab
+		tabPane.putClientProperty("JTabbedPane.tabWidthMode", "preferred");
+		tabPane.setTabLayoutPolicy(JTabbedPane.SCROLL_TAB_LAYOUT);
 		formPanel = new FormPanel(tabPane, planDiagramToolbar);
 
 		splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, formPanel, tabPane);
@@ -113,15 +117,16 @@ public class MainFrame extends JFrame {
 		});
 
 		planDiagramToolbar.setZoomToolbarListener(new ZoomToolbarListener() {
-			public void refreshEventOccurred() {
-			}
-
 			public void zoomPlusEventOccurred() {
 				repaintOnZoomPlusOrMinus(10);
 			}
 			
 			public void zoomMinusEventOccurred() {
 				repaintOnZoomPlusOrMinus(-10);
+			}
+
+			public void zoomFitEventOccurred() {
+				repaintOnZoomChange(-1);
 			}
 		});
 		
@@ -195,182 +200,41 @@ public class MainFrame extends JFrame {
 		fileMenu.add(exitItem);
 		
 		JMenu viewMenu = new JMenu("View");
-		JMenu lineThicknessByItem = new JMenu("Line Thickness By");
-		viewMenu.add(lineThicknessByItem);
-		ButtonGroup lineThicknessByButtonGroup = new ButtonGroup();
-		JRadioButton actualDataSizeRB = new JRadioButton("Actual Mass");
-		JRadioButton estimatedDataSizeRB = new JRadioButton("Estimated Mass");
-		JRadioButton actualRowsRB = new JRadioButton("Actual Rows");
-		JRadioButton estimatedRowsRB = new JRadioButton("Estimated Rows");
-		//JRadioButton actualVsEstimatedRB = new JRadioButton("Actual vs. Est. Ratio");
-		JRadioButton actualVsEstimatedRowsRB = new JRadioButton("Actual vs. Est. Rows Ratio");
-		JRadioButton actualVsEstimatedMassRB = new JRadioButton("Actual vs. Est. Mass Ratio");
-		lineThicknessByButtonGroup.add(actualDataSizeRB);
-		lineThicknessByButtonGroup.add(estimatedDataSizeRB);
-		lineThicknessByButtonGroup.add(actualRowsRB);
-		lineThicknessByButtonGroup.add(estimatedRowsRB);
-		//lineThicknessByButtonGroup.add(actualVsEstimatedRB);
-		lineThicknessByButtonGroup.add(actualVsEstimatedRowsRB);
-		lineThicknessByButtonGroup.add(actualVsEstimatedMassRB);
-		lineThicknessByItem.add(actualDataSizeRB);
-		lineThicknessByItem.add(estimatedDataSizeRB);
-		lineThicknessByItem.add(actualRowsRB);
-		lineThicknessByItem.add(estimatedRowsRB);
-		//lineThicknessByItem.add(actualVsEstimatedRB);
-		lineThicknessByItem.add(actualVsEstimatedRowsRB);
-		lineThicknessByItem.add(actualVsEstimatedMassRB);
-		actualDataSizeRB.setSelected(true); // update PlanGraphPanel.java.LineThicknesses enmLineThicknessBy
-		
+		JMenu colorSchemeMenu = new JMenu("Color scheme");
+		viewMenu.add(colorSchemeMenu);
+		ButtonGroup colorSchemeGroup = new ButtonGroup();
+		JRadioButton defaultSchemeRB = new JRadioButton(UiTheme.Scheme.DEFAULT.label());
+		JRadioButton lightSchemeRB = new JRadioButton(UiTheme.Scheme.LIGHT.label());
+		JRadioButton darkSchemeRB = new JRadioButton(UiTheme.Scheme.DARK.label());
+		colorSchemeGroup.add(defaultSchemeRB);
+		colorSchemeGroup.add(lightSchemeRB);
+		colorSchemeGroup.add(darkSchemeRB);
+		colorSchemeMenu.add(defaultSchemeRB);
+		colorSchemeMenu.add(lightSchemeRB);
+		colorSchemeMenu.add(darkSchemeRB);
+
+		UiTheme.Scheme savedScheme = UiTheme.loadSavedScheme();
+		switch (savedScheme) {
+		case LIGHT:
+			lightSchemeRB.setSelected(true);
+			break;
+		case DARK:
+			darkSchemeRB.setSelected(true);
+			break;
+		case DEFAULT:
+		default:
+			defaultSchemeRB.setSelected(true);
+			break;
+		}
+
+		defaultSchemeRB.addActionListener(e -> UiTheme.applyAndRefresh(UiTheme.Scheme.DEFAULT, MainFrame.this));
+		lightSchemeRB.addActionListener(e -> UiTheme.applyAndRefresh(UiTheme.Scheme.LIGHT, MainFrame.this));
+		darkSchemeRB.addActionListener(e -> UiTheme.applyAndRefresh(UiTheme.Scheme.DARK, MainFrame.this));
+
 		JMenu helpMenu = new JMenu("Help");
 		JMenuItem helpMenuAboutItem = new JMenuItem("About ...");
 		helpMenu.add(helpMenuAboutItem);
 
-
-		actualDataSizeRB.addActionListener(new ActionListener() {
-			public void actionPerformed(ActionEvent e) {
-				repaintOnLineThicknessByChange(LineThicknesses.ACTUAL_DATA_MASS);
-			}
-		});
-		
-		estimatedDataSizeRB.addActionListener(new ActionListener() {
-			public void actionPerformed(ActionEvent e) {
-				repaintOnLineThicknessByChange(LineThicknesses.ESTIMATED_DATA_MASS);
-			}
-		});
-		
-		actualRowsRB.addActionListener(new ActionListener() {
-			public void actionPerformed(ActionEvent e) {
-				repaintOnLineThicknessByChange(LineThicknesses.ACTUAL_ROWS);
-			}
-		});
-		
-		estimatedRowsRB.addActionListener(new ActionListener() {
-			public void actionPerformed(ActionEvent e) {
-				repaintOnLineThicknessByChange(LineThicknesses.ESTIMATED_ROWS);
-			}
-		});
-		
-		actualVsEstimatedRowsRB.addActionListener(new ActionListener() {
-			public void actionPerformed(ActionEvent e) {
-				repaintOnLineThicknessByChange(LineThicknesses.ACTUAL_VS_ESTIMATED_ROWS_RATIO);
-			}
-		});
-		
-		actualVsEstimatedMassRB.addActionListener(new ActionListener() {
-			public void actionPerformed(ActionEvent e) {
-				repaintOnLineThicknessByChange(LineThicknesses.ACTUAL_VS_ESTIMATED_MASS_RATIO);
-			}
-		});
-		
-		JMenu percentageByItem = new JMenu("Percentage By");
-		viewMenu.add(percentageByItem);
-		ButtonGroup percentageByButtonGroup = new ButtonGroup();
-		JRadioButton costRB = new JRadioButton("Cost");
-		//JRadioButton diskPlusRAMRB = new JRadioButton("Disk + RAM");
-		//JRadioButton diskRB = new JRadioButton("Disk");
-		//JRadioButton RAMRB = new JRadioButton("RAM");
-		JRadioButton exclusiveTimeRB = new JRadioButton("Operator Time");
-		JRadioButton timeDifferenceRB = new JRadioButton("Time Difference");
-		percentageByButtonGroup.add(costRB);
-		//percentageByButtonGroup.add(diskPlusRAMRB);
-		//percentageByButtonGroup.add(diskRB);
-		//percentageByButtonGroup.add(RAMRB);
-		percentageByButtonGroup.add(exclusiveTimeRB);
-		percentageByButtonGroup.add(timeDifferenceRB);
-		percentageByItem.add(costRB);
-		//percentageByItem.add(diskPlusRAMRB);
-		//percentageByItem.add(diskRB);
-		//percentageByItem.add(RAMRB);
-		percentageByItem.add(exclusiveTimeRB);
-		percentageByItem.add(timeDifferenceRB);
-		costRB.setSelected(true); // update PlanGraphPanel.java.PercentageBy percentageBy
-
-		costRB.addActionListener(new ActionListener() {
-			public void actionPerformed(ActionEvent e) {
-				repaintOnPercentageByChange(PercentageBy.COST);
-			}
-		});
-
-		exclusiveTimeRB.addActionListener(new ActionListener() {
-			public void actionPerformed(ActionEvent e) {
-				repaintOnPercentageByChange(PercentageBy.EXCLUSIVE_TIME);
-			}
-		});
-		
-		timeDifferenceRB.addActionListener(new ActionListener() {
-			public void actionPerformed(ActionEvent e) {
-				repaintOnPercentageByChange(PercentageBy.TIME_DIFFERENCE);
-			}
-		});
-		
-		JMenu zoomItem = new JMenu("Zoom");
-		viewMenu.add(zoomItem);
-		ButtonGroup zoomButtonGroup = new ButtonGroup();
-		JRadioButton twentyfivePercentRB = new JRadioButton("25%");
-		JRadioButton fiftyPercentRB = new JRadioButton("50%");
-		JRadioButton seventyfivePercentRB = new JRadioButton("75%");
-		JRadioButton oneHundredPercentRB = new JRadioButton("100%");
-		JRadioButton oneHundredFiftyPercentRB = new JRadioButton("150%");
-		JRadioButton threeHundredPercentRB = new JRadioButton("300%");
-		JRadioButton fitToWindowRB = new JRadioButton("Fit to Window");
-		zoomButtonGroup.add(twentyfivePercentRB);
-		zoomButtonGroup.add(fiftyPercentRB);
-		zoomButtonGroup.add(seventyfivePercentRB);
-		zoomButtonGroup.add(oneHundredPercentRB);
-		zoomButtonGroup.add(oneHundredFiftyPercentRB);
-		zoomButtonGroup.add(threeHundredPercentRB);
-		zoomButtonGroup.add(fitToWindowRB);
-		zoomItem.add(twentyfivePercentRB);
-		zoomItem.add(fiftyPercentRB);
-		zoomItem.add(seventyfivePercentRB);
-		zoomItem.add(oneHundredPercentRB);
-		zoomItem.add(oneHundredFiftyPercentRB);
-		zoomItem.add(threeHundredPercentRB);
-		//zoomItem.add(fitToWindowRB); // not working yet
-		oneHundredPercentRB.setSelected(true);
-
-		twentyfivePercentRB.addActionListener(new ActionListener() {
-			public void actionPerformed(ActionEvent e) {
-				repaintOnZoomChange(25);
-			}
-		});
-		
-		fiftyPercentRB.addActionListener(new ActionListener() {
-			public void actionPerformed(ActionEvent e) {
-				repaintOnZoomChange(50);
-			}
-		});
-		
-		seventyfivePercentRB.addActionListener(new ActionListener() {
-			public void actionPerformed(ActionEvent e) {
-				repaintOnZoomChange(75);
-			}
-		});
-		
-		oneHundredPercentRB.addActionListener(new ActionListener() {
-			public void actionPerformed(ActionEvent e) {
-				repaintOnZoomChange(100);
-			}
-		});
-		
-		oneHundredFiftyPercentRB.addActionListener(new ActionListener() {
-			public void actionPerformed(ActionEvent e) {
-				repaintOnZoomChange(150);
-			}
-		});
-		
-		threeHundredPercentRB.addActionListener(new ActionListener() {
-			public void actionPerformed(ActionEvent e) {
-				repaintOnZoomChange(300);
-			}
-		});
-		
-		fitToWindowRB.addActionListener(new ActionListener() {
-			public void actionPerformed(ActionEvent e) {
-				repaintOnZoomChange(-1);
-			}
-		});
-		
 		menuBar.add(fileMenu);
 		menuBar.add(viewMenu);
 		menuBar.add(helpMenu);

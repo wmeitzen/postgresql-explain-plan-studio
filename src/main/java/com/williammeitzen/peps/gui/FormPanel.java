@@ -1,25 +1,29 @@
 package com.williammeitzen.peps.gui;
 
+import java.awt.BasicStroke;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Container;
 import java.awt.Dimension;
+import java.awt.FlowLayout;
 import java.awt.Font;
+import java.awt.Graphics2D;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
-//import java.awt.GridLayout;
 import java.awt.Insets;
+import java.awt.RenderingHints;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.awt.image.BufferedImage;
 import java.util.Map;
 import java.util.TreeMap;
 
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListModel;
+import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JDialog;
-//import javax.swing.JFrame;
 import javax.swing.JList;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
@@ -27,8 +31,6 @@ import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
 import javax.swing.SwingUtilities;
-//import javax.swing.ListSelectionModel;
-//import javax.swing.ScrollPaneConstants;
 import javax.swing.border.Border;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
@@ -53,6 +55,7 @@ public class FormPanel extends JPanel {
 	private JButton addPlanBtn;
 	private JButton deletePlanBtn;
 	private JButton duplicatePlanBtn;
+	private JPanel planToolbar;
 	//private FormListener formListener;
 	private JList planList;
 	private JTabbedPane tabPaneToLink;
@@ -99,10 +102,9 @@ public class FormPanel extends JPanel {
 			}
 		});
 		Dimension dim = getPreferredSize();
-		//System.out.println(dim);
-		dim.width = 150;
+		dim.width = 220;
 		setPreferredSize(dim);
-		setMinimumSize(dim);
+		setMinimumSize(new Dimension(140, 120));
 		String strSQL;
 		JsonArray jsnRows;
 		//String strPlanName;
@@ -221,20 +223,24 @@ public class FormPanel extends JPanel {
 			tabPaneToLink.setEnabledAt(2, true);
 		}
 		
-		addPlanBtn = new JButton("Add Plan");
-		deletePlanBtn = new JButton("Delete Plan(s)");
+		addPlanBtn = createPlanToolbarButton("add", "Add Plan");
+		deletePlanBtn = createPlanToolbarButton("delete", "Delete Plan(s)");
+		duplicatePlanBtn = createPlanToolbarButton("duplicate", "Duplicate Plan(s)");
 		if (planList.getSelectedIndices().length == 0)
 			deletePlanBtn.setEnabled(false); // disable until a plan is selected or is loaded from the sqlite db
-		duplicatePlanBtn = new JButton("Duplicate Plan(s)");
 		if (planList.getSelectedIndices().length == 0)
 			duplicatePlanBtn.setEnabled(false); // disable until a plan is selected or is loaded from the sqlite db
-		
+
+		planToolbar = new JPanel(new FlowLayout(FlowLayout.LEFT, 2, 0));
+		planToolbar.setOpaque(false);
+		planToolbar.add(addPlanBtn);
+		planToolbar.add(deletePlanBtn);
+		planToolbar.add(duplicatePlanBtn);
+
 		planListScrollPane = new JScrollPane(planList);
-		planListScrollPane.setMinimumSize(new Dimension(140, 300));
-		planListScrollPane.setPreferredSize(new Dimension(140, 300));
-		
-		//planList.setPreferredSize(new Dimension(110, 100));
-		planList.setBorder(BorderFactory.createEtchedBorder());
+		planListScrollPane.setMinimumSize(new Dimension(120, 100));
+		planListScrollPane.setBorder(BorderFactory.createEmptyBorder());
+		planList.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
 		
 		planList.getSelectionModel().addListSelectionListener(new ListSelectionListener() {
 			public void valueChanged(ListSelectionEvent e) {
@@ -531,25 +537,17 @@ public class FormPanel extends JPanel {
 							newPlanSourcePanel.setPlanSourceFromQueryPostCommandField(existingPlanSource.getPlanSourceFromQueryPostCommandField());
 							newPlanSourcePanel.setJsonPlanText(existingPlanSource.getJsonPlanText());
 
-							strSQL = "update explain_plans set\n"; 
-							strSQL += "server = '" + existingPlanSource.getPlanSourceFromQueryServerField() + "'\n";
-							strSQL += ",port = case when '" + existingPlanSource.getPlanSourceFromQueryPortField() + "' = '' then null else 0" + existingPlanSource.getPlanSourceFromQueryPortField() + " end\n";
-							strSQL += ",database = '" + existingPlanSource.getPlanSourceFromQueryDatabaseField() + "'\n";
-							strSQL += ",username = '" + existingPlanSource.getPlanSourceFromQueryUserField() + "'\n";
-							if (existingPlanSource.getPlanSourceFromQueryRememberPasswordCheckbox() == true) {
-								strSQL += ",password = '" + existingPlanSource.getPlanSourceFromQueryPasswordField().replace("'",  "''") + "'\n";
-							} else {
-								strSQL += ",password = ''\n";
-							}
-							strSQL += ",remember_password = case when lower('" + existingPlanSource.getPlanSourceFromQueryRememberPasswordCheckbox() + "') = 'true' then 1 else 0 end\n";
-							strSQL += ",pre_explain_command = '" + existingPlanSource.getPlanSourceFromQueryPreCommandField().replace("'",  "''") + "'\n";
-							strSQL += ",explain_sql_command = '" + existingPlanSource.getSQLQueryText().replace("'",  "''") + "'\n";
-							strSQL += ",post_explain_command = '" + existingPlanSource.getPlanSourceFromQueryPostCommandField().replace("'",  "''") + "'\n";
-							strSQL += ",plan_text = '" + existingPlanSource.getJsonPlanText().replace("'",  "''") + "'\n";
-							strSQL += ",plan_name = '" + newPlanName.replace("'",  "''") + "'\n";
-							strSQL += "where id_explain_plan = " + newExplainPlanID + "\n";
-							if (bolShowSQL == true) { System.out.println(strSQL); }
-							Database.dml(strSQL);
+							Database.updateExplainPlanFields(newExplainPlanID, newPlanName,
+									existingPlanSource.getPlanSourceFromQueryServerField(),
+									existingPlanSource.getPlanSourceFromQueryPortField(),
+									existingPlanSource.getPlanSourceFromQueryDatabaseField(),
+									existingPlanSource.getPlanSourceFromQueryUserField(),
+									existingPlanSource.getPlanSourceFromQueryPasswordField(),
+									existingPlanSource.getPlanSourceFromQueryRememberPasswordCheckbox(),
+									existingPlanSource.getPlanSourceFromQueryPreCommandField(),
+									existingPlanSource.getSQLQueryText(),
+									existingPlanSource.getPlanSourceFromQueryPostCommandField(),
+									existingPlanSource.getJsonPlanText());
 						}
 
 						//newPlanGraphPanel.setIDExplainPlan(jsnRow.getString("plan_name"));
@@ -572,39 +570,66 @@ public class FormPanel extends JPanel {
 	
 	public void layoutComponents() {
 		setLayout(new GridBagLayout());
-		
+
 		GridBagConstraints gc = new GridBagConstraints();
-		
 		gc.gridx = 0;
 		gc.gridy = 0;
 		gc.weightx = 1;
-		gc.insets = new Insets(0, 0, 0, 0);
+		gc.weighty = 0;
+		gc.fill = GridBagConstraints.HORIZONTAL;
+		gc.insets = new Insets(0, 0, 4, 0);
 		gc.anchor = GridBagConstraints.FIRST_LINE_START;
-		add(planListScrollPane, gc);
-		
+		add(planToolbar, gc);
+
 		gc.gridy = 1;
-		gc.insets = new Insets(10, 0, 0, 0);
-		add(addPlanBtn, gc);
-		
-		gc.gridy = 2;
-		gc.insets = new Insets(10, 0, 0, 0);
-		add(deletePlanBtn, gc);
-		
-		gc.gridy = 3;
-		gc.insets = new Insets(10, 0, 0, 0);
-		add(duplicatePlanBtn, gc);
-		
-		gc.gridy = 4;
 		gc.weighty = 1;
-		gc.anchor = GridBagConstraints.PAGE_END;
-		add(new Container(), gc);
+		gc.fill = GridBagConstraints.BOTH;
+		gc.insets = new Insets(0, 0, 0, 0);
+		add(planListScrollPane, gc);
+	}
+
+	private static JButton createPlanToolbarButton(String iconKind, String tooltip) {
+		JButton button = new JButton(createPlanToolbarIcon(iconKind));
+		button.setToolTipText(tooltip);
+		button.setMargin(new Insets(4, 6, 4, 6));
+		button.setFocusable(false);
+		button.putClientProperty("JButton.buttonType", "toolBarButton");
+		return button;
+	}
+
+	private static ImageIcon createPlanToolbarIcon(String kind) {
+		int size = 16;
+		BufferedImage image = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+		Graphics2D g = image.createGraphics();
+		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		g.setStroke(new BasicStroke(1.8f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+		g.setColor(new Color(0x33, 0x41, 0x55));
+		switch (kind) {
+		case "add":
+			g.drawLine(8, 3, 8, 13);
+			g.drawLine(3, 8, 13, 8);
+			break;
+		case "delete":
+			g.drawLine(4, 5, 12, 5);
+			g.drawRect(5, 5, 6, 8);
+			g.drawLine(7, 7, 7, 11);
+			g.drawLine(9, 7, 9, 11);
+			g.drawLine(6, 5, 7, 3);
+			g.drawLine(10, 5, 9, 3);
+			break;
+		case "duplicate":
+			g.drawRect(5, 5, 8, 8);
+			g.drawRect(3, 3, 8, 8);
+			break;
+		default:
+			break;
+		}
+		g.dispose();
+		return new ImageIcon(image);
 	}
 	
 	private String getPlanSourceTabName(String planName) {
-		String strPlan = planName;
-		if (strPlan.length() > 30)
-			strPlan = strPlan.substring(0, 25) + " ... " + strPlan.substring(strPlan.length() - 5);
-		return strPlan + " - Plan Source";
+		return planName + " - Plan Source";
 	}
 	
 	private String getPlanStatisticsTabName() {
@@ -612,10 +637,7 @@ public class FormPanel extends JPanel {
 	}
 	
 	private String getPlanDiagramTabName(String planName) {
-		String strPlan = planName;
-		if (strPlan.length() > 30)
-			strPlan = strPlan.substring(0, 25) + " ... " + strPlan.substring(strPlan.length() - 5);
-		return strPlan + " - Plan Diagram";
+		return planName + " - Plan Diagram";
 	}
 
 	private void repaintPlanGraphPanels(Component root) {
@@ -734,7 +756,8 @@ public class FormPanel extends JPanel {
 		rootSplitPane.setDividerLocation(horizontalDivider);
 		rootSplitPane.setResizeWeight(0.65);
 
-		JPanel tabContent = new JPanel(new BorderLayout());
+		JPanel tabContent = new JPanel(new BorderLayout(0, 4));
+		tabContent.setBorder(BorderFactory.createEmptyBorder(4, 4, 4, 4));
 		if (planDiagramToolbar != null) {
 			Container previousParent = planDiagramToolbar.getParent();
 			if (previousParent != null) {

@@ -4,10 +4,12 @@ package com.williammeitzen.peps.model;
 import java.io.StringWriter;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.sql.Types;
 import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.Date;
@@ -25,7 +27,7 @@ import com.williammeitzen.peps.gui.Utils;
 
 public final class Database {
 	
-	private static double SQLITE_DB_SCHEMA_VERSION = 4.04;
+	private static double SQLITE_DB_SCHEMA_VERSION = 4.05;
 	private static Connection objConnection = null;
 	private static Connection objPGConnection = null;
 	
@@ -424,6 +426,12 @@ public final class Database {
 		String url = "jdbc:sqlite:postgresql-explain-plan-studio.sqlite";
 		try {
 			objConnection = DriverManager.getConnection(url);
+			// Runtime defaults can still be ~1MB; raise so large EXPLAIN JSON is allowed.
+			if (objConnection instanceof org.sqlite.SQLiteConnection) {
+				org.sqlite.SQLiteConnection sc = (org.sqlite.SQLiteConnection) objConnection;
+				sc.setLimit(org.sqlite.SQLiteLimits.SQLITE_LIMIT_LENGTH, 1_000_000_000);
+				sc.setLimit(org.sqlite.SQLiteLimits.SQLITE_LIMIT_SQL_LENGTH, 1_000_000_000);
+			}
 		} catch (SQLException e) {
 			//System.out.println("function Database() 2");
 			//e.printStackTrace(); //  too much info
@@ -491,6 +499,7 @@ public final class Database {
         		+ ", arrow_text_bottom_margin int not null default 2\n"
         		+ ", application_width int not null default 900\n"
         		+ ", application_height int not null default 600\n"
+        		+ ", color_scheme varchar(32) not null default 'default'\n"
         		+ ");\n";
         Database.dml(strSQL);
 
@@ -500,6 +509,9 @@ public final class Database {
 	        strSQL = "insert into config default values;\n";
 	        Database.dml(strSQL);
 		}
+
+		// Existing DBs created before color_scheme: add the column if missing
+		ensureConfigColumn("color_scheme", "varchar(32) not null default 'default'");
 		
 		// just in case the db schema minor version changed
         strSQL = "update config set db_alter_version = " + dbSchemaVersionNumber() + ";\n";
@@ -1129,10 +1141,126 @@ south_1_fontmetrics_width = null;
             objStmt.executeUpdate("PRAGMA journal_mode=DELETE;\n");
         } catch (SQLException ex) {
             System.out.println("function Database.dml() 1");
-            System.out.println("strSQL: " + strSQL);
+            System.out.println("strSQL: " + truncateForLog(strSQL));
             ex.printStackTrace();
         }
     }
+
+	/**
+	 * Bind large plan fields so JSON is not embedded in the SQL text (avoids SQLITE_TOOBIG).
+	 * If {@code planName} already exists on another row, {@code conflictPlanName} is stored instead.
+	 */
+	public static void updateExplainPlan(int idExplainPlan, String planName, String conflictPlanName,
+			String server, String port, String database, String username, String password, boolean rememberPassword,
+			String preExplainCommand, String explainSqlCommand, String postExplainCommand, String planText) {
+		if (objConnection == null) {
+			return;
+		}
+		String sql = "update explain_plans set "
+				+ "plan_name = case when exists(select 1 from explain_plans where plan_name = ? and id_explain_plan <> ?) then ? else ? end, "
+				+ "server = ?, "
+				+ "port = ?, "
+				+ "database = ?, "
+				+ "username = ?, "
+				+ "password = ?, "
+				+ "remember_password = ?, "
+				+ "pre_explain_command = ?, "
+				+ "explain_sql_command = ?, "
+				+ "post_explain_command = ?, "
+				+ "plan_text = ? "
+				+ "where id_explain_plan = ?";
+		try (PreparedStatement ps = objConnection.prepareStatement(sql)) {
+			int i = 1;
+			ps.setString(i++, nullToEmpty(planName));
+			ps.setInt(i++, idExplainPlan);
+			ps.setString(i++, nullToEmpty(conflictPlanName));
+			ps.setString(i++, nullToEmpty(planName));
+			ps.setString(i++, nullToEmpty(server));
+			if (port == null || port.isBlank()) {
+				ps.setNull(i++, Types.INTEGER);
+			} else {
+				ps.setInt(i++, Integer.parseInt(port.trim()));
+			}
+			ps.setString(i++, nullToEmpty(database));
+			ps.setString(i++, nullToEmpty(username));
+			ps.setString(i++, rememberPassword ? nullToEmpty(password) : "");
+			ps.setInt(i++, rememberPassword ? 1 : 0);
+			ps.setString(i++, nullToEmpty(preExplainCommand));
+			ps.setString(i++, nullToEmpty(explainSqlCommand));
+			ps.setString(i++, nullToEmpty(postExplainCommand));
+			ps.setString(i++, nullToEmpty(planText));
+			ps.setInt(i++, idExplainPlan);
+			ps.executeUpdate();
+		} catch (SQLException | NumberFormatException ex) {
+			System.out.println("function Database.updateExplainPlan()");
+			ex.printStackTrace();
+		}
+	}
+
+	public static void updateExplainPlanText(int idExplainPlan, String planText) {
+		if (objConnection == null) {
+			return;
+		}
+		String sql = "update explain_plans set plan_text = ? where id_explain_plan = ?";
+		try (PreparedStatement ps = objConnection.prepareStatement(sql)) {
+			ps.setString(1, nullToEmpty(planText));
+			ps.setInt(2, idExplainPlan);
+			ps.executeUpdate();
+		} catch (SQLException ex) {
+			System.out.println("function Database.updateExplainPlanText()");
+			ex.printStackTrace();
+		}
+	}
+
+	public static void updateExplainPlanFields(int idExplainPlan, String planName, String server, String port,
+			String database, String username, String password, boolean rememberPassword,
+			String preExplainCommand, String explainSqlCommand, String postExplainCommand, String planText) {
+		if (objConnection == null) {
+			return;
+		}
+		String sql = "update explain_plans set "
+				+ "server = ?, port = ?, database = ?, username = ?, password = ?, remember_password = ?, "
+				+ "pre_explain_command = ?, explain_sql_command = ?, post_explain_command = ?, "
+				+ "plan_text = ?, plan_name = ? where id_explain_plan = ?";
+		try (PreparedStatement ps = objConnection.prepareStatement(sql)) {
+			int i = 1;
+			ps.setString(i++, nullToEmpty(server));
+			if (port == null || port.isBlank()) {
+				ps.setNull(i++, Types.INTEGER);
+			} else {
+				ps.setInt(i++, Integer.parseInt(port.trim()));
+			}
+			ps.setString(i++, nullToEmpty(database));
+			ps.setString(i++, nullToEmpty(username));
+			ps.setString(i++, rememberPassword ? nullToEmpty(password) : "");
+			ps.setInt(i++, rememberPassword ? 1 : 0);
+			ps.setString(i++, nullToEmpty(preExplainCommand));
+			ps.setString(i++, nullToEmpty(explainSqlCommand));
+			ps.setString(i++, nullToEmpty(postExplainCommand));
+			ps.setString(i++, nullToEmpty(planText));
+			ps.setString(i++, nullToEmpty(planName));
+			ps.setInt(i++, idExplainPlan);
+			ps.executeUpdate();
+		} catch (SQLException | NumberFormatException ex) {
+			System.out.println("function Database.updateExplainPlanFields()");
+			ex.printStackTrace();
+		}
+	}
+
+	private static String nullToEmpty(String value) {
+		return value == null ? "" : value;
+	}
+
+	private static String truncateForLog(String sql) {
+		if (sql == null) {
+			return "null";
+		}
+		final int max = 2000;
+		if (sql.length() <= max) {
+			return sql;
+		}
+		return sql.substring(0, max) + "\n... [" + sql.length() + " chars total, truncated for log]";
+	}
     
     public static JsonArray rows(String strSQL) {
         Statement objS = null;
@@ -1301,5 +1429,21 @@ south_1_fontmetrics_width = null;
     	String strSQL = "";
     	return strSQL;
     }
+
+	/** Add a config column if an older database is missing it. */
+	private static void ensureConfigColumn(String columnName, String columnSqlType) {
+		JsonArray cols = rows("pragma table_info(config);");
+		if (cols == null) {
+			return;
+		}
+		for (int i = 0; i < cols.size(); i++) {
+			JsonObject col = (JsonObject) cols.get(i);
+			Object name = col.get("name");
+			if (name != null && columnName.equalsIgnoreCase(String.valueOf(name))) {
+				return;
+			}
+		}
+		dml("alter table config add column " + columnName + " " + columnSqlType + ";");
+	}
     
 }

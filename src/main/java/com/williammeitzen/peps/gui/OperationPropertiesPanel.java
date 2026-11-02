@@ -1,5 +1,6 @@
 package com.williammeitzen.peps.gui;
 
+import java.awt.Color;
 import java.awt.Component;
 import java.awt.Cursor;
 import java.awt.Rectangle;
@@ -55,6 +56,11 @@ public class OperationPropertiesPanel extends JTable {
 		this.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
 		this.getColumnModel().getColumn(0).setPreferredWidth(200);
 		this.getColumnModel().getColumn(1).setPreferredWidth(200);
+		this.setShowGrid(true);
+		this.setShowHorizontalLines(true);
+		this.setShowVerticalLines(true);
+		this.setGridColor(new Color(0xD1, 0xD5, 0xDB)); // light grey
+		this.setIntercellSpacing(new java.awt.Dimension(1, 1));
 		
 		JTableHeader tableHeader = this.getTableHeader(); 
 		tableHeader.setReorderingAllowed(false);
