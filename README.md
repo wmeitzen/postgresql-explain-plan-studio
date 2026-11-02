@@ -2,12 +2,30 @@
 
 Graphical viewer for PostgreSQL `EXPLAIN` plans (migrated from the earlier PEG / PostgreSQL Explain Graph Swing app).
 
-## Requirements
+## Install the latest release (recommended)
+
+Most users should download a prebuilt Windows package from
+[Releases](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases)
+(use the newest release).
+
+1. Download `PostgreSQLExplainPlanStudio-*-windows-x64.zip`
+2. Unzip it
+3. Run `PostgreSQLExplainPlanStudio\PostgreSQLExplainPlanStudio.exe`
+
+The app creates/opens `postgresql-explain-plan-studio.sqlite` in the **current working directory**.
+
+### Windows SmartScreen
+
+Unsigned downloads often show **Windows protected your PC**. Click **More info** → **Run anyway**, or right‑click the exe/zip → **Properties** → **Unblock** when present.
+
+## Build from source
+
+### Requirements
 
 - JDK 17 or newer (`java`, `javac`, and `jpackage` on `PATH`)
 - Apache Maven 3.9+ (or the Maven Wrapper: `mvnw` / `mvnw.cmd`)
 
-## Build and run
+### Run from source
 
 ```powershell
 .\mvnw.cmd -q compile exec:java
@@ -23,7 +41,7 @@ Copy-Item "\\maurice\Cee\docs\bitbucket\peg\peg.sqlite" ".\postgresql-explain-pl
 
 Then run from that directory and open a plan → **Show JSON Plan Diagram** (or select the Plan Diagram tab).
 
-## Windows package with bundled runtime (jpackage)
+### Windows package with bundled runtime (jpackage)
 
 ```powershell
 .\mvnw.cmd -P jpackage -DskipTests verify
@@ -32,16 +50,7 @@ Then run from that directory and open a plan → **Show JSON Plan Diagram** (or 
 Outputs:
 
 - `target/jpackage/PostgreSQLExplainPlanStudio/PostgreSQLExplainPlanStudio.exe`
-- `target/PostgreSQLExplainPlanStudio-0.0.2-windows-x64.zip`
-
-### Windows SmartScreen
-
-Unsigned downloads often show **Windows protected your PC**. Click **More info** → **Run anyway**, or right‑click the exe/zip → **Properties** → **Unblock** when present.
-
-## Source vs releases
-
-- **Source:** clone this repo (developers need a JDK)
-- **Release:** download the Windows zip from [Releases](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases) — includes a bundled Java runtime
+- `target/PostgreSQLExplainPlanStudio-<version>-windows-x64.zip`
 
 ## License
 
