@@ -20,6 +20,8 @@ import java.awt.event.FocusEvent;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.Objects;
+import java.util.regex.Pattern;
 //import javax.swing.BorderFactory;
 import javax.swing.BoxLayout;
 import javax.swing.DefaultListModel;
@@ -102,6 +104,8 @@ public class PlanSourcePanel extends JPanel {
 	private boolean zoomPercentageIsDirty = true;
 	private boolean percentageByIsDirty = true;
 	private boolean workerIsDirty = true;
+	/** Normalized JSON last used to build the Plan Diagram; null if never built. */
+	private String jsonRenderedInDiagram = null;
 	public int intZoomPercentage = 100;
 	
 	private final Insets EAST_INSETS = new Insets(0, 0, 10, 10);
@@ -639,6 +643,33 @@ public class PlanSourcePanel extends JPanel {
 
 	public boolean getPlanTextIsDirty() {
 		return planTextIsDirty;
+	}
+
+	/** Strip psql wrappers the same way Plan Diagram construction does. */
+	public static String normalizeJsonPlanText(String planText) {
+		if (planText == null) {
+			return "";
+		}
+		String normalized = planText;
+		normalized = normalized.replaceAll(" {5,}", " ");
+		normalized = normalized.replaceAll("^ *" + Pattern.quote("QUERY PLAN"), "");
+		normalized = normalized.replaceAll("\\-{10,}", "");
+		normalized = normalized.replaceAll(Pattern.quote("+") + " *[\r\n]", System.getProperty("line.separator"));
+		normalized = normalized.replaceAll(Pattern.quote("(") + "\\d+ row.*$", "");
+		return normalized;
+	}
+
+	/** True when the diagram has never been built, or the JSON text differs from the last build. */
+	public boolean shouldRebuildDiagramFromCurrentJson() {
+		return shouldRebuildDiagramFromJson(normalizeJsonPlanText(getJsonPlanText()));
+	}
+
+	public boolean shouldRebuildDiagramFromJson(String normalizedJson) {
+		return jsonRenderedInDiagram == null || !Objects.equals(jsonRenderedInDiagram, normalizedJson);
+	}
+
+	public void markDiagramRenderedFromJson(String normalizedJson) {
+		jsonRenderedInDiagram = normalizedJson == null ? "" : normalizedJson;
 	}
 
 	public void setLineThicknessByIsDirty(boolean lineThicknessByIsDirty) {

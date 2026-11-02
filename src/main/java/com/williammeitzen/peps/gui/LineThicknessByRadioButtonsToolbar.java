@@ -71,6 +71,9 @@ public class LineThicknessByRadioButtonsToolbar extends JToolBar implements Acti
 		add(lineThicknessByEstimatedRowsButton);
 		add(lineThicknessByActualVsEstimatedRowsRatioButton);
 		add(lineThicknessByActualVsEstimatedMassRatioButton);
+
+		// Match PlanGraphPanel / View menu default
+		lineThicknessByActualRowsButton.setSelected(true);
 	}
 
 	public void setStringListener(StringListener listener) {

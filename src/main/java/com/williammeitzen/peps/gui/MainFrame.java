@@ -4,6 +4,8 @@ import javax.swing.Box;
 import javax.swing.BoxLayout;
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Component;
+import java.awt.Container;
 import java.awt.Cursor;
 import java.awt.Desktop;
 
@@ -67,11 +69,7 @@ public class MainFrame extends JFrame {
 	private static final long serialVersionUID = 1L;
 	
 	private static final String APPLICATION_VERSION = "0.0.2";
-	private ZoomToolbar zoomToolbar;
-	//private LineThicknessByToolbar lineThicknessByToolbar;
-	private LineThicknessByRadioButtonsToolbar lineThicknessByRadioButtonsToolbar;
-	//private PercentageByToolbar percentageByToolbar;
-	private PercentageByRadioButtonsToolbar percentageByRadioButtonsToolbar;
+	private PlanDiagramToolbar planDiagramToolbar;
 	private FormPanel formPanel;
 	//private JFileChooser fileChooser;
 	//private PrefsDialog prefsDialog;
@@ -89,16 +87,9 @@ public class MainFrame extends JFrame {
 
 		setLayout(new BorderLayout());
 		
-		//toolbar = new Toolbar();
-		zoomToolbar = new ZoomToolbar();
-		//lineThicknessByToolbar = new LineThicknessByToolbar();
-		lineThicknessByRadioButtonsToolbar = new LineThicknessByRadioButtonsToolbar();
-		//percentageByToolbar = new PercentageByToolbar();
-		percentageByRadioButtonsToolbar = new PercentageByRadioButtonsToolbar();
-		//prefsDialog = new PrefsDialog(this);
+		planDiagramToolbar = new PlanDiagramToolbar();
 		tabPane = new JTabbedPane();
-		//tabPane.setFont(new Font("Verdana", Font.PLAIN, 10));
-		formPanel = new FormPanel(tabPane);
+		formPanel = new FormPanel(tabPane, planDiagramToolbar);
 
 		splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, formPanel, tabPane);
 		splitPane.setOneTouchExpandable(true); // adds arrows to split bar
@@ -121,21 +112,20 @@ public class MainFrame extends JFrame {
 			}
 		});
 
-		zoomToolbar.setToolbarListener(new ZoomToolbarListener() {
-
+		planDiagramToolbar.setZoomToolbarListener(new ZoomToolbarListener() {
 			public void refreshEventOccurred() {
 			}
 
 			public void zoomPlusEventOccurred() {
-				repaintOnZoomPlusOrMinus(10); // increase by 10%
+				repaintOnZoomPlusOrMinus(10);
 			}
 			
 			public void zoomMinusEventOccurred() {
-				repaintOnZoomPlusOrMinus(-10); // decrease by 10%
+				repaintOnZoomPlusOrMinus(-10);
 			}
 		});
 		
-		lineThicknessByRadioButtonsToolbar.setToolbarListener(new LineThicknessByRadioButtonsToolbarListener() {
+		planDiagramToolbar.setLineThicknessListener(new LineThicknessByRadioButtonsToolbarListener() {
 			public void lineThicknessByActualMassEventOccurred() {
 				repaintOnLineThicknessByChange(LineThicknesses.ACTUAL_DATA_MASS);
 			}
@@ -159,11 +149,9 @@ public class MainFrame extends JFrame {
 			public void lineThicknessByActualVsEstimatedMassRatioEventOccurred() {
 				repaintOnLineThicknessByChange(LineThicknesses.ACTUAL_VS_ESTIMATED_MASS_RATIO);
 			}
-
 		});
 
-		percentageByRadioButtonsToolbar.setToolbarListener(new PercentageByRadioButtonsToolbarListener() {
-
+		planDiagramToolbar.setPercentageByListener(new PercentageByRadioButtonsToolbarListener() {
 			public void percentageByCostEventOccurred() {
 				repaintOnPercentageByChange(PercentageBy.COST);
 			}
@@ -176,25 +164,8 @@ public class MainFrame extends JFrame {
 				repaintOnPercentageByChange(PercentageBy.TIME_DIFFERENCE);
 			}
 		});
-		
 
-		JPanel toolbarsPane = new JPanel(new GridLayout(0, 1)); // works
-		//JPanel toolbarsPane = new JPanel();
-		//GridBagConstraints gc = new GridBagConstraints();
-		//gc.gridx = 0;
-		//gc.gridy = 0;
-		//GridBagConstraints toolbarsPane = new GridBagConstraints(); // testing
-		toolbarsPane.add(zoomToolbar);
-		toolbarsPane.add(lineThicknessByRadioButtonsToolbar);
-		toolbarsPane.add(percentageByRadioButtonsToolbar);
-		//add(toolbarsPane, gc);
-		//GridBagConstraints gc = new GridBagConstraints(); // 2
-		//gc.gridx = 0; // 2
-		//gc.gridy = 0; // 2
-		//add(toolbarsPane, gc); // 2
-		
-		//add(toolbar, BorderLayout.PAGE_START); // original, works
-		add(toolbarsPane, BorderLayout.PAGE_START); // 1
+		// Toolbar lives inside the Plan Diagram tab content (see FormPanel.createPlanDiagramTab)
 		add(splitPane, BorderLayout.CENTER);
 		
 		setMinimumSize(new Dimension(100, 100));
@@ -248,7 +219,7 @@ public class MainFrame extends JFrame {
 		//lineThicknessByItem.add(actualVsEstimatedRB);
 		lineThicknessByItem.add(actualVsEstimatedRowsRB);
 		lineThicknessByItem.add(actualVsEstimatedMassRB);
-		actualRowsRB.setSelected(true); // update PlanGraphPanel.java.LineThicknesses enmLineThicknessBy
+		actualDataSizeRB.setSelected(true); // update PlanGraphPanel.java.LineThicknesses enmLineThicknessBy
 		
 		JMenu helpMenu = new JMenu("Help");
 		JMenuItem helpMenuAboutItem = new JMenuItem("About ...");
@@ -298,7 +269,7 @@ public class MainFrame extends JFrame {
 		//JRadioButton diskPlusRAMRB = new JRadioButton("Disk + RAM");
 		//JRadioButton diskRB = new JRadioButton("Disk");
 		//JRadioButton RAMRB = new JRadioButton("RAM");
-		JRadioButton exclusiveTimeRB = new JRadioButton("Exclusive Time");
+		JRadioButton exclusiveTimeRB = new JRadioButton("Operator Time");
 		JRadioButton timeDifferenceRB = new JRadioButton("Time Difference");
 		percentageByButtonGroup.add(costRB);
 		//percentageByButtonGroup.add(diskPlusRAMRB);
@@ -497,95 +468,29 @@ public class MainFrame extends JFrame {
 	}
 	
 	private void repaintOnZoomChange(int zoomPct) {
-		boolean bolShowFunctionName = false;
-		JScrollPane scrollPane = null;
-		
-		if (bolShowFunctionName == true) { System.out.println("repaintOnZoomChange()"); }
-		
-		if (tabPane.getSelectedComponent() != null) {
-			if (tabPane.getSelectedComponent() instanceof JScrollPane) {
-				scrollPane = (JScrollPane) tabPane.getSelectedComponent();
-			} else if (tabPane.getSelectedComponent() instanceof JSplitPane) {
-				JSplitPane splitPane = (JSplitPane) tabPane.getSelectedComponent();
-				if (splitPane.getLeftComponent() instanceof JScrollPane) {
-					scrollPane = (JScrollPane) splitPane.getLeftComponent();
-				} else if (splitPane.getLeftComponent() instanceof JSplitPane) {
-					JSplitPane leftSplitPane = (JSplitPane) splitPane.getLeftComponent();
-					if (leftSplitPane.getLeftComponent() instanceof JScrollPane) {
-						scrollPane = (JScrollPane) leftSplitPane.getLeftComponent();
-					}
-				}
-			}
-			
-			if (scrollPane != null) {
-				PlanGraphPanel planGraphPanel = (PlanGraphPanel) scrollPane.getViewport().getComponent(0);
-				planGraphPanel.setZoomPercentage(zoomPct);
-				planGraphPanel.repaint();
-			}
+		PlanGraphPanel planGraphPanel = findSelectedPlanGraphPanel();
+		if (planGraphPanel != null) {
+			planGraphPanel.setZoomPercentage(zoomPct);
+			planGraphPanel.repaint();
 		}
 	}
 	
 	private void repaintOnZoomPlusOrMinus(int zoomPct) {
-		boolean bolShowFunctionName = false;
-		JScrollPane scrollPane = null;
-		int currentZoomPercentage;
-		
-		if (bolShowFunctionName == true) { System.out.println("repaintOnZoomPlusOrMinus(int " + zoomPct + ")"); }
-		
-		if (tabPane.getSelectedComponent() != null) {
-			if (tabPane.getSelectedComponent() instanceof JScrollPane) {
-				scrollPane = (JScrollPane) tabPane.getSelectedComponent();
-			} else if (tabPane.getSelectedComponent() instanceof JSplitPane) {
-				JSplitPane splitPane = (JSplitPane) tabPane.getSelectedComponent();
-				if (splitPane.getLeftComponent() instanceof JScrollPane) {
-					scrollPane = (JScrollPane) splitPane.getLeftComponent();
-				} else if (splitPane.getLeftComponent() instanceof JSplitPane) {
-					JSplitPane leftSplitPane = (JSplitPane) splitPane.getLeftComponent();
-					if (leftSplitPane.getLeftComponent() instanceof JScrollPane) {
-						scrollPane = (JScrollPane) leftSplitPane.getLeftComponent();
-					}
-				}
-			}
-			
-			if (scrollPane != null) {
-				if (scrollPane.getViewport().getComponent(0) instanceof PlanGraphPanel) {
-					PlanGraphPanel planGraphPanel = (PlanGraphPanel) scrollPane.getViewport().getComponent(0);
-					currentZoomPercentage = planGraphPanel.getZoomPercentage();
-					planGraphPanel.setZoomPercentage(currentZoomPercentage + zoomPct);
-					planGraphPanel.repaint();
-				}
-			}
+		PlanGraphPanel planGraphPanel = findSelectedPlanGraphPanel();
+		if (planGraphPanel != null) {
+			planGraphPanel.setZoomPercentage(planGraphPanel.getZoomPercentage() + zoomPct);
+			planGraphPanel.repaint();
 		}
 	}
 
 	private void repaintOnPercentageByChange(PercentageBy percentageBy) {
-		boolean bolShowFunctionName = false;
-		JScrollPane scrollPane = null;
-		
-		if (bolShowFunctionName == true) { System.out.println("repaintOnPercentageByChange()"); }
-		
-		if (tabPane.getSelectedComponent() != null) {
-			if (tabPane.getSelectedComponent() instanceof JScrollPane) {
-				scrollPane = (JScrollPane) tabPane.getSelectedComponent();
-			} else if (tabPane.getSelectedComponent() instanceof JSplitPane) {
-				JSplitPane splitPane = (JSplitPane) tabPane.getSelectedComponent();
-				if (splitPane.getLeftComponent() instanceof JScrollPane) {
-					scrollPane = (JScrollPane) splitPane.getLeftComponent();
-				} else if (splitPane.getLeftComponent() instanceof JSplitPane) {
-					JSplitPane leftSplitPane = (JSplitPane) splitPane.getLeftComponent();
-					if (leftSplitPane.getLeftComponent() instanceof JScrollPane) {
-						scrollPane = (JScrollPane) leftSplitPane.getLeftComponent();
-					}
-				}
-			}
-			
-			if (scrollPane != null) {
-				if (scrollPane.getViewport().getComponent(0) instanceof PlanGraphPanel) {
-					PlanGraphPanel planGraphPanel = (PlanGraphPanel) scrollPane.getViewport().getComponent(0);
-					planGraphPanel.setPercentageBy(percentageBy);
-					planGraphPanel.repaint();
-				}
-			}
+		if (planDiagramToolbar != null) {
+			planDiagramToolbar.setSelectedPercentageBy(percentageBy);
+		}
+		PlanGraphPanel planGraphPanel = findSelectedPlanGraphPanel();
+		if (planGraphPanel != null) {
+			planGraphPanel.setPercentageBy(percentageBy);
+			planGraphPanel.repaint();
 		}
 	}
 	
@@ -594,34 +499,45 @@ public class MainFrame extends JFrame {
 	}
 	
 	private void repaintOnLineThicknessByChange(LineThicknesses lineThickness) {
-		boolean bolShowFunctionName = false;
-		JScrollPane scrollPane = null;
-		
-		if (bolShowFunctionName == true) { System.out.println("repaintOnLineThicknessByChange()"); }
-		
-		if (tabPane.getSelectedComponent() != null) {
-			if (tabPane.getSelectedComponent() instanceof JScrollPane) {
-				scrollPane = (JScrollPane) tabPane.getSelectedComponent();
-			} else if (tabPane.getSelectedComponent() instanceof JSplitPane) {
-				JSplitPane splitPane = (JSplitPane) tabPane.getSelectedComponent();
-				if (splitPane.getLeftComponent() instanceof JScrollPane) {
-					scrollPane = (JScrollPane) splitPane.getLeftComponent();
-				} else if (splitPane.getLeftComponent() instanceof JSplitPane) {
-					JSplitPane leftSplitPane = (JSplitPane) splitPane.getLeftComponent();
-					if (leftSplitPane.getLeftComponent() instanceof JScrollPane) {
-						scrollPane = (JScrollPane) leftSplitPane.getLeftComponent();
-					}
-				}
+		if (planDiagramToolbar != null) {
+			planDiagramToolbar.setSelectedLineThickness(lineThickness);
+		}
+		PlanGraphPanel planGraphPanel = findSelectedPlanGraphPanel();
+		if (planGraphPanel != null) {
+			planGraphPanel.setLineThicknessBy(lineThickness);
+			planGraphPanel.repaint();
+		}
+	}
+
+	/** Locate the Plan Diagram graph under the selected tab (unwraps toolbar wrapper panel). */
+	private PlanGraphPanel findSelectedPlanGraphPanel() {
+		Component selected = tabPane.getSelectedComponent();
+		if (selected == null) {
+			return null;
+		}
+		return findPlanGraphPanel(selected);
+	}
+
+	private static PlanGraphPanel findPlanGraphPanel(Component root) {
+		if (root instanceof PlanGraphPanel) {
+			return (PlanGraphPanel) root;
+		}
+		if (root instanceof JScrollPane) {
+			Component view = ((JScrollPane) root).getViewport().getView();
+			if (view instanceof PlanGraphPanel) {
+				return (PlanGraphPanel) view;
 			}
-			
-			if (scrollPane != null) {
-				if (scrollPane.getViewport().getComponent(0) instanceof PlanGraphPanel) {
-					PlanGraphPanel planGraphPanel = (PlanGraphPanel) scrollPane.getViewport().getComponent(0);
-					planGraphPanel.setLineThicknessBy(lineThickness);
-					planGraphPanel.repaint();
+			return findPlanGraphPanel(view);
+		}
+		if (root instanceof Container) {
+			for (Component child : ((Container) root).getComponents()) {
+				PlanGraphPanel found = findPlanGraphPanel(child);
+				if (found != null) {
+					return found;
 				}
 			}
 		}
+		return null;
 	}
 	
 }

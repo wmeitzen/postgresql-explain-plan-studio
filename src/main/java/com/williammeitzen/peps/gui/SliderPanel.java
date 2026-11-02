@@ -1,14 +1,20 @@
 package com.williammeitzen.peps.gui;
 
+import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.Dimension;
+import java.awt.FlowLayout;
+import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
 import java.util.Hashtable;
 
 import javax.swing.ButtonGroup;
@@ -18,8 +24,10 @@ import javax.swing.JRadioButton;
 import javax.swing.JSlider;
 import javax.swing.Scrollable;
 import javax.swing.SwingConstants;
+import javax.swing.SwingUtilities;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
+import javax.swing.plaf.basic.BasicSliderUI;
 //import javax.swing.event.DocumentEvent;
 //import javax.swing.event.DocumentListener;
 
@@ -36,11 +44,16 @@ public class SliderPanel extends JPanel implements Scrollable {
 	private static final int SLIDER_PREFERRED_WIDTH = 600;
 	private static final int SLIDER_PREFERRED_HEIGHT = 80;
 	private static final int PANEL_MINIMUM_WIDTH = 320;
+	private static final int THUMB_VALUE_TRACK_HEIGHT = 18;
 	
 	private JLabel timeSliderLabel;
 	private JLabel costSliderLabel;
 	private JLabel formattedCurrentTime;
 	private JLabel formattedCurrentCost;
+	/** Value shown directly above the slider thumb (3-digit style). */
+	private JLabel thumbValueLabel;
+	private JPanel thumbValueTrack;
+	private JPanel sliderHost;
 	private JLabel propertiesDetails;
 	private JRadioButton timeSliderRB;
 	private JRadioButton costSliderRB;
@@ -253,16 +266,23 @@ public class SliderPanel extends JPanel implements Scrollable {
 			System.out.println("Error in SliderPanel.createComponents(): Unknown slider type");
 		}
 
+		thumbValueLabel = new JLabel("0.00", SwingConstants.CENTER);
+		thumbValueLabel.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 11));
+		thumbValueTrack = new JPanel(null);
+		thumbValueTrack.setOpaque(false);
+		thumbValueTrack.setPreferredSize(new Dimension(SLIDER_PREFERRED_WIDTH, THUMB_VALUE_TRACK_HEIGHT));
+		thumbValueTrack.add(thumbValueLabel);
+
 		if (planGraphPanel.getSliderType() == SliderPanel.SLIDER_TYPE_TIME) {
 			// Set the label to be drawn
 			timeSlider.setLabelTable(position);
-			//timeSlider.addChangeListener(timeSliderChangeListener);
-			formattedCurrentTime = new JLabel("0 sec");
+			formattedCurrentTime = new JLabel("0.00 sec");
+			thumbValueLabel.setText(formatThreeDigitTimeMs(0));
 		} else if (planGraphPanel.getSliderType() == SliderPanel.SLIDER_TYPE_COST) {
 			// Set the label to be drawn
 			costSlider.setLabelTable(position);
-			//costSlider.addChangeListener(costSliderChangeListener);
-			formattedCurrentCost = new JLabel("0");
+			formattedCurrentCost = new JLabel("0.00");
+			thumbValueLabel.setText(formatThreeDigitCost(0));
 		} else {
 			System.out.println("Error in SliderPanel.createComponents(): Unknown slider type");
 		}
@@ -285,79 +305,167 @@ public class SliderPanel extends JPanel implements Scrollable {
 		
 		GridBagConstraints gc = new GridBagConstraints();
 		
-		// Radio buttons — no vertical weight so a short pane doesn't compress the slider
 		gc.gridy = 0;
 		gc.gridx = 0;
 		gc.weightx = 1;
 		gc.weighty = 0;
-		gc.fill = GridBagConstraints.NONE;
+		gc.fill = GridBagConstraints.HORIZONTAL;
 		gc.insets = new Insets(4, 8, 0, 8);
 		gc.anchor = GridBagConstraints.FIRST_LINE_START;
 
-		add(timeSliderRB, gc);
-
-		gc.gridy++;
-		add(costSliderRB, gc);
+		JPanel radioRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 16, 0));
+		radioRow.setOpaque(false);
+		radioRow.add(timeSliderRB);
+		radioRow.add(costSliderRB);
+		add(radioRow, gc);
 		
 		clearSliderComponent(costSlider);
 		clearSliderComponent(costSliderLabel);
 		clearSliderComponent(timeSlider);
 		clearSliderComponent(timeSliderLabel);
+		clearSliderComponent(formattedCurrentCost);
+		clearSliderComponent(formattedCurrentTime);
+		clearSliderComponent(sliderHost);
 
-		JLabel activeLabel = null;
 		JSlider activeSlider = null;
 		if (planGraphPanel.getSliderType() == SliderPanel.SLIDER_TYPE_TIME) {
-			activeLabel = timeSliderLabel;
 			activeSlider = timeSlider;
 		} else if (planGraphPanel.getSliderType() == SliderPanel.SLIDER_TYPE_COST) {
-			activeLabel = costSliderLabel;
 			activeSlider = costSlider;
 		} else {
 			System.out.println("Error in SliderPanel.layoutComponents(): Unknown slider type");
 		}
 
-		if (activeLabel != null && activeSlider != null) {
-			gc.gridy++;
-			gc.fill = GridBagConstraints.NONE;
-			gc.weightx = 0;
-			add(activeLabel, gc);
+		if (activeSlider != null) {
+			activeSlider.setPreferredSize(new Dimension(SLIDER_PREFERRED_WIDTH, SLIDER_PREFERRED_HEIGHT));
+			activeSlider.setMinimumSize(new Dimension(PANEL_MINIMUM_WIDTH, SLIDER_PREFERRED_HEIGHT));
+
+			sliderHost = new JPanel(new BorderLayout());
+			sliderHost.setOpaque(false);
+			sliderHost.add(thumbValueTrack, BorderLayout.NORTH);
+			sliderHost.add(activeSlider, BorderLayout.CENTER);
 
 			gc.gridy++;
 			gc.fill = GridBagConstraints.HORIZONTAL;
 			gc.weightx = 1;
-			gc.weighty = 0;
-			gc.insets = new Insets(0, 8, 0, 8);
-			activeSlider.setPreferredSize(new Dimension(SLIDER_PREFERRED_WIDTH, SLIDER_PREFERRED_HEIGHT));
-			activeSlider.setMinimumSize(new Dimension(PANEL_MINIMUM_WIDTH, SLIDER_PREFERRED_HEIGHT));
-			add(activeSlider, gc);
+			gc.weighty = 1;
+			gc.insets = new Insets(2, 8, 8, 8);
+			add(sliderHost, gc);
+
+			final JSlider sliderForListeners = activeSlider;
+			activeSlider.addComponentListener(new ComponentAdapter() {
+				@Override
+				public void componentResized(ComponentEvent e) {
+					repositionThumbValueLabel(sliderForListeners);
+				}
+			});
 		}
 		
-		gc.gridy++;
-		gc.weightx = 1;
-		gc.weighty = 1; // leftover space below current-value label
-		gc.fill = GridBagConstraints.NONE;
-		gc.insets = new Insets(0, 8, 8, 8);
-		gc.anchor = GridBagConstraints.FIRST_LINE_START;
-		
-		clearSliderComponent(formattedCurrentCost);
-		clearSliderComponent(formattedCurrentTime);
-		
 		if (planGraphPanel.getSliderType() == SliderPanel.SLIDER_TYPE_TIME) {
-			if (formattedCurrentTime == null) {
-				formattedCurrentTime = new JLabel("0 sec");
-			}
-			add(formattedCurrentTime, gc);
 			setPlanTotalTimeMs(planGraphPanel.getIdExplainPlan());
+			setCurrentPlanTimeLabel(getCurrentPlanTimeMs() != null ? getCurrentPlanTimeMs() : 0);
 		} else if (planGraphPanel.getSliderType() == SliderPanel.SLIDER_TYPE_COST) {
-			if (formattedCurrentCost == null) {
-				formattedCurrentCost = new JLabel("0");
-			}
-			add(formattedCurrentCost, gc);
 			setPlanTotalCost(planGraphPanel.getIdExplainPlan());
+			setCurrentPlanCostLabel(getCurrentPlanCost() != null ? getCurrentPlanCost() : 0);
 		} else {
 			System.out.println("Error in SliderPanel.layoutComponents(): Unknown slider type");
 		}
 		
+	}
+
+	private void repositionThumbValueLabel(JSlider slider) {
+		if (thumbValueLabel == null || thumbValueTrack == null || slider == null) {
+			return;
+		}
+		thumbValueLabel.setSize(thumbValueLabel.getPreferredSize());
+		int thumbCenterX = xPositionForSliderValue(slider, slider.getValue());
+		Point trackPoint = SwingUtilities.convertPoint(slider, new Point(thumbCenterX, 0), thumbValueTrack);
+		int x = trackPoint.x - thumbValueLabel.getWidth() / 2;
+		int maxX = Math.max(0, thumbValueTrack.getWidth() - thumbValueLabel.getWidth());
+		x = Math.max(0, Math.min(x, maxX));
+		thumbValueLabel.setLocation(x, Math.max(0, (THUMB_VALUE_TRACK_HEIGHT - thumbValueLabel.getHeight()) / 2));
+		thumbValueTrack.repaint();
+	}
+
+	private static int xPositionForSliderValue(JSlider slider, int value) {
+		if (slider.getUI() instanceof BasicSliderUI) {
+			BasicSliderUI ui = (BasicSliderUI) slider.getUI();
+			int low = 0;
+			int high = Math.max(slider.getWidth() - 1, 0);
+			// valueForXPosition is public; binary-search the matching x
+			while (low < high) {
+				int mid = (low + high) / 2;
+				if (ui.valueForXPosition(mid) < value) {
+					low = mid + 1;
+				} else {
+					high = mid;
+				}
+			}
+			return low;
+		}
+		int range = slider.getMaximum() - slider.getMinimum();
+		if (range <= 0) {
+			return slider.getWidth() / 2;
+		}
+		double fraction = (value - slider.getMinimum()) / (double) range;
+		Insets insets = slider.getInsets();
+		int left = insets.left + 8;
+		int right = slider.getWidth() - insets.right - 8;
+		return left + (int) Math.round(fraction * Math.max(right - left, 0));
+	}
+
+	/** Numeric part uses 3 significant digits (e.g. 1.50 sec, 399 ms). */
+	private static String formatThreeDigitTimeMs(double milliseconds) {
+		double seconds = milliseconds / 1000.0;
+		double abs = Math.abs(seconds);
+		String sign = seconds < 0 ? "-" : "";
+		if (abs == 0) {
+			return "0.00 sec";
+		}
+		if (abs < 1e-6) {
+			return sign + threeDigitNumber(abs * 1e9) + " ns";
+		}
+		if (abs < 1e-3) {
+			return sign + threeDigitNumber(abs * 1e6) + " \u03bcs";
+		}
+		if (abs < 1) {
+			return sign + threeDigitNumber(abs * 1e3) + " ms";
+		}
+		if (abs < 60) {
+			return sign + threeDigitNumber(abs) + " sec";
+		}
+		if (abs < 3600) {
+			return sign + threeDigitNumber(abs / 60.0) + " min";
+		}
+		return sign + threeDigitNumber(abs / 3600.0) + " hr";
+	}
+
+	private static String formatThreeDigitCost(double cost) {
+		double abs = Math.abs(cost);
+		String sign = cost < 0 ? "-" : "";
+		String[] units = { "", "k", "M", "B", "Tr" };
+		int index = 0;
+		while (abs >= 1000 && index < units.length - 1) {
+			abs /= 1000;
+			index++;
+		}
+		return sign + threeDigitNumber(abs) + units[index];
+	}
+
+	private static String threeDigitNumber(double magnitude) {
+		double abs = Math.abs(magnitude);
+		if (abs == 0) {
+			return "0.00";
+		}
+		int digits;
+		if (abs >= 100) {
+			digits = 0;
+		} else if (abs >= 10) {
+			digits = 1;
+		} else {
+			digits = 2;
+		}
+		return String.format("%." + digits + "f", magnitude);
 	}
 
 	@Override
@@ -367,7 +475,8 @@ public class SliderPanel extends JPanel implements Scrollable {
 
 	@Override
 	public int getScrollableUnitIncrement(Rectangle visibleRect, int orientation, int direction) {
-		return 16;
+		// Match Property/Value pane wheel speed
+		return 48;
 	}
 
 	@Override
@@ -543,20 +652,37 @@ public class SliderPanel extends JPanel implements Scrollable {
 	}
 	
 	public void setCurrentPlanTimeLabel(int intCurrentPlanTimeMs) {
-		formattedCurrentTime.setText(Utils.elapsed_time_ms_one_decimal(intCurrentPlanTimeMs));
+		setCurrentPlanTimeLabel((double) intCurrentPlanTimeMs);
 	}
 	
 	public void setCurrentPlanTimeLabel(double dblCurrentPlanTimeMs) {
 		boolean bolShowProperties = false;
 		if (bolShowProperties == true) { System.out.println("dblCurrentPlanTimeMs: " + dblCurrentPlanTimeMs); }
-		formattedCurrentTime.setText(Utils.elapsed_time_ms_one_decimal(dblCurrentPlanTimeMs));
+		String text = formatThreeDigitTimeMs(dblCurrentPlanTimeMs);
+		if (formattedCurrentTime != null) {
+			formattedCurrentTime.setText(text);
+		}
+		updateThumbValueLabel(text, timeSlider);
 	}
 	
 	public void setCurrentPlanCostLabel(double dblCurrentPlanCost) {
 		boolean bolShowProperties = false;
 		if (bolShowProperties == true) { System.out.println("dblCurrentPlanCost: " + dblCurrentPlanCost); }
-		//formattedCurrentCost.setText(Double.toString(dblCurrentPlanCost));
-		formattedCurrentCost.setText(Utils.formattedCost(dblCurrentPlanCost));
+		String text = formatThreeDigitCost(dblCurrentPlanCost);
+		if (formattedCurrentCost != null) {
+			formattedCurrentCost.setText(text);
+		}
+		updateThumbValueLabel(text, costSlider);
+	}
+
+	private void updateThumbValueLabel(String text, JSlider slider) {
+		if (thumbValueLabel == null) {
+			return;
+		}
+		thumbValueLabel.setText(text);
+		if (slider != null) {
+			repositionThumbValueLabel(slider);
+		}
 	}
 	
 	public Double getCurrentPlanTimeMs() {

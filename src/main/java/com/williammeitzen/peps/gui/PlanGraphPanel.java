@@ -68,7 +68,7 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 	private int operatorCount;
 	private int intZoomPercentage = 100;
 	private PercentageBy percentageBy = PercentageBy.COST; // update MainFrame.java.JMenu percentageByItem, *.setSelected(true)
-	private LineThicknesses enmLineThicknessBy = LineThicknesses.ACTUAL_ROWS; // update MainFrame.java.JMenu lineThicknessByItem, *.setSelected(true)
+	private LineThicknesses enmLineThicknessBy = LineThicknesses.ACTUAL_DATA_MASS; // update MainFrame.java.JMenu lineThicknessByItem, *.setSelected(true)
 	private Double dblPlanTimeSliderMs = 0d;
 	private Double dblPlanCostSlider = 0d;
 	private int sliderType = SliderPanel.SLIDER_TYPE_COST; // SLIDER_TYPE_TIME -or- SLIDER_TYPE_COST
@@ -222,7 +222,10 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 		PlanSourcePanel objComponent = (PlanSourcePanel) objCurrentPlanTabs.getComponentAt(0);
 		strPlanSourceButtonClicked = objComponent.getPlanSourceButtonClicked();
 
-		if (isPlanDiagramConstructionAction(strPlanSourceButtonClicked) || objComponent.getPlanTextIsDirty()) {
+		boolean forceExecuteRebuild = PlanSourcePanel.EXECUTE_AND_SHOW_PLAN_DIAGRAM.equals(strPlanSourceButtonClicked);
+		boolean showJsonAction = PlanSourcePanel.SHOW_JSON_PLAN_DIAGRAM.equals(strPlanSourceButtonClicked);
+		boolean jsonNeedsRebuild = showJsonAction && objComponent.shouldRebuildDiagramFromCurrentJson();
+		if (forceExecuteRebuild || jsonNeedsRebuild || objComponent.getPlanTextIsDirty()) {
 			setDiagramBusyCursor(this, true);
 			busyCursorShown = true;
 		}
@@ -425,27 +428,33 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 			objComponent.setPlanSourceButtonClicked(null);
 		}
 
-		// get json text from textbox
+		// get json text from textbox — rebuild only when JSON changed since last diagram
 		if (strPlanSourceButtonClicked != null && strPlanSourceButtonClicked.equals(PlanSourcePanel.SHOW_JSON_PLAN_DIAGRAM)) {
-			planText = objComponent.getJsonPlanText();
-
-			//remove trailing spaces, +, CR, "QUERY PLAN", hyphens, "(1 row)"
-			planText = planText.replaceAll(" {5,}", " ");
-			planText = planText.replaceAll("^ *" + Pattern.quote("QUERY PLAN"), "");
-			planText = planText.replaceAll("\\-{10,}", "");
-			planText = planText.replaceAll(Pattern.quote("+") + " *[\r\n]", System.getProperty("line.separator"));
-			planText = planText.replaceAll(Pattern.quote("(") + "\\d+ row.*$", "");
+			planText = PlanSourcePanel.normalizeJsonPlanText(objComponent.getJsonPlanText());
 			
 			if (bolShowRetrievedJsonPlan == true) { System.out.println(planText); }
 			
-			// parse the whole plan
-			objComponent.setPlanTextIsDirty(true);
+			if (objComponent.shouldRebuildDiagramFromJson(planText)) {
+				objComponent.setPlanTextIsDirty(true);
+			}
 			
 			objComponent.setPlanSourceButtonClicked(null);
 		}
 
 		if (objComponent.getPlanTextIsDirty() == true) {
+			if (planText == null || planText.isEmpty()) {
+				planText = PlanSourcePanel.normalizeJsonPlanText(objComponent.getJsonPlanText());
+			}
+			// Stale dirty from editors: skip full rebuild when JSON is unchanged (Execute always rebuilds)
+			if (!forceExecuteRebuild && !objComponent.shouldRebuildDiagramFromJson(planText)) {
+				objComponent.setPlanTextIsDirty(false);
+			}
+		}
+
+		boolean rebuiltPlanData = false;
+		if (objComponent.getPlanTextIsDirty() == true) {
 			operatorCount = -1;
+			rebuiltPlanData = true;
 
 			if (bolShowTiming == true) { System.out.println("before delete stuff: " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
 
@@ -495,6 +504,7 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 				strSQL = "begin transaction;\n" + strSQL + "commit;\n";
 				Database.dml(strSQL);
 			} else {
+				rebuiltPlanData = false;
 				return;
 			}
 			
@@ -673,11 +683,18 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 		//} 
 		
 		// the plan's clean now, so minimize work to draw plan on screen
+		if (rebuiltPlanData) {
+			objComponent.markDiagramRenderedFromJson(
+					PlanSourcePanel.normalizeJsonPlanText(
+							planText != null && !planText.isEmpty() ? planText : objComponent.getJsonPlanText()));
+		}
 		objComponent.setPlanTextIsDirty(false);
 		objComponent.setLineThicknessByIsDirty(false);
 		objComponent.setZoomPercentageIsDirty(false);
 		objComponent.setWorkerIsDirty(false);
 		objComponent.setPercentageByIsDirty(false);
+
+		repairMissingNorthLabelsIfNeeded(idExplainPlan);
 
 		if (bolShowTiming == true) { System.out.println("before drawOperations: " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
 		drawOperations(g, idExplainPlan);
@@ -2036,10 +2053,15 @@ from explain_plan_operator_annotations
 		if (bolShowTiming == true) { System.out.println("before updateStringUnitsPercentageAnnotationsTextData (6): " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
 
 		// set labels and highlights
+		// SQLite: null || 'x' => null, so missing cost/time metrics must not erase the operator number.
+		// When a metric is unavailable, fall back to "(id) Node Type" above the icon.
 		strSQL += "update explain_plan_operator_annotations as EPOA set\n" +
 		
 				// cost
-				"cost_label_string = '(' || id_explain_plan_property || ') Cost: ' || cost_percentage_string || '%'\n" + 
+				"cost_label_string = case\n" +
+				"    when cost_percentage_string is null then '(' || id_explain_plan_property || ')' || case when node_type is null or node_type = '' then '' else ' ' || node_type end\n" +
+				"    else '(' || id_explain_plan_property || ') Cost: ' || cost_percentage_string || '%'\n" +
+				"  end\n" + 
 				", cost_highlight_1 = case\n" + 
 				"  	 when cost_percentage_string*1.0 = (select max(cost_percentage_string*1.0) from explain_plan_operator_annotations where id_explain_plan = EPOA.id_explain_plan and id_explain_plan_property <> -1) then 1\n" + 
 				"    else 0\n" + 
@@ -2050,7 +2072,12 @@ from explain_plan_operator_annotations
 				"  end\n" +
 				
 				// time difference
-				", difference_time_label_string = '(' || id_explain_plan_property || ') Time Diff: ' || difference_time_percentage_string || '% (' || difference_time_units_string || ')'\n" + 
+				", difference_time_label_string = case\n" +
+				"    when difference_time_percentage_string is null and difference_time_units_string is null then '(' || id_explain_plan_property || ')' || case when node_type is null or node_type = '' then '' else ' ' || node_type end\n" +
+				"    when difference_time_percentage_string is null then '(' || id_explain_plan_property || ') Time Diff: (' || difference_time_units_string || ')'\n" +
+				"    when difference_time_units_string is null then '(' || id_explain_plan_property || ') Time Diff: ' || difference_time_percentage_string || '%'\n" +
+				"    else '(' || id_explain_plan_property || ') Time Diff: ' || difference_time_percentage_string || '% (' || difference_time_units_string || ')'\n" +
+				"  end\n" + 
 				", difference_time_highlight_1 = case\n" + 
 				"    when difference_time_percentage_string*1.0 = (select max(difference_time_percentage_string*1.0) from explain_plan_operator_annotations where id_explain_plan = EPOA.id_explain_plan and id_explain_plan_property <> -1) then 1\n" + 
 				"    else 0\n" + 
@@ -2060,8 +2087,13 @@ from explain_plan_operator_annotations
 				"    else 0\n" + 
 				"  end\n" +
 				
-				// exclusive time
-				", exclusive_time_label_string = '(' || id_explain_plan_property || ') Excl Time: ' || exclusive_time_percentage_string || '% (' || exclusive_time_units_string || ')'\n" + 
+				// exclusive / operator time
+				", exclusive_time_label_string = case\n" +
+				"    when exclusive_time_percentage_string is null and exclusive_time_units_string is null then '(' || id_explain_plan_property || ')' || case when node_type is null or node_type = '' then '' else ' ' || node_type end\n" +
+				"    when exclusive_time_percentage_string is null then '(' || id_explain_plan_property || ') Opr Time: (' || exclusive_time_units_string || ')'\n" +
+				"    when exclusive_time_units_string is null then '(' || id_explain_plan_property || ') Opr Time: ' || exclusive_time_percentage_string || '%'\n" +
+				"    else '(' || id_explain_plan_property || ') Opr Time: ' || exclusive_time_percentage_string || '% (' || exclusive_time_units_string || ')'\n" +
+				"  end\n" + 
 				", exclusive_time_highlight_1 = case\n" + 
 				"    when exclusive_time_percentage_string*1.0 = (select max(exclusive_time_percentage_string*1.0) from explain_plan_operator_annotations where id_explain_plan = EPOA.id_explain_plan and id_explain_plan_property <> -1) then 1\n" + 
 				"    else 0\n" + 
@@ -3199,7 +3231,7 @@ from explain_plan_operator_workers
 			+ "actual_data_size_label_string = " + returnLabelStringColumnAssignment("Actual Mass: {percentage}% ({units})", "Actual Mass: {units}", "actual_data_size_percentage_string", "actual_data_size_units_string") + "\n"
 			+ ", actual_rows_label_string = " + returnLabelStringColumnAssignment("Actual Rows: {percentage}% ({units})", "Actual Rows: {units}", "actual_rows_percentage_string", "actual_rows_units_string") + "\n"
 			+ ", difference_time_label_string = " + returnLabelStringColumnAssignment("Time Diff: {percentage}% ({units})", "Time Diff: {units}", "difference_time_percentage_string", "difference_time_units_string") + "\n" 
-			+ ", exclusive_time_label_string = " + returnLabelStringColumnAssignment("Excl Time: {percentage}% ({units})", "Excl Time: {units}", "exclusive_time_percentage_string", "exclusive_time_units_string") + "\n" 
+			+ ", exclusive_time_label_string = " + returnLabelStringColumnAssignment("Opr Time: {percentage}% ({units})", "Opr Time: {units}", "exclusive_time_percentage_string", "exclusive_time_units_string") + "\n" 
 			+ "where EPOW.id_explain_plan = " + intIDExplainPlan + " -- id_explain_plan\n"
 			+ ";\n";
 
@@ -3245,7 +3277,7 @@ from explain_plan_operator_annotations
 			+ "parallel_leader_actual_data_size_label_string = " + returnLabelStringColumnAssignment("Actual Mass: {percentage}% ({units})", "Actual Mass: {units}", "parallel_leader_actual_data_size_percentage_string", "parallel_leader_actual_data_size_units_string") + "\n"
 			+ ", parallel_leader_actual_rows_label_string = " + returnLabelStringColumnAssignment("Actual Rows: {percentage}% ({units})", "Actual Rows: {units}", "parallel_leader_actual_rows_percentage_string", "parallel_leader_actual_rows_units_string") + "\n"
 			+ ", parallel_leader_difference_time_label_string = " + returnLabelStringColumnAssignment("Time Diff: {percentage}% ({units})", "Time Diff: {units}", "parallel_leader_difference_time_percentage_string", "parallel_leader_difference_time_units_string") + "\n" // already set, I think
-			+ ", parallel_leader_exclusive_time_label_string = " + returnLabelStringColumnAssignment("Excl Time: {percentage}% ({units})", "Excl Time: {units}", "parallel_leader_exclusive_time_percentage_string", "parallel_leader_exclusive_time_units_string") + "\n" 
+			+ ", parallel_leader_exclusive_time_label_string = " + returnLabelStringColumnAssignment("Opr Time: {percentage}% ({units})", "Opr Time: {units}", "parallel_leader_exclusive_time_percentage_string", "parallel_leader_exclusive_time_units_string") + "\n" 
 			+ "where EPOA.id_explain_plan = " + intIDExplainPlan + " -- id_explain_plan\n"
 			+ ";\n";
 
@@ -3622,6 +3654,32 @@ from explain_plan_operator_annotations order by id_explain_plan_property, worker
 		Database.dml(strSQL);
 	}
 	
+	/**
+	 * Plans whose JSON omits costs/timings (or older builds that null-concatenated
+	 * labels) can end up with null / id-only north_1_text. Repair in place so
+	 * "(id) Node Type" appears above operators without a full JSON rebuild.
+	 */
+	private void repairMissingNorthLabelsIfNeeded(int intIDExplainPlan) {
+		if (intIDExplainPlan < 0) {
+			return;
+		}
+		String strSQL = "select count(*) as c from explain_plan_operator_annotations\n"
+				+ "where id_explain_plan = " + intIDExplainPlan + "\n"
+				+ "and id_explain_plan_property > -1\n"
+				+ "and (\n"
+				+ "  north_1_text is null\n"
+				+ "  or (node_type is not null and node_type <> ''\n"
+				+ "      and north_1_text = '(' || id_explain_plan_property || ')')\n"
+				+ ")";
+		JsonObject row = Database.row(strSQL);
+		if (row == null || row.get("c") == null || row.getInteger("c").intValue() == 0) {
+			return;
+		}
+		updateStringUnitsPercentageAnnotationsTextData(intIDExplainPlan);
+		updateFontMetricsNorthOptionsWidthAndHeight(intIDExplainPlan);
+		copyPercentageByForNorth1(intIDExplainPlan);
+	}
+
 	public void copyPercentageByForNorth1(int intIDExplainPlan) {
 		String strSQL;
 		boolean bolShowSQL = false;
@@ -3661,6 +3719,17 @@ from explain_plan_operator_annotations order by id_explain_plan_property, worker
 				+ "end\n"
 				+ "where id_explain_plan = " + intIDExplainPlan + ";\n";
 
+		// Keep "(id) Node Type" visible when the selected metric has no value
+		strSQL += "update explain_plan_operator_annotations set\n"
+				+ "north_1_text = '(' || id_explain_plan_property || ')'"
+				+ " || case when node_type is null or node_type = '' then '' else ' ' || node_type end\n"
+				+ ", north_1_fontmetrics_height = " + defaultMaxAscent + "\n"
+				+ ", north_1_highlight_1 = 0\n"
+				+ ", north_1_highlight_2 = 0\n"
+				+ "where id_explain_plan = " + intIDExplainPlan + "\n"
+				+ "and id_explain_plan_property > -1\n"
+				+ "and north_1_text is null;\n";
+
 		// set blank string for "with cte" operators
 		strWithCTEOperator = "CTE";
 		strSQL += "update explain_plan_operator_annotations set\n"
@@ -3685,6 +3754,36 @@ from explain_plan_operator_annotations order by id_explain_plan_property, worker
 				+ "and id_explain_plan_property = -1;\n";
 		if (bolShowSQL == true) { System.out.println(strSQL); }
 		Database.dml(strSQL);
+
+		// Font widths for id / id+node-type fallback labels (e.g. "(81) Gather")
+		JsonArray idOnlyRows = Database.rows(
+				"select id_explain_plan_property, north_1_text from explain_plan_operator_annotations\n"
+						+ "where id_explain_plan = " + intIDExplainPlan + "\n"
+						+ "and id_explain_plan_property > -1\n"
+						+ "and north_1_text is not null\n"
+						+ "and north_1_text like '(' || id_explain_plan_property || '%'\n"
+						+ "and north_1_text not like '%Cost:%'\n"
+						+ "and north_1_text not like '%Opr Time:%'\n"
+						+ "and north_1_text not like '%Time Diff:%'\n"
+						+ "and coalesce(north_1_fontmetrics_width, 0) = 0");
+		if (idOnlyRows != null && !idOnlyRows.isEmpty()) {
+			StringBuilder widthSQL = new StringBuilder();
+			for (int i = 0; i < idOnlyRows.size(); i++) {
+				JsonObject idRow = (JsonObject) idOnlyRows.get(i);
+				Integer id = idRow.getInteger("id_explain_plan_property");
+				String label = idRow.getString("north_1_text");
+				if (id == null || label == null) {
+					continue;
+				}
+				widthSQL.append("update explain_plan_operator_annotations set\n")
+						.append("north_1_fontmetrics_width = ").append(defaultFontMetrics.stringWidth(label)).append("\n")
+						.append("where id_explain_plan = ").append(intIDExplainPlan).append("\n")
+						.append("and id_explain_plan_property = ").append(id).append(";\n");
+			}
+			if (widthSQL.length() > 0) {
+				Database.dml(widthSQL.toString());
+			}
+		}
 	}
 		
 
@@ -5803,7 +5902,7 @@ order by id_explain_plan_property;
 		notes.append(Utils.units(total.doubleValue()));
 		notes.append(" ").append(diagramPhrase);
 		notes.append(" ≈ ").append(raw);
-		notes.append(" (").append(explainPropertyName).append(")");
+		notes.append(" ").append(explainPropertyName);
 		notes.append(" × ").append(multiplierExplain);
 	}
 
@@ -6124,151 +6223,104 @@ order by id_explain_plan_property;
 		boolean bolEnableExclusiveTimeButton = Utils.objectToBoolean(jsnRow.get("exclusive_time_enabled"));
 		boolean bolEnableTimeDifferenceButton = Utils.objectToBoolean(jsnRow.get("time_difference_enabled"));
 
-		JSplitPane currentPane = (JSplitPane) objCurrentPlanTabs.getSelectedComponent();
-		if (currentPane != null) {
-			if (currentPane.getParent() instanceof JTabbedPane) {
-				JTabbedPane tabbedPane = (JTabbedPane) currentPane.getParent();
-				if (tabbedPane.getParent() instanceof JSplitPane) {
-					JSplitPane splitPane = (JSplitPane) tabbedPane.getParent();
-					for (Component objSplitPaneComponent : splitPane.getParent().getComponents()) {
-						if (objSplitPaneComponent instanceof JPanel) {
-							for (Component objJPanelItem : ((JPanel) objSplitPaneComponent).getComponents()) {
+		Window window = SwingUtilities.getWindowAncestor(objCurrentPlanTabs);
+		Container searchRoot = window != null ? window : objCurrentPlanTabs;
+		PlanDiagramToolbar planDiagramToolbar = findComponentOfType(searchRoot, PlanDiagramToolbar.class);
+		if (planDiagramToolbar != null) {
+			planDiagramToolbar.setCombosEnabled(true);
+			planDiagramToolbar.setLineThicknessOptionEnabled(LineThicknesses.ACTUAL_DATA_MASS, bolEnableActualMassButton);
+			planDiagramToolbar.setLineThicknessOptionEnabled(LineThicknesses.ACTUAL_ROWS, bolEnableActualRowsButton);
+			planDiagramToolbar.setLineThicknessOptionEnabled(LineThicknesses.ACTUAL_VS_ESTIMATED_ROWS_RATIO, bolEnableAVsERowsButton);
+			planDiagramToolbar.setLineThicknessOptionEnabled(LineThicknesses.ACTUAL_VS_ESTIMATED_MASS_RATIO, bolEnableAVsEMassButton);
+			planDiagramToolbar.setLineThicknessOptionEnabled(LineThicknesses.ESTIMATED_DATA_MASS, bolEnableEstimatedMassButton);
+			planDiagramToolbar.setLineThicknessOptionEnabled(LineThicknesses.ESTIMATED_ROWS, bolEnableEstimatedRowsButton);
 
-								if (objJPanelItem instanceof LineThicknessByRadioButtonsToolbar) {
-									LineThicknessByRadioButtonsToolbar lineThicknessByRadioButtonsToolbar = (LineThicknessByRadioButtonsToolbar) objJPanelItem;
-									lineThicknessByRadioButtonsToolbar.setLineThicknessByActualRowsButtonEnabled(bolEnableActualRowsButton);
-									lineThicknessByRadioButtonsToolbar.setLineThicknessByEstimatedRowsButtonEnabled(bolEnableEstimatedRowsButton);
-									lineThicknessByRadioButtonsToolbar.setLineThicknessByActualMassButtonEnabled(bolEnableActualMassButton);
-									lineThicknessByRadioButtonsToolbar.setLineThicknessByEstimatedMassButtonEnabled(bolEnableEstimatedMassButton);
-									lineThicknessByRadioButtonsToolbar.setLineThicknessByActualVsEstimatedRowsRatioButtonEnabled(bolEnableAVsERowsButton);
-									lineThicknessByRadioButtonsToolbar.setLineThicknessByActualVsEstimatedMassRatioButtonEnabled(bolEnableAVsEMassButton);
+			planDiagramToolbar.setPercentageByOptionEnabled(PercentageBy.COST, bolEnableCostButton);
+			planDiagramToolbar.setPercentageByOptionEnabled(PercentageBy.EXCLUSIVE_TIME, bolEnableExclusiveTimeButton);
+			planDiagramToolbar.setPercentageByOptionEnabled(PercentageBy.TIME_DIFFERENCE, bolEnableTimeDifferenceButton);
+			planDiagramToolbar.refreshPercentageByAvailability();
 
-									LineThicknesses currentLineThickness = getLineThicknessBy();
-									boolean bolLineThicknessByIsDirty = false;
-									
-									if (currentLineThickness == LineThicknesses.ACTUAL_DATA_MASS) {
-										lineThicknessByRadioButtonsToolbar.setLineThicknessByActualMassButtonSelect();
-									} else if (currentLineThickness == LineThicknesses.ACTUAL_ROWS) {
-										lineThicknessByRadioButtonsToolbar.setLineThicknessByActualRowsButtonSelect();
-									} else if (currentLineThickness == LineThicknesses.ACTUAL_VS_ESTIMATED_MASS_RATIO) {
-										lineThicknessByRadioButtonsToolbar.setLineThicknessByActualVsEstimatedMassRatioButtonSelect();
-									} else if (currentLineThickness == LineThicknesses.ACTUAL_VS_ESTIMATED_ROWS_RATIO) {
-										lineThicknessByRadioButtonsToolbar.setLineThicknessByActualVsEstimatedRowsRatioButtonSelect();
-									} else if (currentLineThickness == LineThicknesses.ESTIMATED_DATA_MASS) {
-										lineThicknessByRadioButtonsToolbar.setLineThicknessByEstimatedMassButtonSelect();
-									} else if (currentLineThickness == LineThicknesses.ESTIMATED_ROWS) {
-										lineThicknessByRadioButtonsToolbar.setLineThicknessByEstimatedRowsButtonSelect();
-									}
+			PlanSourcePanel objComponent = (PlanSourcePanel) objCurrentPlanTabs.getComponentAt(0);
 
-									PlanSourcePanel objComponent = (PlanSourcePanel) objCurrentPlanTabs.getComponentAt(0);
-									objComponent.setLineThicknessByIsDirty(true);
-
-									// set the first radio button we can
-									if (getLineThicknessBy() == LineThicknesses.ACTUAL_DATA_MASS && bolEnableActualMassButton == false) {
-										setLineThicknessBy(LineThicknesses.ESTIMATED_DATA_MASS);
-										lineThicknessByRadioButtonsToolbar.setLineThicknessByEstimatedMassButtonSelect();
-										lineThicknessByRadioButtonsToolbar.performEstimatedMassButton();
-										bolLineThicknessByIsDirty = true;
-									}
-
-									if (getLineThicknessBy() == LineThicknesses.ACTUAL_ROWS && bolEnableActualRowsButton == false) {
-										setLineThicknessBy(LineThicknesses.ESTIMATED_ROWS);
-										lineThicknessByRadioButtonsToolbar.setLineThicknessByEstimatedRowsButtonSelect();
-										lineThicknessByRadioButtonsToolbar.performEstimatedRowsButton();
-										bolLineThicknessByIsDirty = true;
-									} else if (getLineThicknessBy() == LineThicknesses.ACTUAL_VS_ESTIMATED_MASS_RATIO && bolEnableAVsEMassButton == false) {
-										setLineThicknessBy(LineThicknesses.ESTIMATED_ROWS);
-										lineThicknessByRadioButtonsToolbar.setLineThicknessByEstimatedRowsButtonSelect();
-										lineThicknessByRadioButtonsToolbar.performEstimatedRowsButton();
-										bolLineThicknessByIsDirty = true;
-									} else if (getLineThicknessBy() == LineThicknesses.ACTUAL_VS_ESTIMATED_ROWS_RATIO && bolEnableAVsERowsButton == false) {
-										setLineThicknessBy(LineThicknesses.ESTIMATED_ROWS);
-										lineThicknessByRadioButtonsToolbar.setLineThicknessByEstimatedRowsButtonSelect();
-										lineThicknessByRadioButtonsToolbar.performEstimatedRowsButton();
-										bolLineThicknessByIsDirty = true;
-									} else if (getLineThicknessBy() == LineThicknesses.ESTIMATED_DATA_MASS && bolEnableEstimatedMassButton == false) {
-										setLineThicknessBy(LineThicknesses.ESTIMATED_ROWS);
-										lineThicknessByRadioButtonsToolbar.setLineThicknessByEstimatedRowsButtonSelect();
-										lineThicknessByRadioButtonsToolbar.performEstimatedRowsButton();
-										bolLineThicknessByIsDirty = true;
-									}
-
-									objComponent.setLineThicknessByIsDirty(bolLineThicknessByIsDirty);
-									//objJPanelItem.repaint();
-									//objComponent.repaint();
-								}
-
-								if (objJPanelItem instanceof PercentageByRadioButtonsToolbar) {
-									PercentageByRadioButtonsToolbar percentageByRadioButtonsToolbar = (PercentageByRadioButtonsToolbar) objJPanelItem;
-									percentageByRadioButtonsToolbar.setPercentageByCostButtonEnabled(bolEnableCostButton);
-									percentageByRadioButtonsToolbar.setPercentageByExclusiveTimeButtonEnabled(bolEnableExclusiveTimeButton);
-									percentageByRadioButtonsToolbar.setPercentageByTimeDifferenceButtonEnabled(bolEnableTimeDifferenceButton);
-									
-									PercentageBy currentPercentageBy = getPercentageBy();
-									boolean bolPercentageByIsDirty = false;
-									
-									if (currentPercentageBy == PercentageBy.COST) {
-										percentageByRadioButtonsToolbar.setPercentageByCostButtonSelect();
-									} else if (currentPercentageBy == PercentageBy.EXCLUSIVE_TIME) {
-										percentageByRadioButtonsToolbar.setPercentageByExclusiveTimeButtonSelect();
-									} else if (currentPercentageBy == PercentageBy.TIME_DIFFERENCE) {
-										percentageByRadioButtonsToolbar.setPercentageByTimeDifferenceButtonSelect();
-									}									
-
-									PlanSourcePanel objComponent = (PlanSourcePanel) objCurrentPlanTabs.getComponentAt(0);
-									objComponent.setPercentageByIsDirty(true);
-
-									// set the first radio button we can
-									if (getPercentageBy() == PercentageBy.COST && bolEnableCostButton == false) {
-										setPercentageBy(PercentageBy.EXCLUSIVE_TIME);
-										percentageByRadioButtonsToolbar.setPercentageByExclusiveTimeButtonSelect();
-										percentageByRadioButtonsToolbar.performExclusiveTimeButton();
-										bolPercentageByIsDirty = true;
-									}
-									
-									if (getPercentageBy() == PercentageBy.EXCLUSIVE_TIME && bolEnableExclusiveTimeButton == false) {
-										setPercentageBy(PercentageBy.TIME_DIFFERENCE);
-										percentageByRadioButtonsToolbar.setPercentageByTimeDifferenceButtonSelect();
-										percentageByRadioButtonsToolbar.performTimeDifferenceButton();
-										bolPercentageByIsDirty = true;
-									}
-									
-									if (getPercentageBy() == PercentageBy.TIME_DIFFERENCE && bolEnableTimeDifferenceButton == false) {
-										setPercentageBy(PercentageBy.COST);
-										percentageByRadioButtonsToolbar.setPercentageByCostButtonSelect();
-										percentageByRadioButtonsToolbar.performCostButton();
-										bolPercentageByIsDirty = true;
-									}
-									
-									objComponent.setPercentageByIsDirty(bolPercentageByIsDirty);
-								}
-/*
-								if (objJPanelItem instanceof SliderPanel) {
-									System.out.println("objJPanelItem instanceof SliderPanel");
-								}
-*/
-
-								//JSplitPane splitPane = (JSplitPane) objCurrentPlanTabs.getSelectedComponent();
-/*
-								if (splitPane != null) {
-									if (splitPane.getBottomComponent() instanceof JScrollPane) {
-										JScrollPane scrollPane = (JScrollPane) splitPane.getBottomComponent();
-										if (scrollPane.getViewport().getComponent(0) instanceof SliderPanel) {
-											SliderPanel sliderPanel = (SliderPanel) scrollPane.getViewport().getComponent(0);
-											//sliderPanel.setPlanTotalCost(idExplainPlan);
-											//setSliderType(sliderPanel.SLIDER_TYPE_COST);
-											if (bolShowProperties == true) { System.out.println("in 'if (splitPane != null)'"); }
-											sliderPanel.refreshComponents(); // new
-										}
-									}
-								}
-*/
-
-							}
-						}
-					}
+			// On first diagram appear for this plan, select the first enabled Line Thickness (combo order)
+			LineThicknesses firstEnabledThickness = null;
+			for (LineThicknesses value : LineThicknesses.values()) {
+				boolean enabled;
+				switch (value) {
+				case ACTUAL_DATA_MASS:
+					enabled = bolEnableActualMassButton;
+					break;
+				case ACTUAL_ROWS:
+					enabled = bolEnableActualRowsButton;
+					break;
+				case ACTUAL_VS_ESTIMATED_ROWS_RATIO:
+					enabled = bolEnableAVsERowsButton;
+					break;
+				case ACTUAL_VS_ESTIMATED_MASS_RATIO:
+					enabled = bolEnableAVsEMassButton;
+					break;
+				case ESTIMATED_DATA_MASS:
+					enabled = bolEnableEstimatedMassButton;
+					break;
+				case ESTIMATED_ROWS:
+					enabled = bolEnableEstimatedRowsButton;
+					break;
+				default:
+					enabled = false;
+					break;
+				}
+				if (enabled) {
+					firstEnabledThickness = value;
+					break;
 				}
 			}
+
+			boolean bolLineThicknessByIsDirty = false;
+			if (firstEnabledThickness != null) {
+				if (getLineThicknessBy() != firstEnabledThickness) {
+					setLineThicknessBy(firstEnabledThickness);
+					planDiagramToolbar.selectAndFireLineThickness(firstEnabledThickness);
+					bolLineThicknessByIsDirty = true;
+				} else {
+					planDiagramToolbar.setSelectedLineThickness(firstEnabledThickness);
+				}
+			}
+
+			objComponent.setLineThicknessByIsDirty(bolLineThicknessByIsDirty);
+
+			boolean bolPercentageByIsDirty = false;
+			boolean anyPercentageByEnabled = bolEnableCostButton || bolEnableExclusiveTimeButton
+					|| bolEnableTimeDifferenceButton;
+			if (!anyPercentageByEnabled) {
+				// costs off + timing off: Percentage By is "(none available)"; north stays id-only
+				bolPercentageByIsDirty = true;
+			} else {
+				PercentageBy preferred = getPercentageBy();
+				PercentageBy chosen = null;
+				if (preferred == PercentageBy.COST && bolEnableCostButton) {
+					chosen = PercentageBy.COST;
+				} else if (preferred == PercentageBy.EXCLUSIVE_TIME && bolEnableExclusiveTimeButton) {
+					chosen = PercentageBy.EXCLUSIVE_TIME;
+				} else if (preferred == PercentageBy.TIME_DIFFERENCE && bolEnableTimeDifferenceButton) {
+					chosen = PercentageBy.TIME_DIFFERENCE;
+				} else if (bolEnableCostButton) {
+					chosen = PercentageBy.COST;
+				} else if (bolEnableExclusiveTimeButton) {
+					chosen = PercentageBy.EXCLUSIVE_TIME;
+				} else if (bolEnableTimeDifferenceButton) {
+					chosen = PercentageBy.TIME_DIFFERENCE;
+				}
+
+				if (chosen != null && chosen != preferred) {
+					setPercentageBy(chosen);
+					planDiagramToolbar.selectAndFirePercentageBy(chosen);
+					bolPercentageByIsDirty = true;
+				} else {
+					planDiagramToolbar.setSelectedPercentageBy(preferred);
+				}
+			}
+
+			objComponent.setPercentageByIsDirty(bolPercentageByIsDirty);
 		}
 
 		// since buttons changed, update cost and time sliders

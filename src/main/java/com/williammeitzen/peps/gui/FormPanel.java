@@ -1,9 +1,8 @@
 package com.williammeitzen.peps.gui;
 
+import java.awt.BorderLayout;
 import java.awt.Color;
-//import java.awt.BorderLayout;
 import java.awt.Component;
-//import java.awt.BorderLayout;
 import java.awt.Container;
 import java.awt.Dimension;
 import java.awt.Font;
@@ -27,6 +26,7 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
+import javax.swing.SwingUtilities;
 //import javax.swing.ListSelectionModel;
 //import javax.swing.ScrollPaneConstants;
 import javax.swing.border.Border;
@@ -56,6 +56,7 @@ public class FormPanel extends JPanel {
 	//private FormListener formListener;
 	private JList planList;
 	private JTabbedPane tabPaneToLink;
+	private PlanDiagramToolbar planDiagramToolbar;
 	private JScrollPane planListScrollPane;
 	private String PLAN_LIST_FONT_NAME = "Arial";
 	private int PLAN_LIST_FONT_STYLE = Font.PLAIN;
@@ -64,9 +65,10 @@ public class FormPanel extends JPanel {
 	public Map<String, PlanEvent> plansMapper = new TreeMap<String, PlanEvent>();
 	private PlanEvent planEvent;
 
-	public FormPanel(JTabbedPane tabPane) {
+	public FormPanel(JTabbedPane tabPane, PlanDiagramToolbar planDiagramToolbar) {
 		
 		tabPaneToLink = tabPane;
+		this.planDiagramToolbar = planDiagramToolbar;
 		// Selecting Plan Diagram generates from JSON (same as "Show JSON Plan Diagram"),
 		// unless Execute-and-show already set a button action.
 		tabPaneToLink.addChangeListener(new ChangeListener() {
@@ -81,7 +83,15 @@ public class FormPanel extends JPanel {
 					return;
 				}
 				PlanSourcePanel planSource = (PlanSourcePanel) sourceComp;
-				if (planSource.getPlanSourceButtonClicked() == null) {
+				String button = planSource.getPlanSourceButtonClicked();
+				boolean execute = PlanSourcePanel.EXECUTE_AND_SHOW_PLAN_DIAGRAM.equals(button);
+				boolean rebuildFromJson = PlanSourcePanel.SHOW_JSON_PLAN_DIAGRAM.equals(button)
+						|| (button == null && planSource.shouldRebuildDiagramFromCurrentJson());
+				if (!execute && !rebuildFromJson) {
+					// Diagram already matches current JSON — just show the tab
+					return;
+				}
+				if (button == null) {
 					planSource.setPlanSourceButtonClicked(PlanSourcePanel.SHOW_JSON_PLAN_DIAGRAM);
 				}
 				PlanGraphPanel.setDiagramBusyCursor(tabPaneToLink, true);
@@ -181,8 +191,8 @@ public class FormPanel extends JPanel {
 			});
 
 			// Properties full height on the right; graph + sliders on the left
-			JSplitPane splitPane = createPlanDiagramSplitPane(pEvent.getPlanGraphPanel(), 600, 600);
-			tabPaneToLink.addTab(getPlanDiagramTabName(newPlanName), splitPane);
+			tabPaneToLink.addTab(getPlanDiagramTabName(newPlanName),
+					createPlanDiagramTab(pEvent.getPlanGraphPanel(), 600, 600));
 			
 			//strSQL = "select id_explain_plan, plan_name, server, port, database, username, password\n"
 			//		+ ", pre_explain_command, explain_sql_command, post_explain_command, plan_text\n"
@@ -291,67 +301,16 @@ public class FormPanel extends JPanel {
 
 				    //tabPaneToLink.addChangeListener(new ChangeListener() {
 
-					if (bolShowProperties == true) { System.out.println("before createPlanDiagramSplitPane()"); }
-					JSplitPane splitPane = createPlanDiagramSplitPane(pEvent.getPlanGraphPanel(), 1000, 500);
-					if (bolShowProperties == true) { System.out.println("after createPlanDiagramSplitPane()"); }
-					tabPaneToLink.addTab(getPlanDiagramTabName(selectedPlanName), splitPane);
+					if (bolShowProperties == true) { System.out.println("before createPlanDiagramTab()"); }
+					JPanel diagramTab = createPlanDiagramTab(pEvent.getPlanGraphPanel(), 1000, 500);
+					if (bolShowProperties == true) { System.out.println("after createPlanDiagramTab()"); }
+					tabPaneToLink.addTab(getPlanDiagramTabName(selectedPlanName), diagramTab);
 					
 					tabPaneToLink.setEnabledAt(2, true);
 					
-					// TODO: disable thickness by and percentage by buttons
-					//JSplitPane currentPane = (JSplitPane) objCurrentPlanTabs.getSelectedComponent();
-					//JSplitPane currentPane = (JSplitPane) pEvent;
-					//if (currentPane != null) {
-						//if (currentPane.getParent() instanceof JTabbedPane) {
-							//JTabbedPane tabbedPane = (JTabbedPane) currentPane.getParent();
-							//if (tabbedPane.getParent() instanceof JSplitPane) {
-								//JSplitPane splitPane = (JSplitPane) tabbedPane.getParent();
-								for (Component objSplitPaneComponent : splitPane.getParent().getComponents()) {
-									if (objSplitPaneComponent instanceof JPanel) {
-										for (Component objJPanelItem : ((JPanel) objSplitPaneComponent).getComponents()) {
-/*
-											if (objJPanelItem instanceof LineThicknessByToolbar) {
-												LineThicknessByToolbar lineThicknessByToolbar = (LineThicknessByToolbar) objJPanelItem;
-												lineThicknessByToolbar.setLineThicknessByActualRowsButton(false);
-												lineThicknessByToolbar.setLineThicknessByEstimatedRowsButton(false);
-												lineThicknessByToolbar.setLineThicknessByActualMassButton(false);
-												lineThicknessByToolbar.setLineThicknessByEstimatedMassButton(false);
-												lineThicknessByToolbar.setLineThicknessByActualVsEstimatedRowsButton(false);
-												lineThicknessByToolbar.setLineThicknessByActualVsEstimatedMassButton(false);
-											}
-*/
-											if (objJPanelItem instanceof LineThicknessByRadioButtonsToolbar) {
-												LineThicknessByRadioButtonsToolbar lineThicknessByRadioButtonsToolbar = (LineThicknessByRadioButtonsToolbar) objJPanelItem;
-												lineThicknessByRadioButtonsToolbar.setLineThicknessByActualRowsButtonEnabled(false);
-												lineThicknessByRadioButtonsToolbar.setLineThicknessByEstimatedRowsButtonEnabled(false);
-												lineThicknessByRadioButtonsToolbar.setLineThicknessByActualMassButtonEnabled(false);
-												lineThicknessByRadioButtonsToolbar.setLineThicknessByEstimatedMassButtonEnabled(false);
-												lineThicknessByRadioButtonsToolbar.setLineThicknessByActualVsEstimatedRowsRatioButtonEnabled(false);
-												lineThicknessByRadioButtonsToolbar.setLineThicknessByActualVsEstimatedMassRatioButtonEnabled(false);
-											}
-/*
-											if (objJPanelItem instanceof PercentageByToolbar) {
-												PercentageByToolbar percentageByToolbar = (PercentageByToolbar) objJPanelItem;
-												percentageByToolbar.setPercentageByCostButton(false);
-												//percentageByToolbar.setPercentageByDiskButton(false);
-												//percentageByToolbar.setPercentageByDiskPlusRAMButton(false);
-												//percentageByToolbar.setPercentageByRAMButton(false);
-												percentageByToolbar.setPercentageByExclusiveTimeButton(false);
-												percentageByToolbar.setPercentageByTimeDifferenceButton(false);
-											}
-*/
-											if (objJPanelItem instanceof PercentageByRadioButtonsToolbar) {
-												PercentageByRadioButtonsToolbar percentageByRadioButtonsToolbar = (PercentageByRadioButtonsToolbar) objJPanelItem;
-												percentageByRadioButtonsToolbar.setPercentageByCostButtonEnabled(false);
-												percentageByRadioButtonsToolbar.setPercentageByExclusiveTimeButtonEnabled(false);
-												percentageByRadioButtonsToolbar.setPercentageByTimeDifferenceButtonEnabled(false);
-											}
-										}
-									}
-								}
-							//}
-						//}
-					//}
+					if (planDiagramToolbar != null) {
+						planDiagramToolbar.setAllDiagramOptionsEnabled(false);
+					}
 				}
 			}
 			
@@ -397,8 +356,8 @@ public class FormPanel extends JPanel {
 				statisticsPane.setPreferredSize(new Dimension(320, 480));
 				tabPaneToLink.addTab(getPlanStatisticsTabName(), statisticsPane);
 
-				JSplitPane splitPane = createPlanDiagramSplitPane(pEvent.getPlanGraphPanel(), 1000, 500);
-				tabPaneToLink.addTab(getPlanDiagramTabName(newPlanName), splitPane);
+				tabPaneToLink.addTab(getPlanDiagramTabName(newPlanName),
+						createPlanDiagramTab(pEvent.getPlanGraphPanel(), 1000, 500));
 				duplicatePlanBtn.setEnabled(true);
 
 				tabPaneToLink.setEnabledAt(2, true);
@@ -551,8 +510,8 @@ public class FormPanel extends JPanel {
 						statisticsPane.setPreferredSize(new Dimension(320, 480));
 						tabPaneToLink.addTab(getPlanStatisticsTabName(), statisticsPane);
 						
-						JSplitPane splitPane = createPlanDiagramSplitPane(newPlnEvent.getPlanGraphPanel(), 1000, 500);
-						tabPaneToLink.addTab(getPlanDiagramTabName(newPlanName), splitPane);
+						tabPaneToLink.addTab(getPlanDiagramTabName(newPlanName),
+								createPlanDiagramTab(newPlnEvent.getPlanGraphPanel(), 1000, 500));
 						
 						// copy over data
 						if (existingPlanSource != null) {
@@ -670,7 +629,7 @@ public class FormPanel extends JPanel {
 			}
 		}
 	}
-	
+
 	private Integer addPlanNameToDatabase(String planName, PlanSourcePanel planSource, PlanGraphPanel planGraphPanel) {
 		boolean bolShowProperties = false;
 		boolean bolShowSQL = false;
@@ -743,11 +702,17 @@ public class FormPanel extends JPanel {
 	 * graph and time/cost sliders stacked on the left only.
 	 * Zoom / Line Thickness / Percentage stay in MainFrame's top toolbar.
 	 */
-	private JSplitPane createPlanDiagramSplitPane(PlanGraphPanel graphPanel,
+	/** Same wheel step as OperatorDetailsPanel Property/Value scrolling. */
+	private static final int DIAGRAM_WHEEL_UNIT_INCREMENT = 48;
+
+	/** Plan Diagram tab content: compact toolbar on top, graph/sliders/properties below. */
+	private JPanel createPlanDiagramTab(PlanGraphPanel graphPanel,
 			int horizontalDivider, int verticalDivider) {
 		JScrollPane planGraphScrollPane = new JScrollPane(graphPanel,
 				JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_ALWAYS);
 		planGraphScrollPane.setPreferredSize(new Dimension(320, 480));
+		planGraphScrollPane.getVerticalScrollBar().setUnitIncrement(DIAGRAM_WHEEL_UNIT_INCREMENT);
+		planGraphScrollPane.getHorizontalScrollBar().setUnitIncrement(DIAGRAM_WHEEL_UNIT_INCREMENT);
 
 		OperatorDetailsPanel operatorDetailsPanel = new OperatorDetailsPanel(graphPanel);
 		operatorDetailsPanel.setPreferredSize(new Dimension(520, 680));
@@ -756,6 +721,8 @@ public class FormPanel extends JPanel {
 		JScrollPane sliderPanelScrollPane = new JScrollPane(sliderPanel,
 				JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
 		sliderPanelScrollPane.setMinimumSize(new Dimension(320, 120));
+		sliderPanelScrollPane.getVerticalScrollBar().setUnitIncrement(DIAGRAM_WHEEL_UNIT_INCREMENT);
+		sliderPanelScrollPane.getHorizontalScrollBar().setUnitIncrement(DIAGRAM_WHEEL_UNIT_INCREMENT);
 
 		JSplitPane graphAndSlidersSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, planGraphScrollPane, sliderPanelScrollPane);
 		graphAndSlidersSplitPane.setOneTouchExpandable(true);
@@ -766,7 +733,17 @@ public class FormPanel extends JPanel {
 		rootSplitPane.setOneTouchExpandable(true);
 		rootSplitPane.setDividerLocation(horizontalDivider);
 		rootSplitPane.setResizeWeight(0.65);
-		return rootSplitPane;
+
+		JPanel tabContent = new JPanel(new BorderLayout());
+		if (planDiagramToolbar != null) {
+			Container previousParent = planDiagramToolbar.getParent();
+			if (previousParent != null) {
+				previousParent.remove(planDiagramToolbar);
+			}
+			tabContent.add(planDiagramToolbar, BorderLayout.NORTH);
+		}
+		tabContent.add(rootSplitPane, BorderLayout.CENTER);
+		return tabContent;
 	}
 
 	public JList getPlanList() { 

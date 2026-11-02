@@ -39,7 +39,7 @@ public class PercentageByRadioButtonsToolbar extends JToolBar implements ActionL
 		percentageByCostRadioButton = new JRadioButton("Cost");
 		percentageByCostRadioButton.addActionListener(this);
 
-		percentageByExclusiveTimeRadioButton = new JRadioButton("Exclusive Time");
+		percentageByExclusiveTimeRadioButton = new JRadioButton("Operator Time");
 		percentageByExclusiveTimeRadioButton.addActionListener(this);
 
 		percentageByTimeDifferenceRadioButton = new JRadioButton("Time Difference");
@@ -58,6 +58,8 @@ public class PercentageByRadioButtonsToolbar extends JToolBar implements ActionL
 		add(percentageByExclusiveTimeRadioButton);
 		add(percentageByTimeDifferenceRadioButton);
 
+		// Match PlanGraphPanel / View menu default
+		percentageByCostRadioButton.setSelected(true);
 	}
 
 /*
