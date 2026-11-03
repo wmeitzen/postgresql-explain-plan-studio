@@ -1,21 +1,25 @@
 package com.williammeitzen.peps.gui;
 
 import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.Graphics;
+import java.awt.Graphics2D;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.awt.Point;
 import java.awt.Rectangle;
+import java.awt.RenderingHints;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
 import java.util.Hashtable;
+import java.util.function.IntUnaryOperator;
 
 import javax.swing.ButtonGroup;
 import javax.swing.JLabel;
@@ -25,16 +29,15 @@ import javax.swing.JSlider;
 import javax.swing.Scrollable;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
+import javax.swing.UIManager;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
 import javax.swing.plaf.basic.BasicSliderUI;
-//import javax.swing.event.DocumentEvent;
-//import javax.swing.event.DocumentListener;
 
-//import org.json.simple.JsonArray;
 import org.json.simple.JsonObject;
 
-//import gui.Utils.PercentageBy;
+import com.formdev.flatlaf.FlatLaf;
+import com.formdev.flatlaf.ui.FlatSliderUI;
 import com.williammeitzen.peps.model.Database;
 
 public class SliderPanel extends JPanel implements Scrollable {
@@ -57,6 +60,14 @@ public class SliderPanel extends JPanel implements Scrollable {
 	private JLabel propertiesDetails;
 	private JRadioButton timeSliderRB;
 	private JRadioButton costSliderRB;
+	/** Selected operator caption beside the radio buttons, e.g. "(35) Hash Join w/Filter". */
+	private JLabel selectedOperatorLabel;
+	private Integer selectedOperatorId;
+	/** Absolute start/end on the active slider scale (ms or cost units). */
+	private Double selectedSpanStart;
+	private Double selectedSpanEnd;
+	/** Active slider that shows the selected-operator span bar. */
+	private JSlider spanSlider;
 
 //	private Double fltPlanTotalTimeMs;
 	private JSlider timeSlider;
@@ -66,6 +77,10 @@ public class SliderPanel extends JPanel implements Scrollable {
 	private int sliderType; // 1 = time slider, 2 = cost slider
 	public static int SLIDER_TYPE_TIME = 1;
 	public static int SLIDER_TYPE_COST = 2;
+	private static final Color SPAN_BAR_TIME = new Color(0, 190, 0, 150);
+	private static final Color SPAN_BAR_COST = new Color(100, 116, 139, 170);
+	private static final Color SPAN_BAR_TIME_DARK = new Color(74, 222, 128, 180);
+	private static final Color SPAN_BAR_COST_DARK = new Color(148, 163, 184, 180);
 	
 	//private GridBagConstraints gc;
 	
@@ -138,8 +153,8 @@ public class SliderPanel extends JPanel implements Scrollable {
 		int idExplainPlan = (planGraphPanel.getIdExplainPlan() != null) ? planGraphPanel.getIdExplainPlan().intValue() : -1;
 
 		ButtonGroup sliderLabelButtonGroup = new ButtonGroup();
-		//JRadioButton timeSliderRB = new JRadioButton("Time Slider");
-		timeSliderRB = new JRadioButton("Time Slider");
+		//JRadioButton timeSliderRB = new JRadioButton("Time Difference Slider");
+		timeSliderRB = new JRadioButton("Time Difference Slider");
 		//JRadioButton costSliderRB = new JRadioButton("Cost Slider");
 		costSliderRB = new JRadioButton("Cost Slider");
 		
@@ -173,7 +188,7 @@ public class SliderPanel extends JPanel implements Scrollable {
 		sliderLabelButtonGroup.add(timeSliderRB);
 		sliderLabelButtonGroup.add(costSliderRB);
 		
-		timeSliderLabel = new JLabel("Time Slider");
+		timeSliderLabel = new JLabel("Time Difference Slider");
 		costSliderLabel = new JLabel("Cost Slider");
 
 		if (costSliderRB.isEnabled() == false) {
@@ -273,6 +288,13 @@ public class SliderPanel extends JPanel implements Scrollable {
 		thumbValueTrack.setPreferredSize(new Dimension(SLIDER_PREFERRED_WIDTH, THUMB_VALUE_TRACK_HEIGHT));
 		thumbValueTrack.add(thumbValueLabel);
 
+		selectedOperatorLabel = new JLabel(" ");
+		Font labelFont = javax.swing.UIManager.getFont("Label.font");
+		if (labelFont != null) {
+			selectedOperatorLabel.setFont(labelFont);
+		}
+		selectedOperatorLabel.setToolTipText("Selected operator span on this slider");
+
 		if (planGraphPanel.getSliderType() == SliderPanel.SLIDER_TYPE_TIME) {
 			// Set the label to be drawn
 			timeSlider.setLabelTable(position);
@@ -317,6 +339,9 @@ public class SliderPanel extends JPanel implements Scrollable {
 		radioRow.setOpaque(false);
 		radioRow.add(timeSliderRB);
 		radioRow.add(costSliderRB);
+		if (selectedOperatorLabel != null) {
+			radioRow.add(selectedOperatorLabel);
+		}
 		add(radioRow, gc);
 		
 		clearSliderComponent(costSlider);
@@ -337,13 +362,15 @@ public class SliderPanel extends JPanel implements Scrollable {
 		}
 
 		if (activeSlider != null) {
-			activeSlider.setPreferredSize(new Dimension(SLIDER_PREFERRED_WIDTH, SLIDER_PREFERRED_HEIGHT));
-			activeSlider.setMinimumSize(new Dimension(PANEL_MINIMUM_WIDTH, SLIDER_PREFERRED_HEIGHT));
+			spanSlider = activeSlider;
+			spanSlider.setPreferredSize(new Dimension(SLIDER_PREFERRED_WIDTH, SLIDER_PREFERRED_HEIGHT));
+			spanSlider.setMinimumSize(new Dimension(PANEL_MINIMUM_WIDTH, SLIDER_PREFERRED_HEIGHT));
+			installSpanAwareSliderUI(spanSlider);
 
 			sliderHost = new JPanel(new BorderLayout());
 			sliderHost.setOpaque(false);
 			sliderHost.add(thumbValueTrack, BorderLayout.NORTH);
-			sliderHost.add(activeSlider, BorderLayout.CENTER);
+			sliderHost.add(spanSlider, BorderLayout.CENTER);
 
 			gc.gridy++;
 			gc.fill = GridBagConstraints.HORIZONTAL;
@@ -352,13 +379,15 @@ public class SliderPanel extends JPanel implements Scrollable {
 			gc.insets = new Insets(2, 8, 8, 8);
 			add(sliderHost, gc);
 
-			final JSlider sliderForListeners = activeSlider;
-			activeSlider.addComponentListener(new ComponentAdapter() {
+			spanSlider.addComponentListener(new ComponentAdapter() {
 				@Override
 				public void componentResized(ComponentEvent e) {
-					repositionThumbValueLabel(sliderForListeners);
+					repositionThumbValueLabel(spanSlider);
+					spanSlider.repaint();
 				}
 			});
+		} else {
+			spanSlider = null;
 		}
 		
 		if (planGraphPanel.getSliderType() == SliderPanel.SLIDER_TYPE_TIME) {
@@ -370,7 +399,12 @@ public class SliderPanel extends JPanel implements Scrollable {
 		} else {
 			System.out.println("Error in SliderPanel.layoutComponents(): Unknown slider type");
 		}
-		
+
+		Integer operatorToShow = selectedOperatorId;
+		if (operatorToShow == null && planGraphPanel != null) {
+			operatorToShow = planGraphPanel.getSelectedOperatorId();
+		}
+		showSelectedOperator(operatorToShow);
 	}
 
 	private void repositionThumbValueLabel(JSlider slider) {
@@ -500,6 +534,371 @@ public class SliderPanel extends JPanel implements Scrollable {
 	{
 		if (component != null)
 			remove(component);
+	}
+
+	/**
+	 * Show the selected operator's label and under-track span on the active slider.
+	 * Pass null to clear.
+	 */
+	public void showSelectedOperator(Integer operatorPropertyId) {
+		selectedOperatorId = operatorPropertyId;
+		selectedSpanStart = null;
+		selectedSpanEnd = null;
+		if (selectedOperatorLabel != null) {
+			selectedOperatorLabel.setText(" ");
+			selectedOperatorLabel.setToolTipText("Selected operator span on this slider");
+		}
+
+		if (operatorPropertyId == null || planGraphPanel == null || planGraphPanel.getIdExplainPlan() == null) {
+			if (spanSlider != null) {
+				spanSlider.repaint();
+			}
+			return;
+		}
+
+		int idExplainPlan = planGraphPanel.getIdExplainPlan().intValue();
+		// Span bar uses aligned annotation extents; label start/end use Property/Value grid strings.
+		String strSQL = "select EPOA.id_explain_plan_property, EPOA.south_1_text, EPOA.node_type\n"
+				+ ", EPOA.min_actual_startup_time_ms as start_ms\n"
+				+ ", EPOA.max_actual_total_time_ms as end_ms\n"
+				+ ", EPOA.difference_time_ms\n"
+				+ ", EPOA.actual_startup_time_ms\n"
+				+ ", EPOA.actual_total_time_ms\n"
+				+ ", EPOA.parallel_leader_actual_startup_time_ms\n"
+				+ ", EPOA.parallel_leader_actual_total_time_ms\n"
+				+ ", EPOA.startup_cost * 1.0 as startup_cost\n"
+				+ ", EPOA.total_cost * 1.0 as total_cost\n"
+				+ ", (select EPP.operator_value from explain_plan_properties as EPP\n"
+				+ "    where EPP.id_explain_plan = EPOA.id_explain_plan\n"
+				+ "      and EPP.parent_id_explain_plan_property = EPOA.id_explain_plan_property\n"
+				+ "      and EPP.operator_name = 'Actual Startup Time') as grid_actual_startup_time\n"
+				+ ", (select EPP.operator_value from explain_plan_properties as EPP\n"
+				+ "    where EPP.id_explain_plan = EPOA.id_explain_plan\n"
+				+ "      and EPP.parent_id_explain_plan_property = EPOA.id_explain_plan_property\n"
+				+ "      and EPP.operator_name = 'Actual Total Time') as grid_actual_total_time\n"
+				+ ", (select EPP.operator_value from explain_plan_properties as EPP\n"
+				+ "    where EPP.id_explain_plan = EPOA.id_explain_plan\n"
+				+ "      and EPP.parent_id_explain_plan_property = EPOA.id_explain_plan_property\n"
+				+ "      and EPP.operator_name = 'Startup Cost') as grid_startup_cost\n"
+				+ ", (select EPP.operator_value from explain_plan_properties as EPP\n"
+				+ "    where EPP.id_explain_plan = EPOA.id_explain_plan\n"
+				+ "      and EPP.parent_id_explain_plan_property = EPOA.id_explain_plan_property\n"
+				+ "      and EPP.operator_name = 'Total Cost') as grid_total_cost\n"
+				+ "from explain_plan_operator_annotations as EPOA\n"
+				+ "where EPOA.id_explain_plan = " + idExplainPlan + "\n"
+				+ "and EPOA.id_explain_plan_property = " + operatorPropertyId.intValue();
+		JsonObject row = Database.row(strSQL);
+		if (row == null || row.get("id_explain_plan_property") == null) {
+			if (spanSlider != null) {
+				spanSlider.repaint();
+			}
+			return;
+		}
+
+		String south1 = row.getString("south_1_text");
+		if (south1 == null || south1.isBlank()) {
+			south1 = row.getString("node_type");
+		}
+		if (south1 == null) {
+			south1 = "";
+		}
+
+		boolean timeMode = planGraphPanel.getSliderType() == SLIDER_TYPE_TIME;
+		boolean calculated = false;
+		String gridStartText;
+		String gridEndText;
+		if (timeMode) {
+			selectedSpanStart = toDouble(row.get("start_ms"));
+			selectedSpanEnd = toDouble(row.get("end_ms"));
+			Double rawStart = firstNonNull(
+					toDouble(row.get("actual_startup_time_ms")),
+					toDouble(row.get("parallel_leader_actual_startup_time_ms")));
+			Double rawEnd = firstNonNull(
+					toDouble(row.get("actual_total_time_ms")),
+					toDouble(row.get("parallel_leader_actual_total_time_ms")));
+			calculated = isAlignedAwayFromRaw(selectedSpanStart, rawStart)
+					|| isAlignedAwayFromRaw(selectedSpanEnd, rawEnd);
+			gridStartText = firstNonBlank(row.getString("grid_actual_startup_time"),
+					rawStart != null ? stripTrailingZeros(rawStart) : null);
+			gridEndText = firstNonBlank(row.getString("grid_actual_total_time"),
+					rawEnd != null ? stripTrailingZeros(rawEnd) : null);
+		} else {
+			selectedSpanStart = toDouble(row.get("startup_cost"));
+			selectedSpanEnd = toDouble(row.get("total_cost"));
+			gridStartText = firstNonBlank(row.getString("grid_startup_cost"),
+					selectedSpanStart != null ? stripTrailingZeros(selectedSpanStart) : null);
+			gridEndText = firstNonBlank(row.getString("grid_total_cost"),
+					selectedSpanEnd != null ? stripTrailingZeros(selectedSpanEnd) : null);
+			calculated = false;
+		}
+
+		if (selectedSpanStart != null && selectedSpanEnd != null && selectedSpanEnd < selectedSpanStart) {
+			double tmp = selectedSpanStart;
+			selectedSpanStart = selectedSpanEnd;
+			selectedSpanEnd = tmp;
+			calculated = true;
+		}
+
+		Double gridStart = toDouble(gridStartText);
+		Double gridEnd = toDouble(gridEndText);
+		Double spanDiff = null;
+		if (gridStart != null && gridEnd != null) {
+			spanDiff = gridEnd - gridStart;
+		} else if (timeMode) {
+			spanDiff = toDouble(row.get("difference_time_ms"));
+			if (spanDiff == null && selectedSpanStart != null && selectedSpanEnd != null) {
+				spanDiff = selectedSpanEnd - selectedSpanStart;
+			}
+		} else if (selectedSpanStart != null && selectedSpanEnd != null) {
+			spanDiff = selectedSpanEnd - selectedSpanStart;
+		}
+
+		String startLabel = gridStartText;
+		String endLabel = gridEndText;
+		String diffLabel = null;
+		if (timeMode) {
+			// Property/Value stores raw ms numbers; restore sec/ms/… units for the slider caption.
+			if (gridStart != null) {
+				startLabel = formatThreeDigitTimeMs(gridStart);
+			}
+			if (gridEnd != null) {
+				endLabel = formatThreeDigitTimeMs(gridEnd);
+			}
+			if (spanDiff != null) {
+				diffLabel = formatThreeDigitTimeMs(spanDiff);
+			}
+		} else if (spanDiff != null) {
+			int scale = Math.max(decimalPlaces(gridStartText), decimalPlaces(gridEndText));
+			diffLabel = formatRoundedNumber(spanDiff, scale);
+		}
+
+		String label = buildSelectedOperatorLabel(operatorPropertyId.intValue(), south1,
+				startLabel, endLabel, diffLabel, calculated);
+		if (selectedOperatorLabel != null) {
+			selectedOperatorLabel.setText(label);
+			selectedOperatorLabel.setToolTipText(label);
+		}
+
+		if (spanSlider != null) {
+			spanSlider.repaint();
+		}
+	}
+
+	private static String buildSelectedOperatorLabel(int operatorId, String south1,
+			String startText, String endText, String diffText, boolean calculated) {
+		StringBuilder label = new StringBuilder();
+		label.append('(').append(operatorId).append(") ").append(south1);
+		if (startText == null || endText == null || startText.isBlank() || endText.isBlank()) {
+			return label.toString();
+		}
+		label.append("  ").append(startText.trim())
+				.append(" \u2192 ").append(endText.trim());
+		if (diffText != null && !diffText.isBlank()) {
+			label.append("  (diff ").append(diffText.trim()).append(')');
+		}
+		if (calculated) {
+			label.append("  Calculated value");
+		}
+		return label.toString();
+	}
+
+	private static String firstNonBlank(String a, String b) {
+		if (a != null && !a.isBlank()) {
+			return a;
+		}
+		return b;
+	}
+
+	private static int decimalPlaces(String numberText) {
+		if (numberText == null) {
+			return 0;
+		}
+		String text = numberText.trim();
+		int e = Math.max(text.indexOf('e'), text.indexOf('E'));
+		if (e >= 0) {
+			text = text.substring(0, e);
+		}
+		int dot = text.indexOf('.');
+		if (dot < 0) {
+			return 0;
+		}
+		return text.length() - dot - 1;
+	}
+
+	/** Round to the same decimal scale as Property/Value start/end text (avoids 2781.8849999999998). */
+	private static String formatRoundedNumber(double value, int scale) {
+		if (Double.isNaN(value) || Double.isInfinite(value)) {
+			return Double.toString(value);
+		}
+		int safeScale = Math.max(0, Math.min(scale, 12));
+		java.math.BigDecimal rounded = java.math.BigDecimal.valueOf(value)
+				.setScale(safeScale, java.math.RoundingMode.HALF_UP)
+				.stripTrailingZeros();
+		return rounded.toPlainString();
+	}
+
+	/** Match Property/Value grid style: plain number text without forced unit reformatting. */
+	private static String stripTrailingZeros(double value) {
+		return formatRoundedNumber(value, 12);
+	}
+
+	private static Double firstNonNull(Double a, Double b) {
+		return a != null ? a : b;
+	}
+
+	/** True when the slider span value differs from the raw EXPLAIN number (aligned for workers/PL). */
+	private static boolean isAlignedAwayFromRaw(Double aligned, Double raw) {
+		if (aligned == null || raw == null) {
+			return false;
+		}
+		return Math.abs(aligned.doubleValue() - raw.doubleValue()) > 1e-9;
+	}
+
+	/** Re-install span-aware slider UI after Look-and-Feel changes. */
+	public void reinstallSpanAwareSliderUI() {
+		if (spanSlider != null) {
+			installSpanAwareSliderUI(spanSlider);
+			spanSlider.revalidate();
+			spanSlider.repaint();
+		}
+	}
+
+	private void installSpanAwareSliderUI(JSlider slider) {
+		if (slider == null) {
+			return;
+		}
+		if (UIManager.getLookAndFeel() instanceof FlatLaf) {
+			slider.setUI(new OperatorSpanFlatSliderUI(this));
+		} else {
+			slider.setUI(new OperatorSpanBasicSliderUI(slider, this));
+		}
+	}
+
+	private static Double toDouble(Object value) {
+		if (value == null) {
+			return null;
+		}
+		if (value instanceof Number) {
+			return ((Number) value).doubleValue();
+		}
+		try {
+			return Double.parseDouble(value.toString());
+		} catch (NumberFormatException ex) {
+			return null;
+		}
+	}
+
+	private Double[] selectedSpanAbsoluteRange() {
+		if (selectedSpanStart == null || selectedSpanEnd == null) {
+			return null;
+		}
+		return new Double[] { selectedSpanStart, selectedSpanEnd };
+	}
+
+	private Color selectedSpanBarColor() {
+		boolean dark = UiTheme.isDark();
+		if (planGraphPanel != null && planGraphPanel.getSliderType() == SLIDER_TYPE_COST) {
+			return dark ? SPAN_BAR_COST_DARK : SPAN_BAR_COST;
+		}
+		return dark ? SPAN_BAR_TIME_DARK : SPAN_BAR_TIME;
+	}
+
+	private Double selectedSpanTotal() {
+		if (planGraphPanel == null) {
+			return null;
+		}
+		return planGraphPanel.getSliderType() == SLIDER_TYPE_TIME
+				? getPlanTotalTimeMs()
+				: getPlanTotalCost();
+	}
+
+	private static int absoluteToSliderValue(double absolute, double total, JSlider slider) {
+		int value = (int) Math.round(absolute / total * slider.getMaximum());
+		return Math.max(slider.getMinimum(), Math.min(slider.getMaximum(), value));
+	}
+
+	/**
+	 * Paint span using the UI's own xPositionForValue + trackRect so X lands on the track
+	 * (binary-search helpers can return x=0, left of the track inset).
+	 */
+	private static void paintSpanOnTrack(Graphics g, JSlider slider, Rectangle trackRect,
+			IntUnaryOperator xForValue, Double startAbs, Double endAbs, Double total, Color fill) {
+		if (g == null || slider == null || trackRect == null || xForValue == null
+				|| startAbs == null || endAbs == null || total == null || total <= 0
+				|| slider.getMaximum() <= 0 || fill == null) {
+			return;
+		}
+		try {
+			int v1 = absoluteToSliderValue(startAbs, total, slider);
+			int v2 = absoluteToSliderValue(endAbs, total, slider);
+			int x1 = xForValue.applyAsInt(v1);
+			int x2 = xForValue.applyAsInt(v2);
+			int left = Math.min(x1, x2);
+			int right = Math.max(x1, x2);
+			// Keep the bar inside the track; short spans still get a visible width.
+			left = Math.max(trackRect.x, left);
+			right = Math.min(trackRect.x + trackRect.width, right);
+			int width = Math.max(right - left, Math.min(8, trackRect.width));
+			if (left + width > trackRect.x + trackRect.width) {
+				left = Math.max(trackRect.x, trackRect.x + trackRect.width - width);
+			}
+
+			// Shorter than the thumb (FlatLaf thumb is typically ~12–16px), but easy to see.
+			int barHeight = 5;
+			int y = trackRect.y + (trackRect.height - barHeight) / 2;
+
+			Graphics2D g2 = (Graphics2D) g.create();
+			try {
+				g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+				g2.setColor(fill);
+				g2.fillRoundRect(left, y, width, barHeight, 2, 2);
+			} finally {
+				g2.dispose();
+			}
+		} catch (RuntimeException ignored) {
+			// Never let span painting break the EDT / theme redraw
+		}
+	}
+
+	/** FlatLaf slider UI that paints the operator span on the real track. */
+	private static final class OperatorSpanFlatSliderUI extends FlatSliderUI {
+		private final SliderPanel panel;
+
+		OperatorSpanFlatSliderUI(SliderPanel panel) {
+			this.panel = panel;
+		}
+
+		@Override
+		public void paintTrack(Graphics g) {
+			super.paintTrack(g);
+			Double[] range = panel.selectedSpanAbsoluteRange();
+			if (slider == null || trackRect == null || range == null) {
+				return;
+			}
+			paintSpanOnTrack(g, slider, trackRect, this::xPositionForValue, range[0], range[1],
+					panel.selectedSpanTotal(), panel.selectedSpanBarColor());
+		}
+	}
+
+	/** System LAF slider UI that paints the operator span on the real track. */
+	private static final class OperatorSpanBasicSliderUI extends BasicSliderUI {
+		private final SliderPanel panel;
+
+		OperatorSpanBasicSliderUI(JSlider slider, SliderPanel panel) {
+			super(slider);
+			this.panel = panel;
+		}
+
+		@Override
+		public void paintTrack(Graphics g) {
+			super.paintTrack(g);
+			Double[] range = panel.selectedSpanAbsoluteRange();
+			if (slider == null || trackRect == null || range == null) {
+				return;
+			}
+			paintSpanOnTrack(g, slider, trackRect, this::xPositionForValue, range[0], range[1],
+					panel.selectedSpanTotal(), panel.selectedSpanBarColor());
+		}
 	}
 
 	public JLabel getPropertiesDetails() {

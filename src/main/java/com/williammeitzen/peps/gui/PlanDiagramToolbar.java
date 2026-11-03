@@ -28,6 +28,7 @@ public class PlanDiagramToolbar extends JPanel {
 
 	private final JButton zoomMinusButton;
 	private final JButton zoomPlusButton;
+	private final JButton zoom100Button;
 	private final JButton zoomFitButton;
 	private final JComboBox<LineThicknesses> lineThicknessCombo;
 	private final JComboBox<Object> percentageByCombo;
@@ -56,10 +57,13 @@ public class PlanDiagramToolbar extends JPanel {
 		JLabel zoomLabel = new JLabel("Zoom:");
 		zoomMinusButton = new JButton("-");
 		zoomPlusButton = new JButton("+");
+		zoom100Button = new JButton("100%");
 		zoomFitButton = new JButton("Fit");
 		zoomMinusButton.setMargin(new java.awt.Insets(2, 8, 2, 8));
 		zoomPlusButton.setMargin(new java.awt.Insets(2, 8, 2, 8));
+		zoom100Button.setMargin(new java.awt.Insets(2, 8, 2, 8));
 		zoomFitButton.setMargin(new java.awt.Insets(2, 8, 2, 8));
+		zoom100Button.setToolTipText("Reset zoom to the default 100% size");
 		zoomFitButton.setToolTipText("Fit the entire plan diagram in the visible pane");
 		zoomMinusButton.addActionListener(e -> {
 			if (zoomListener != null) {
@@ -69,6 +73,11 @@ public class PlanDiagramToolbar extends JPanel {
 		zoomPlusButton.addActionListener(e -> {
 			if (zoomListener != null) {
 				zoomListener.zoomPlusEventOccurred();
+			}
+		});
+		zoom100Button.addActionListener(e -> {
+			if (zoomListener != null) {
+				zoomListener.zoom100EventOccurred();
 			}
 		});
 		zoomFitButton.addActionListener(e -> {
@@ -124,6 +133,7 @@ public class PlanDiagramToolbar extends JPanel {
 		add(zoomLabel);
 		add(zoomMinusButton);
 		add(zoomPlusButton);
+		add(zoom100Button);
 		add(zoomFitButton);
 		add(new JLabel("  Line Thickness:"));
 		add(lineThicknessCombo);

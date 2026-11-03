@@ -68,7 +68,7 @@ public class MainFrame extends JFrame {
 	
 	private static final long serialVersionUID = 1L;
 	
-	private static final String APPLICATION_VERSION = "0.0.4";
+	private static final String APPLICATION_VERSION = "0.0.5";
 	private PlanDiagramToolbar planDiagramToolbar;
 	private FormPanel formPanel;
 	//private JFileChooser fileChooser;
@@ -118,15 +118,19 @@ public class MainFrame extends JFrame {
 
 		planDiagramToolbar.setZoomToolbarListener(new ZoomToolbarListener() {
 			public void zoomPlusEventOccurred() {
-				repaintOnZoomPlusOrMinus(10);
+				repaintOnZoomPlusOrMinus(10, true);
 			}
 			
 			public void zoomMinusEventOccurred() {
-				repaintOnZoomPlusOrMinus(-10);
+				repaintOnZoomPlusOrMinus(-10, false);
+			}
+
+			public void zoom100EventOccurred() {
+				repaintOnZoomChange(100, true);
 			}
 
 			public void zoomFitEventOccurred() {
-				repaintOnZoomChange(-1);
+				repaintOnZoomChange(-1, false);
 			}
 		});
 		
@@ -331,19 +335,19 @@ public class MainFrame extends JFrame {
 		return menuBar;
 	}
 	
-	private void repaintOnZoomChange(int zoomPct) {
+	private void repaintOnZoomChange(int zoomPct, boolean keepSelectedVisible) {
 		PlanGraphPanel planGraphPanel = findSelectedPlanGraphPanel();
 		if (planGraphPanel != null) {
 			planGraphPanel.setZoomPercentage(zoomPct);
-			planGraphPanel.repaint();
+			planGraphPanel.refreshScrollableSizeAfterZoom(keepSelectedVisible);
 		}
 	}
 	
-	private void repaintOnZoomPlusOrMinus(int zoomPct) {
+	private void repaintOnZoomPlusOrMinus(int zoomPct, boolean keepSelectedVisible) {
 		PlanGraphPanel planGraphPanel = findSelectedPlanGraphPanel();
 		if (planGraphPanel != null) {
 			planGraphPanel.setZoomPercentage(planGraphPanel.getZoomPercentage() + zoomPct);
-			planGraphPanel.repaint();
+			planGraphPanel.refreshScrollableSizeAfterZoom(keepSelectedVisible);
 		}
 	}
 

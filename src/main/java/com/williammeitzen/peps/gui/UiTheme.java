@@ -106,15 +106,33 @@ public final class UiTheme {
 	public static void applyAndRefresh(Scheme scheme, Window window) {
 		apply(scheme);
 		saveScheme(scheme);
-		if (window != null) {
-			SwingUtilities.updateComponentTreeUI(window);
-			window.invalidate();
-			window.validate();
-			window.repaint();
-		}
 		for (Window w : Window.getWindows()) {
-			if (w != window && w.isDisplayable()) {
-				SwingUtilities.updateComponentTreeUI(w);
+			if (!w.isDisplayable()) {
+				continue;
+			}
+			SwingUtilities.updateComponentTreeUI(w);
+			w.invalidate();
+			w.validate();
+			w.repaint();
+		}
+		// Custom-painted diagram/slider chrome needs an explicit repaint after LAF swap
+		if (window != null) {
+			repaintCustomSurfaces(window);
+		}
+	}
+
+	private static void repaintCustomSurfaces(java.awt.Component root) {
+		if (root instanceof SliderPanel) {
+			((SliderPanel) root).reinstallSpanAwareSliderUI();
+			root.revalidate();
+			root.repaint();
+		} else if (root instanceof PlanGraphPanel) {
+			root.revalidate();
+			root.repaint();
+		}
+		if (root instanceof java.awt.Container) {
+			for (java.awt.Component child : ((java.awt.Container) root).getComponents()) {
+				repaintCustomSurfaces(child);
 			}
 		}
 	}

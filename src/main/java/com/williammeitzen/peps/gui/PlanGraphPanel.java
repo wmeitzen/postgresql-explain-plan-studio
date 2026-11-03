@@ -3,6 +3,7 @@ package com.williammeitzen.peps.gui;
 
 import java.awt.BasicStroke;
 import java.awt.Color;
+import java.awt.Stroke;
 import java.awt.Component;
 import java.awt.Container;
 import java.awt.Cursor;
@@ -101,6 +102,7 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 	private int OPERATOR_FONT_STYLE = Font.PLAIN;
 	private int OPERATOR_FONT_SIZE = 12;
 	private Color OPERATOR_FONT_FOREGROUND_COLOR = new Color(0x1D, 0x4E, 0x89);
+	private static final Color OPERATOR_FONT_FOREGROUND_COLOR_DARK = new Color(0xF1, 0xF5, 0xF9); // soft white
 	
 	// arrow fonts and colors
 	private Color ARROW_LINE_COLOR = new Color(0x25, 0x63, 0xEB);
@@ -690,8 +692,19 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 		repairMissingNorthLabelsIfNeeded(idExplainPlan);
 
 		if (bolShowTiming == true) { System.out.println("before drawOperations: " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
+		int priorX = intXDimension;
+		int priorY = intYDimension;
 		drawOperations(g, idExplainPlan);
 		if (bolShowTiming == true) { System.out.println("after drawOperations: " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
+
+		// Preferred size is computed during draw; keep scrollbars in sync when it changes.
+		if (priorX != intXDimension || priorY != intYDimension) {
+			SwingUtilities.invokeLater(this::revalidateEnclosingScrollPane);
+		}
+		if (scrollSelectedIntoViewAfterPaint) {
+			scrollSelectedIntoViewAfterPaint = false;
+			SwingUtilities.invokeLater(this::ensureSelectedOperatorVisible);
+		}
 
 		if (bolShowTiming == true) { System.out.println("after PlanGraphPanel.paintComponent(): " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
 		} finally {
@@ -4656,6 +4669,19 @@ order by id_explain_plan_property;
 		return labelFont.deriveFont(OPERATOR_FONT_STYLE, (float) withZoom(Math.max(labelFont.getSize(), OPERATOR_FONT_SIZE)));
 	}
 
+	/** North/south operator labels: blue in light themes, soft white in dark. */
+	private Color operatorLabelColor() {
+		return UiTheme.isDark() ? OPERATOR_FONT_FOREGROUND_COLOR_DARK : OPERATOR_FONT_FOREGROUND_COLOR;
+	}
+
+	private Color workerTitleColor() {
+		return UiTheme.isDark() ? OPERATOR_FONT_FOREGROUND_COLOR_DARK : WORKER_TITLE_FONT_COLOR;
+	}
+
+	private Color workerTextColor() {
+		return UiTheme.isDark() ? OPERATOR_FONT_FOREGROUND_COLOR_DARK : WORKER_TEXT_FONT_COLOR;
+	}
+
 	public void drawNorthText(Graphics2D g, int x_center, int y_baseline, String north_1_text
 			, int north_1_fontmetrics_width, int north_1_fontmetrics_height, int outside_box_top_margin
 			, boolean north_1_highlight_1, boolean north_1_highlight_2
@@ -4680,7 +4706,7 @@ order by id_explain_plan_property;
 					, north_1_fontmetrics_width + highlightMargin * 2, north_1_fontmetrics_height);
 			g.setColor(HIGHLIGHT_2_FONT_FOREGROUND_COLOR);
 		} else {
-			g.setColor(OPERATOR_FONT_FOREGROUND_COLOR);
+			g.setColor(operatorLabelColor());
 		}
 		g.drawString(north_1_text, GRAPH_LEFT_MARGIN + x_center - (north_1_fontmetrics_width / 2), GRAPH_TOP_MARGIN + y_baseline - withZoom(outside_box_top_margin));
 	}
@@ -4720,7 +4746,7 @@ order by id_explain_plan_property;
 
 		// title
 		g.setFont(new Font(WORKER_TITLE_FONT_NAME, WORKER_TITLE_FONT_STYLE, withZoom(WORKER_TITLE_FONT_SIZE)));
-		g.setColor(WORKER_TITLE_FONT_COLOR);
+		g.setColor(workerTitleColor());
 		g.drawString(worker_title_label_string, GRAPH_LEFT_MARGIN + with_margin_box_left, GRAPH_TOP_MARGIN + y_baseline);
 		y_baseline += actual_data_size_label_fontmetrics_height; // using the worker title height may throw off vertical spacing
 
@@ -4734,7 +4760,7 @@ order by id_explain_plan_property;
 				g.setColor(HIGHLIGHT_1_FONT_FOREGROUND_COLOR);
 			}
 			g.drawString(actual_data_size_label_string, GRAPH_LEFT_MARGIN + with_margin_box_left, GRAPH_TOP_MARGIN + y_baseline);
-			g.setColor(WORKER_TEXT_FONT_COLOR);
+			g.setColor(workerTextColor());
 			y_baseline += actual_data_size_label_fontmetrics_height;
 		}
 		
@@ -4747,7 +4773,7 @@ order by id_explain_plan_property;
 				g.setColor(HIGHLIGHT_1_FONT_FOREGROUND_COLOR);
 			}
 			g.drawString(actual_rows_label_string, GRAPH_LEFT_MARGIN + with_margin_box_left, GRAPH_TOP_MARGIN + y_baseline);
-			g.setColor(WORKER_TEXT_FONT_COLOR);
+			g.setColor(workerTextColor());
 			y_baseline += actual_rows_label_fontmetrics_height;
 		}
 		
@@ -4759,7 +4785,7 @@ order by id_explain_plan_property;
 				g.setColor(HIGHLIGHT_1_FONT_FOREGROUND_COLOR);
 			}
 			g.drawString(difference_time_label_string, GRAPH_LEFT_MARGIN + with_margin_box_left, GRAPH_TOP_MARGIN + y_baseline);
-			g.setColor(WORKER_TEXT_FONT_COLOR);
+			g.setColor(workerTextColor());
 			y_baseline += difference_time_label_fontmetrics_height;
 		}
 
@@ -4771,7 +4797,7 @@ order by id_explain_plan_property;
 				g.setColor(HIGHLIGHT_1_FONT_FOREGROUND_COLOR);
 			}
 			g.drawString(exclusive_time_label_string, GRAPH_LEFT_MARGIN + with_margin_box_left, GRAPH_TOP_MARGIN + y_baseline);
-			g.setColor(WORKER_TEXT_FONT_COLOR);
+			g.setColor(workerTextColor());
 			y_baseline += exclusive_time_label_fontmetrics_height;
 		}
 		
@@ -4788,7 +4814,7 @@ order by id_explain_plan_property;
 	
 		// draw text
 		g.setFont(operatorLabelFont());
-		g.setColor(OPERATOR_FONT_FOREGROUND_COLOR);
+		g.setColor(operatorLabelColor());
 		y_baseline += south_1_fontmetrics_height; // bump it down
 		if (south_1_text != null)
 			g.drawString(south_1_text, GRAPH_LEFT_MARGIN + x_center - (south_1_fontmetrics_width / 2), GRAPH_TOP_MARGIN + y_baseline);
@@ -5473,7 +5499,30 @@ order by id_explain_plan_property;
 
 			}
 		}
-		
+
+		drawSelectedOperatorOutline(g);
+	}
+
+	/** Outline north / operator / south / arrow (rows·mass) text for the selected operator. */
+	private void drawSelectedOperatorOutline(Graphics2D g) {
+		Rectangle bounds = computeSelectedOperatorContentBounds();
+		if (bounds == null) {
+			return;
+		}
+		int pad = Math.max(4, withZoom(4));
+		float x = bounds.x - pad;
+		float y = bounds.y - pad;
+		float w = bounds.width + 2 * pad;
+		float h = bounds.height + 2 * pad;
+		float arc = withZoom(8);
+		Stroke priorStroke = g.getStroke();
+		Color priorColor = g.getColor();
+		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		g.setStroke(new BasicStroke(Math.max(2f, withZoom(2)), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+		g.setColor(new Color(0x25, 0x63, 0xEB));
+		g.draw(new RoundRectangle2D.Float(x, y, w, h, arc, arc));
+		g.setStroke(priorStroke);
+		g.setColor(priorColor);
 	}
 	
 	//LineThicknesses enmLineThicknessBy = LineThicknesses.ACTUAL_ROWS;
@@ -5630,6 +5679,7 @@ order by id_explain_plan_property;
 		double horizontalScreenToPlanRatio;
 		double verticalScreenToPlanRatio;
 		double screenToPlanRatio;
+		int previousZoomPercentage = Math.max(this.intZoomPercentage, 1);
 		
 		// -1 fits the entire plan into the enclosing scroll pane viewport
 		if (intZoomPercentage < 0) {
@@ -5649,7 +5699,7 @@ order by id_explain_plan_property;
 			}
 
 			// Stored extents are at the current zoom; normalize to 100% content size
-			double currentZoomFactor = Math.max(this.intZoomPercentage, 1) / 100.0;
+			double currentZoomFactor = previousZoomPercentage / 100.0;
 			double planWidth100 = (column_boundary_right / currentZoomFactor)
 					+ GRAPH_LEFT_MARGIN + GRAPH_RIGHT_MARGIN;
 			double planHeight100 = (row_boundary_bottom / currentZoomFactor)
@@ -5671,7 +5721,27 @@ order by id_explain_plan_property;
 					intZoomPercentage = 400;
 				}
 			}
+		} else {
+			if (intZoomPercentage < 10) {
+				intZoomPercentage = 10;
+			}
+			if (intZoomPercentage > 400) {
+				intZoomPercentage = 400;
+			}
 		}
+
+		// Preferred size drives scrollbar thumbs; scale immediately so revalidate sees the new size
+		// before paint recalculates exact extents from SQL.
+		if (previousZoomPercentage > 0 && (intXDimension > 0 || intYDimension > 0)) {
+			double scale = intZoomPercentage / (double) previousZoomPercentage;
+			if (intXDimension > 0) {
+				intXDimension = Math.max(1, (int) Math.round(intXDimension * scale));
+			}
+			if (intYDimension > 0) {
+				intYDimension = Math.max(1, (int) Math.round(intYDimension * scale));
+			}
+		}
+
 		this.intZoomPercentage = intZoomPercentage;
 
 		// plan graph needs to be repainted
@@ -5682,6 +5752,141 @@ order by id_explain_plan_property;
 		//objComponent.setWorkerColumnRowWidthsHeightsProcessed(false);
 		objComponent.setZoomPercentageIsDirty(true);
 		//objComponent.setPlanTextIsDirty(true);
+	}
+
+	/** When true, scroll the selected operator into view after the next paint (post-zoom). */
+	private boolean scrollSelectedIntoViewAfterPaint = false;
+
+	/**
+	 * After zoom changes, refresh preferred size / scrollbars. Exact extents are refined on paint;
+	 * this ensures H/V thumbs move even before that.
+	 */
+	public void refreshScrollableSizeAfterZoom() {
+		refreshScrollableSizeAfterZoom(false);
+	}
+
+	/**
+	 * @param keepSelectedVisible if true (zoom + / 100%), keep the selected operator and its labels in view
+	 */
+	public void refreshScrollableSizeAfterZoom(boolean keepSelectedVisible) {
+		scrollSelectedIntoViewAfterPaint = keepSelectedVisible && selectedOperatorId != null;
+		revalidateEnclosingScrollPane();
+		repaint();
+	}
+
+	private void revalidateEnclosingScrollPane() {
+		revalidate();
+		Container parent = getParent();
+		while (parent != null) {
+			parent.revalidate();
+			parent.repaint();
+			if (parent instanceof JScrollPane) {
+				break;
+			}
+			parent = parent.getParent();
+		}
+	}
+
+	/** Scroll so the selected operator box and north/south/arrow text stay in the viewport. */
+	public void ensureSelectedOperatorVisible() {
+		Rectangle bounds = computeSelectedOperatorVisibleBounds();
+		if (bounds != null) {
+			scrollRectToVisible(bounds);
+		}
+	}
+
+	private Rectangle computeSelectedOperatorVisibleBounds() {
+		Rectangle bounds = computeSelectedOperatorContentBounds();
+		if (bounds == null) {
+			return null;
+		}
+		int pad = Math.max(8, withZoom(8));
+		return new Rectangle(bounds.x - pad, bounds.y - pad, bounds.width + 2 * pad, bounds.height + 2 * pad);
+	}
+
+	/** Tight bounds covering operator box, north, south, and arrow (rows/mass) text. */
+	private Rectangle computeSelectedOperatorContentBounds() {
+		if (selectedOperatorId == null || idExplainPlan == null) {
+			return null;
+		}
+		Rectangle bounds = null;
+		List<Shape> shapes = propertyVsShapesMap != null
+				? propertyVsShapesMap.get(selectedOperatorId.intValue()) : null;
+		if (shapes != null) {
+			for (Shape shape : shapes) {
+				Rectangle r = shape.getBounds();
+				if (bounds == null) {
+					bounds = new Rectangle(r);
+				} else {
+					bounds.add(r);
+				}
+			}
+		}
+		String strSQL = "select box_left, box_right, box_top, box_bottom\n"
+				+ ", coalesce(north_1_fontmetrics_width, 0) as north_1_fontmetrics_width\n"
+				+ ", coalesce(north_1_fontmetrics_height, 0) as north_1_fontmetrics_height\n"
+				+ ", coalesce(south_1_fontmetrics_width, 0) as south_1_fontmetrics_width\n"
+				+ ", coalesce(south_2_fontmetrics_width, 0) as south_2_fontmetrics_width\n"
+				+ ", coalesce(south_3_fontmetrics_width, 0) as south_3_fontmetrics_width\n"
+				+ ", coalesce(south_4_fontmetrics_width, 0) as south_4_fontmetrics_width\n"
+				+ ", coalesce(south_5_fontmetrics_width, 0) as south_5_fontmetrics_width\n"
+				+ ", coalesce(south_1_fontmetrics_height, 0) as south_1_fontmetrics_height\n"
+				+ ", coalesce(south_2_fontmetrics_height, 0) as south_2_fontmetrics_height\n"
+				+ ", coalesce(south_3_fontmetrics_height, 0) as south_3_fontmetrics_height\n"
+				+ ", coalesce(south_4_fontmetrics_height, 0) as south_4_fontmetrics_height\n"
+				+ ", coalesce(south_5_fontmetrics_height, 0) as south_5_fontmetrics_height\n"
+				+ ", coalesce(arrow_text_fontmetrics_width, 0) as arrow_text_fontmetrics_width\n"
+				+ ", coalesce(arrow_text_fontmetrics_height, 0) as arrow_text_fontmetrics_height\n"
+				+ ", coalesce((select arrow_text_bottom_margin from config), 0) as arrow_text_bottom_margin\n"
+				+ "from explain_plan_operator_annotations\n"
+				+ "where id_explain_plan = " + idExplainPlan + "\n"
+				+ "and id_explain_plan_property = " + selectedOperatorId.intValue();
+		JsonObject row = Database.row(strSQL);
+		if (row != null && row.get("box_left") != null) {
+			int boxLeft = row.getInteger("box_left");
+			int boxRight = row.getInteger("box_right");
+			int boxTop = row.getInteger("box_top");
+			int boxBottom = row.getInteger("box_bottom");
+			int northW = row.getInteger("north_1_fontmetrics_width");
+			int northH = row.getInteger("north_1_fontmetrics_height");
+			int northHighlightPad = withZoom(5);
+			int south1H = row.getInteger("south_1_fontmetrics_height");
+			int southW = Math.max(row.getInteger("south_1_fontmetrics_width"),
+					Math.max(row.getInteger("south_2_fontmetrics_width"),
+							Math.max(row.getInteger("south_3_fontmetrics_width"),
+									Math.max(row.getInteger("south_4_fontmetrics_width"),
+											row.getInteger("south_5_fontmetrics_width")))));
+			// drawSouthText advances by south_1 height before the first line and again after each line
+			int southH = south1H + south1H
+					+ row.getInteger("south_2_fontmetrics_height")
+					+ row.getInteger("south_3_fontmetrics_height")
+					+ row.getInteger("south_4_fontmetrics_height")
+					+ row.getInteger("south_5_fontmetrics_height");
+			int arrowW = row.getInteger("arrow_text_fontmetrics_width");
+			int arrowH = row.getInteger("arrow_text_fontmetrics_height");
+			int arrowBottomMargin = row.getInteger("arrow_text_bottom_margin");
+			int xCenter = GRAPH_LEFT_MARGIN + boxLeft + (boxRight - boxLeft) / 2;
+			int labelHalf = Math.max(northW, southW) / 2 + northHighlightPad;
+			int left = Math.min(GRAPH_LEFT_MARGIN + boxLeft - arrowW, xCenter - labelHalf);
+			int right = Math.max(GRAPH_LEFT_MARGIN + boxRight, xCenter + labelHalf);
+			int top = GRAPH_TOP_MARGIN + boxTop - northH;
+			int bottom = GRAPH_TOP_MARGIN + boxBottom + southH;
+			if (arrowW > 0 && arrowH > 0) {
+				int arrowBaseline = GRAPH_TOP_MARGIN + boxTop + withZoom(OPERATOR_BOX_HEIGHT) / 2
+						- arrowBottomMargin;
+				int arrowTop = arrowBaseline - arrowH;
+				int arrowBottom = arrowBaseline;
+				top = Math.min(top, arrowTop);
+				bottom = Math.max(bottom, arrowBottom);
+			}
+			Rectangle textBounds = new Rectangle(left, top, Math.max(1, right - left), Math.max(1, bottom - top));
+			if (bounds == null) {
+				bounds = textBounds;
+			} else {
+				bounds.add(textBounds);
+			}
+		}
+		return bounds;
 	}
 	
 	public PercentageBy getPercentageBy() {
@@ -6528,6 +6733,10 @@ order by id_explain_plan_property;
 								propertiesPanel.showOperatorProperties(intIDExplainPlanProperty.intValue());
 							}
 						}
+						SliderPanel sliderPanel = findSliderPanelInSelectedTab();
+						if (sliderPanel != null) {
+							sliderPanel.showSelectedOperator(selectedOperatorId);
+						}
 						repaint();
 						return;
 					}
@@ -6667,4 +6876,8 @@ order by id_explain_plan_property;
 	public Integer getIdExplainPlan() {
         return idExplainPlan;
     }
+
+	public Integer getSelectedOperatorId() {
+		return selectedOperatorId;
+	}
 }
