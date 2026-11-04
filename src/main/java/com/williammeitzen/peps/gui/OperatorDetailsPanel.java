@@ -44,16 +44,11 @@ public class OperatorDetailsPanel extends JPanel {
 	private final JPanel columnView;
 	private final JScrollPane scroll;
 
+	private final JPanel expandAllBar;
+
 	public OperatorDetailsPanel(PlanGraphPanel graphPanel) {
 		super(new BorderLayout());
-		setBorder(BorderFactory.createCompoundBorder(
-				BorderFactory.createEmptyBorder(6, 6, 6, 6),
-				BorderFactory.createCompoundBorder(
-						BorderFactory.createLineBorder(new Color(0xE2, 0xE8, 0xF0)),
-						new EmptyBorder(4, 4, 4, 4))));
 		propertiesPanel = new OperationPropertiesPanel(graphPanel);
-
-		Color notesBg = new Color(0xF8, 0xFA, 0xFC);
 
 		expandAllCheckbox = new JCheckBox("Expand all");
 		expandAllCheckbox.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
@@ -62,9 +57,8 @@ public class OperatorDetailsPanel extends JPanel {
 		expandAllCheckbox.addActionListener(e ->
 				propertiesPanel.setExpandAll(expandAllCheckbox.isSelected()));
 
-		JPanel expandAllBar = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 2));
+		expandAllBar = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 2));
 		expandAllBar.setOpaque(true);
-		expandAllBar.setBackground(notesBg);
 		expandAllBar.setBorder(new EmptyBorder(2, 0, 0, 0));
 		expandAllBar.add(expandAllCheckbox);
 
@@ -72,7 +66,6 @@ public class OperatorDetailsPanel extends JPanel {
 		notesHeading.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 12));
 		notesHeading.setBorder(new EmptyBorder(8, 8, 2, 8));
 		notesHeading.setOpaque(true);
-		notesHeading.setBackground(notesBg);
 
 		notesArea = new JTextArea();
 		notesArea.setEditable(false);
@@ -81,14 +74,12 @@ public class OperatorDetailsPanel extends JPanel {
 		notesArea.setLineWrap(true);
 		notesArea.setWrapStyleWord(true);
 		notesArea.setOpaque(true);
-		notesArea.setBackground(notesBg);
 		notesArea.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
 		notesArea.setBorder(new EmptyBorder(0, 8, 8, 8));
 		notesArea.setText("");
 		notesArea.setRows(1);
 
 		notesBlock = new JPanel(new BorderLayout());
-		notesBlock.setBackground(notesBg);
 		notesBlock.setAlignmentX(LEFT_ALIGNMENT);
 		notesBlock.add(notesHeading, BorderLayout.NORTH);
 		notesBlock.add(notesArea, BorderLayout.CENTER);
@@ -99,7 +90,6 @@ public class OperatorDetailsPanel extends JPanel {
 		tableWithHeader.setAlignmentX(LEFT_ALIGNMENT);
 
 		propertiesBlock = new JPanel(new BorderLayout());
-		propertiesBlock.setBackground(notesBg);
 		propertiesBlock.setAlignmentX(LEFT_ALIGNMENT);
 		propertiesBlock.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
 		propertiesBlock.add(expandAllBar, BorderLayout.NORTH);
@@ -108,17 +98,16 @@ public class OperatorDetailsPanel extends JPanel {
 		// Stack grid then Notes directly underneath (avoid BorderLayout.SOUTH gap)
 		columnView = new JPanel();
 		columnView.setLayout(new BoxLayout(columnView, BoxLayout.Y_AXIS));
-		columnView.setBackground(notesBg);
 		columnView.add(propertiesBlock);
 		columnView.add(notesBlock);
 		columnView.add(Box.createVerticalGlue());
 
 		scroll = new JScrollPane(columnView,
 				JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
-		scroll.getViewport().setBackground(notesBg);
 		scroll.getVerticalScrollBar().setUnitIncrement(WHEEL_UNIT_INCREMENT);
 		scroll.getHorizontalScrollBar().setUnitIncrement(WHEEL_UNIT_INCREMENT);
 		add(scroll, BorderLayout.CENTER);
+		applyThemeSurface();
 
 		// Keep Notes wrap width tied to the visible viewport, even when the grid is wider
 		ChangeListener viewportListener = (ChangeEvent e) -> updateNotesWrapToViewport();
@@ -137,6 +126,35 @@ public class OperatorDetailsPanel extends JPanel {
 			}
 		});
 		setNotesText("");
+	}
+
+	/** Match panel/notes surfaces to Light vs Dark (replaces hard-coded light slate). */
+	public void applyThemeSurface() {
+		Color surface = UiTheme.elevatedSurfaceColor();
+		Color border = UiTheme.subtleBorderColor();
+		setOpaque(true);
+		setBackground(UiTheme.surfaceColor());
+		setBorder(BorderFactory.createCompoundBorder(
+				BorderFactory.createEmptyBorder(6, 6, 6, 6),
+				BorderFactory.createCompoundBorder(
+						BorderFactory.createLineBorder(border),
+						new EmptyBorder(4, 4, 4, 4))));
+		expandAllBar.setBackground(surface);
+		notesHeading.setBackground(surface);
+		notesArea.setBackground(surface);
+		notesBlock.setBackground(surface);
+		propertiesBlock.setBackground(surface);
+		tableWithHeader.setBackground(surface);
+		columnView.setBackground(surface);
+		scroll.getViewport().setBackground(surface);
+	}
+
+	@Override
+	public void updateUI() {
+		super.updateUI();
+		if (scroll != null) {
+			applyThemeSurface();
+		}
 	}
 
 	/**

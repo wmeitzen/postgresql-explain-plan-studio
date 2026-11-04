@@ -92,6 +92,9 @@ public class MainFrame extends JFrame {
 		tabPane = new JTabbedPane();
 		// Prefer full tab titles (no "...") — FlatLaf uses preferred width of each tab
 		tabPane.putClientProperty("JTabbedPane.tabWidthMode", "preferred");
+		// Dark scheme also enables card tabs + separators via UiTheme UIManager keys
+		tabPane.putClientProperty("JTabbedPane.showTabSeparators", Boolean.TRUE);
+		tabPane.putClientProperty("JTabbedPane.tabSeparatorsFullHeight", Boolean.TRUE);
 		tabPane.setTabLayoutPolicy(JTabbedPane.SCROLL_TAB_LAYOUT);
 		formPanel = new FormPanel(tabPane, planDiagramToolbar);
 
