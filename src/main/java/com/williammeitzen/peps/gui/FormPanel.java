@@ -5,6 +5,7 @@ import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Container;
+import java.awt.Dialog;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
@@ -13,9 +14,12 @@ import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.awt.RenderingHints;
+import java.awt.Window;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.image.BufferedImage;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
@@ -24,9 +28,11 @@ import javax.swing.DefaultListModel;
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JDialog;
+import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JProgressBar;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
@@ -67,6 +73,7 @@ public class FormPanel extends JPanel {
 	
 	public Map<String, PlanEvent> plansMapper = new TreeMap<String, PlanEvent>();
 	private PlanEvent planEvent;
+	private boolean comparePlansRefreshInProgress = false;
 
 	public FormPanel(JTabbedPane tabPane, PlanDiagramToolbar planDiagramToolbar) {
 		
@@ -136,7 +143,7 @@ public class FormPanel extends JPanel {
 		
 		// retrieve plans from db
 		strSQL = "select id_explain_plan, plan_name, server, port, database, username, password, remember_password\n"
-				+ ", pre_explain_command, explain_sql_command, post_explain_command, plan_text\n"
+				+ ", auth_type, pre_explain_command, explain_sql_command, post_explain_command, plan_text\n"
 				+ "from explain_plans\n"
 				+ "order by lower(plan_name);\n";
 		jsnRows = Database.rows(strSQL);
@@ -185,9 +192,7 @@ public class FormPanel extends JPanel {
 		        public void stateChanged(ChangeEvent e) {
 		            //System.out.println("(1) Tab: " + tabPaneToLink.getSelectedIndex());
 		            if (tabPaneToLink.getSelectedIndex() == COMPARE_PLANS_TAB) {
-		            	//PlanStatisticsPanel.setReadStatisticsDataFlag(true);
-		            	statisticsPanel.setReadStatisticsDataFlag(true);
-		            	statisticsPanel.createComponents();
+		            	refreshComparePlansTab(statisticsPanel);
 		            }
 		        }
 			});
@@ -205,8 +210,10 @@ public class FormPanel extends JPanel {
 			newPlanSourcePanel.setPlanSourceFromQueryPortField(jsnRow.getString("port"));
 			newPlanSourcePanel.setPlanSourceFromQueryDatabaseField(jsnRow.getString("database"));
 			newPlanSourcePanel.setPlanSourceFromQueryUserField(jsnRow.getString("username"));
+			newPlanSourcePanel.setAuthenticationTypeCode(jsnRow.getString("auth_type"));
 			newPlanSourcePanel.setPlanSourceFromQueryRememberPasswordCheckbox(Utils.objectToBoolean(jsnRow.getString("remember_password")));
-			if (Utils.objectToBoolean(jsnRow.getString("remember_password")) == true) {
+			if (Utils.objectToBoolean(jsnRow.getString("remember_password")) == true
+					&& !newPlanSourcePanel.isTrustAuthentication()) {
 				newPlanSourcePanel.setPlanSourceFromQueryPasswordField(jsnRow.getString("password"));
 			} else {
 				newPlanSourcePanel.setPlanSourceFromQueryPasswordField("");
@@ -219,8 +226,8 @@ public class FormPanel extends JPanel {
 			//newPlanGraphPanel.setIDExplainPlan(jsnRow.getString("plan_name"));
 			newPlanGraphPanel.setIDExplainPlan(newPlanName);
 			
-			// Plan Diagram tab stays enabled; selecting it generates the diagram from JSON
-			tabPaneToLink.setEnabledAt(2, true);
+			// Plan Diagram is enabled only for a single selected plan
+			updatePlanDiagramTabEnabled();
 		}
 		
 		addPlanBtn = createPlanToolbarButton("add", "Add Plan");
@@ -297,9 +304,7 @@ public class FormPanel extends JPanel {
 				        public void stateChanged(ChangeEvent e) {
 				            //System.out.println("(2) Tab: " + tabPaneToLink.getSelectedIndex());
 				            if (tabPaneToLink.getSelectedIndex() == COMPARE_PLANS_TAB) {
-				            	//PlanStatisticsPanel.setReadStatisticsDataFlag(true);
-				            	statisticsPanel.setReadStatisticsDataFlag(true);
-				            	statisticsPanel.createComponents();
+				            	refreshComparePlansTab(statisticsPanel);
 				            }
 				        }
 					});
@@ -312,7 +317,7 @@ public class FormPanel extends JPanel {
 					if (bolShowProperties == true) { System.out.println("after createPlanDiagramTab()"); }
 					tabPaneToLink.addTab(getPlanDiagramTabName(selectedPlanName), diagramTab);
 					
-					tabPaneToLink.setEnabledAt(2, true);
+					updatePlanDiagramTabEnabled();
 					
 					if (planDiagramToolbar != null) {
 						planDiagramToolbar.setAllDiagramOptionsEnabled(false);
@@ -366,7 +371,7 @@ public class FormPanel extends JPanel {
 						createPlanDiagramTab(pEvent.getPlanGraphPanel(), 1000, 500));
 				duplicatePlanBtn.setEnabled(true);
 
-				tabPaneToLink.setEnabledAt(2, true);
+				updatePlanDiagramTabEnabled();
 
 			}
 		});
@@ -526,7 +531,9 @@ public class FormPanel extends JPanel {
 							newPlanSourcePanel.setPlanSourceFromQueryPortField(existingPlanSource.getPlanSourceFromQueryPortField());
 							newPlanSourcePanel.setPlanSourceFromQueryDatabaseField(existingPlanSource.getPlanSourceFromQueryDatabaseField());
 							newPlanSourcePanel.setPlanSourceFromQueryUserField(existingPlanSource.getPlanSourceFromQueryUserField());
-							if (existingPlanSource.getPlanSourceFromQueryRememberPasswordCheckbox() == true) {
+							newPlanSourcePanel.setAuthenticationTypeCode(existingPlanSource.getAuthenticationTypeCode());
+							if (existingPlanSource.getPlanSourceFromQueryRememberPasswordCheckbox() == true
+									&& !existingPlanSource.isTrustAuthentication()) {
 								newPlanSourcePanel.setPlanSourceFromQueryPasswordField(existingPlanSource.getPlanSourceFromQueryPasswordField());
 							} else {
 								newPlanSourcePanel.setPlanSourceFromQueryPasswordField("");
@@ -544,6 +551,7 @@ public class FormPanel extends JPanel {
 									existingPlanSource.getPlanSourceFromQueryUserField(),
 									existingPlanSource.getPlanSourceFromQueryPasswordField(),
 									existingPlanSource.getPlanSourceFromQueryRememberPasswordCheckbox(),
+									existingPlanSource.getAuthenticationTypeCode(),
 									existingPlanSource.getPlanSourceFromQueryPreCommandField(),
 									existingPlanSource.getSQLQueryText(),
 									existingPlanSource.getPlanSourceFromQueryPostCommandField(),
@@ -638,6 +646,193 @@ public class FormPanel extends JPanel {
 	
 	private String getPlanDiagramTabName(String planName) {
 		return planName + " - Plan Diagram";
+	}
+
+	/** Plan Diagram is only meaningful for a single selected plan. */
+	public boolean isSinglePlanSelected() {
+		return planList != null && planList.getSelectedIndices().length == 1;
+	}
+
+	public void updatePlanDiagramTabEnabled() {
+		if (tabPaneToLink == null || tabPaneToLink.getTabCount() <= 2) {
+			return;
+		}
+		boolean enableDiagram = isSinglePlanSelected();
+		tabPaneToLink.setEnabledAt(2, enableDiagram);
+		if (!enableDiagram && tabPaneToLink.getSelectedIndex() == 2) {
+			tabPaneToLink.setSelectedIndex(1); // Compare Plans
+		}
+	}
+
+	/**
+	 * Generate any selected plans that lack diagram data, then refresh Compare Plans.
+	 * Shows a small progress dialog while diagrams are built.
+	 */
+	private void refreshComparePlansTab(PlanStatisticsPanel statisticsPanel) {
+		if (comparePlansRefreshInProgress) {
+			return;
+		}
+		comparePlansRefreshInProgress = true;
+
+		List<String> plansToGenerate = new ArrayList<>();
+		DefaultListModel baseModel = (DefaultListModel) planList.getModel();
+		for (int selectedIndex : planList.getSelectedIndices()) {
+			String planName = (String) baseModel.getElementAt(selectedIndex);
+			PlanEvent mappedEvent = plansMapper.get(planName);
+			if (mappedEvent == null) {
+				continue;
+			}
+			PlanSourcePanel source = mappedEvent.getPlanSourcePanel();
+			PlanGraphPanel graph = mappedEvent.getPlanGraphPanel();
+			if (source == null || graph == null) {
+				continue;
+			}
+			String json = PlanSourcePanel.normalizeJsonPlanText(source.getJsonPlanText());
+			if (json == null || json.isBlank()) {
+				continue;
+			}
+			if (!graph.hasGeneratedPlanValues() || source.shouldRebuildDiagramFromJson(json)) {
+				plansToGenerate.add(planName);
+			}
+		}
+
+		Runnable finishRefresh = () -> {
+			try {
+				PlanStatisticsPanel panel = findVisibleComparePlansPanel();
+				if (panel == null) {
+					panel = statisticsPanel;
+				}
+				if (panel != null) {
+					panel.setReadStatisticsDataFlag(true);
+					panel.createComponents();
+				}
+			} finally {
+				comparePlansRefreshInProgress = false;
+			}
+		};
+
+		if (plansToGenerate.isEmpty()) {
+			finishRefresh.run();
+			return;
+		}
+
+		generatePlanDiagramsWithProgress(plansToGenerate, finishRefresh);
+	}
+
+	private PlanStatisticsPanel findVisibleComparePlansPanel() {
+		if (tabPaneToLink == null || tabPaneToLink.getTabCount() <= 1) {
+			return null;
+		}
+		Component tab = tabPaneToLink.getComponentAt(1);
+		if (tab instanceof JScrollPane) {
+			Component view = ((JScrollPane) tab).getViewport().getView();
+			if (view instanceof PlanStatisticsPanel) {
+				return (PlanStatisticsPanel) view;
+			}
+		}
+		return null;
+	}
+
+	private void generatePlanDiagramsWithProgress(List<String> planNames, Runnable onComplete) {
+		final int planCount = planNames.size();
+		final String dialogTitle = planCount == 1 ? "Generating Plan" : ("Generating " + planCount + " Plans");
+		final int minVisibleMs = 700;
+
+		Window owner = SwingUtilities.getWindowAncestor(this);
+		JDialog progressDialog = new JDialog(owner, dialogTitle, Dialog.ModalityType.MODELESS);
+		progressDialog.setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE);
+
+		JLabel statusLabel = new JLabel(dialogTitle);
+		statusLabel.setFont(statusLabel.getFont().deriveFont(Font.PLAIN, 12f));
+		JProgressBar progressBar = new JProgressBar(0, planCount);
+		progressBar.setValue(0);
+		progressBar.setStringPainted(planCount > 1);
+		if (planCount > 1) {
+			progressBar.setString("1 / " + planCount);
+		}
+		progressBar.setPreferredSize(new Dimension(280, 20));
+
+		JPanel content = new JPanel(new BorderLayout(8, 10));
+		content.setBorder(BorderFactory.createEmptyBorder(14, 16, 14, 16));
+		content.setOpaque(true);
+		content.add(statusLabel, BorderLayout.NORTH);
+		content.add(progressBar, BorderLayout.CENTER);
+		progressDialog.setContentPane(content);
+		progressDialog.setResizable(false);
+		progressDialog.pack();
+		progressDialog.setLocationRelativeTo(owner != null ? owner : this);
+
+		// Show first and force a full paint so the dialog isn't blank/partial when work starts.
+		progressDialog.setVisible(true);
+		progressDialog.toFront();
+		paintProgressDialogNow(progressDialog);
+
+		// Defer generation so the dialog can finish its first clean paint cycle.
+		SwingUtilities.invokeLater(() -> {
+			long startedAt = System.currentTimeMillis();
+			try {
+				for (int i = 0; i < planCount; i++) {
+					String planName = planNames.get(i);
+					statusLabel.setText(planCount == 1
+							? "Generating Plan"
+							: ("Generating Plan " + (i + 1) + " of " + planCount));
+					progressBar.setValue(i);
+					if (planCount > 1) {
+						progressBar.setString((i + 1) + " / " + planCount);
+					}
+					progressBar.setToolTipText(planName);
+					paintProgressDialogNow(progressDialog);
+
+					PlanEvent planEvent = plansMapper.get(planName);
+					if (planEvent != null) {
+						planEvent.getPlanGraphPanel().ensurePlanDataGenerated(planEvent.getPlanSourcePanel());
+					}
+
+					progressBar.setValue(i + 1);
+					paintProgressDialogNow(progressDialog);
+				}
+			} finally {
+				long elapsed = System.currentTimeMillis() - startedAt;
+				int remaining = (int) Math.max(0, minVisibleMs - elapsed);
+				Runnable closeAndFinish = () -> {
+					progressDialog.setVisible(false);
+					progressDialog.dispose();
+					if (onComplete != null) {
+						onComplete.run();
+					}
+				};
+				if (remaining > 0) {
+					javax.swing.Timer holdOpen = new javax.swing.Timer(remaining, e -> closeAndFinish.run());
+					holdOpen.setRepeats(false);
+					holdOpen.start();
+				} else {
+					closeAndFinish.run();
+				}
+			}
+		});
+	}
+
+	/** Force the progress dialog to paint fully before blocking work continues on the EDT. */
+	private void paintProgressDialogNow(JDialog progressDialog) {
+		if (progressDialog == null || !progressDialog.isDisplayable()) {
+			return;
+		}
+		progressDialog.validate();
+		Container content = progressDialog.getContentPane();
+		if (content instanceof JPanel && content.getWidth() > 0 && content.getHeight() > 0) {
+			JPanel panel = (JPanel) content;
+			panel.validate();
+			panel.paintImmediately(0, 0, panel.getWidth(), panel.getHeight());
+		}
+		java.awt.Graphics g = progressDialog.getGraphics();
+		if (g != null) {
+			try {
+				progressDialog.paintAll(g);
+			} finally {
+				g.dispose();
+			}
+		}
+		java.awt.Toolkit.getDefaultToolkit().sync();
 	}
 
 	private void repaintPlanGraphPanels(Component root) {

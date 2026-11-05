@@ -1027,11 +1027,13 @@ south_1_fontmetrics_width = null;
         strSQL += ", explain_sql_command varchar(8192)\n";
         strSQL += ", post_explain_command varchar(256)\n";
         strSQL += ", remember_password int not null default 0";
+        strSQL += ", auth_type varchar(64) not null default 'password'";
         strSQL += ", write_version_environment_to_json int not null default 1";
         strSQL += ", write_query_to_json int not null default 1";
         strSQL += ", write_pg_environment_settings_to_json int not null default 1";
         strSQL += ");";
         Database.dml(strSQL);
+		ensureExplainPlansColumn("auth_type", "varchar(64) not null default 'password'");
 
 		// if major or minor db version number change, drop / recreate table
 		if (intDBConfigVersionMajor != intDBSchemaVersionNumberMajor || strDBConfigVersionMinor.equals(strDBSchemaVersionNumberMinor) == false) {
@@ -1152,7 +1154,7 @@ south_1_fontmetrics_width = null;
 	 */
 	public static void updateExplainPlan(int idExplainPlan, String planName, String conflictPlanName,
 			String server, String port, String database, String username, String password, boolean rememberPassword,
-			String preExplainCommand, String explainSqlCommand, String postExplainCommand, String planText) {
+			String authType, String preExplainCommand, String explainSqlCommand, String postExplainCommand, String planText) {
 		if (objConnection == null) {
 			return;
 		}
@@ -1164,6 +1166,7 @@ south_1_fontmetrics_width = null;
 				+ "username = ?, "
 				+ "password = ?, "
 				+ "remember_password = ?, "
+				+ "auth_type = ?, "
 				+ "pre_explain_command = ?, "
 				+ "explain_sql_command = ?, "
 				+ "post_explain_command = ?, "
@@ -1185,6 +1188,7 @@ south_1_fontmetrics_width = null;
 			ps.setString(i++, nullToEmpty(username));
 			ps.setString(i++, rememberPassword ? nullToEmpty(password) : "");
 			ps.setInt(i++, rememberPassword ? 1 : 0);
+			ps.setString(i++, normalizeAuthType(authType));
 			ps.setString(i++, nullToEmpty(preExplainCommand));
 			ps.setString(i++, nullToEmpty(explainSqlCommand));
 			ps.setString(i++, nullToEmpty(postExplainCommand));
@@ -1213,13 +1217,14 @@ south_1_fontmetrics_width = null;
 	}
 
 	public static void updateExplainPlanFields(int idExplainPlan, String planName, String server, String port,
-			String database, String username, String password, boolean rememberPassword,
+			String database, String username, String password, boolean rememberPassword, String authType,
 			String preExplainCommand, String explainSqlCommand, String postExplainCommand, String planText) {
 		if (objConnection == null) {
 			return;
 		}
 		String sql = "update explain_plans set "
 				+ "server = ?, port = ?, database = ?, username = ?, password = ?, remember_password = ?, "
+				+ "auth_type = ?, "
 				+ "pre_explain_command = ?, explain_sql_command = ?, post_explain_command = ?, "
 				+ "plan_text = ?, plan_name = ? where id_explain_plan = ?";
 		try (PreparedStatement ps = objConnection.prepareStatement(sql)) {
@@ -1234,6 +1239,7 @@ south_1_fontmetrics_width = null;
 			ps.setString(i++, nullToEmpty(username));
 			ps.setString(i++, rememberPassword ? nullToEmpty(password) : "");
 			ps.setInt(i++, rememberPassword ? 1 : 0);
+			ps.setString(i++, normalizeAuthType(authType));
 			ps.setString(i++, nullToEmpty(preExplainCommand));
 			ps.setString(i++, nullToEmpty(explainSqlCommand));
 			ps.setString(i++, nullToEmpty(postExplainCommand));
@@ -1249,6 +1255,13 @@ south_1_fontmetrics_width = null;
 
 	private static String nullToEmpty(String value) {
 		return value == null ? "" : value;
+	}
+
+	private static String normalizeAuthType(String authType) {
+		if (authType != null && authType.equalsIgnoreCase("trust")) {
+			return "trust";
+		}
+		return "password";
 	}
 
 	private static String truncateForLog(String sql) {
@@ -1432,7 +1445,16 @@ south_1_fontmetrics_width = null;
 
 	/** Add a config column if an older database is missing it. */
 	private static void ensureConfigColumn(String columnName, String columnSqlType) {
-		JsonArray cols = rows("pragma table_info(config);");
+		ensureTableColumn("config", columnName, columnSqlType);
+	}
+
+	/** Add an explain_plans column if an older database is missing it. */
+	private static void ensureExplainPlansColumn(String columnName, String columnSqlType) {
+		ensureTableColumn("explain_plans", columnName, columnSqlType);
+	}
+
+	private static void ensureTableColumn(String tableName, String columnName, String columnSqlType) {
+		JsonArray cols = rows("pragma table_info(" + tableName + ");");
 		if (cols == null) {
 			return;
 		}
@@ -1443,7 +1465,7 @@ south_1_fontmetrics_width = null;
 				return;
 			}
 		}
-		dml("alter table config add column " + columnName + " " + columnSqlType + ";");
+		dml("alter table " + tableName + " add column " + columnName + " " + columnSqlType + ";");
 	}
     
 }

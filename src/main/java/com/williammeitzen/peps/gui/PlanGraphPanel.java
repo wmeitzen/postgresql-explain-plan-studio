@@ -86,6 +86,9 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 	private Integer idExplainPlan;
 	private Integer intXDimension = 5000;
 	private Integer intYDimension = 5000;
+	/** When set, paint/rebuild uses this Plan Source instead of tab 0 (Compare Plans batch generate). */
+	private PlanSourcePanel planSourceOverride = null;
+	private boolean suppressDiagramBusyCursor = false;
 
 	private Integer GRAPH_TOP_MARGIN = 25; // zoom has no effect on margins
 	private Integer GRAPH_LEFT_MARGIN = 0; // zoom has no effect on margins
@@ -204,6 +207,60 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 				: Cursor.getDefaultCursor());
 	}
 
+	/** True when explain_plan_generated_values has a row for this plan. */
+	public boolean hasGeneratedPlanValues() {
+		if (idExplainPlan == null) {
+			return false;
+		}
+		JsonObject row = Database.row(
+				"select id_explain_plan from explain_plan_generated_values where id_explain_plan = "
+						+ idExplainPlan);
+		return row != null && row.get("id_explain_plan") != null;
+	}
+
+	/**
+	 * Build sqlite annotations / generated values from the given Plan Source JSON
+	 * without requiring the Plan Diagram tab to be visible. Used by Compare Plans.
+	 */
+	public boolean ensurePlanDataGenerated(PlanSourcePanel source) {
+		if (source == null || idExplainPlan == null) {
+			return false;
+		}
+		String json = PlanSourcePanel.normalizeJsonPlanText(source.getJsonPlanText());
+		if (json == null || json.isBlank()) {
+			return false;
+		}
+		if (hasGeneratedPlanValues() && !source.shouldRebuildDiagramFromJson(json)) {
+			return true;
+		}
+		planSourceOverride = source;
+		suppressDiagramBusyCursor = true;
+		try {
+			source.setPlanSourceButtonClicked(PlanSourcePanel.SHOW_JSON_PLAN_DIAGRAM);
+			source.setPlanTextIsDirty(true);
+			int w = Math.max(1, getWidth());
+			int h = Math.max(1, getHeight());
+			BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+			Graphics2D g2 = img.createGraphics();
+			try {
+				paintComponent(g2);
+			} finally {
+				g2.dispose();
+			}
+			return hasGeneratedPlanValues();
+		} finally {
+			planSourceOverride = null;
+			suppressDiagramBusyCursor = false;
+		}
+	}
+
+	private PlanSourcePanel resolvePlanSourcePanel() {
+		if (planSourceOverride != null) {
+			return planSourceOverride;
+		}
+		return (PlanSourcePanel) objCurrentPlanTabs.getComponentAt(0);
+	}
+
 	private static boolean isPlanDiagramConstructionAction(String buttonClicked) {
 		return PlanSourcePanel.SHOW_JSON_PLAN_DIAGRAM.equals(buttonClicked)
 				|| PlanSourcePanel.EXECUTE_AND_SHOW_PLAN_DIAGRAM.equals(buttonClicked);
@@ -235,13 +292,14 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 
 		if (bolShowFunctionName == true) { System.out.println("called paintComponent(Graphics g)"); }
 
-		PlanSourcePanel objComponent = (PlanSourcePanel) objCurrentPlanTabs.getComponentAt(0);
+		PlanSourcePanel objComponent = resolvePlanSourcePanel();
 		strPlanSourceButtonClicked = objComponent.getPlanSourceButtonClicked();
 
 		boolean forceExecuteRebuild = PlanSourcePanel.EXECUTE_AND_SHOW_PLAN_DIAGRAM.equals(strPlanSourceButtonClicked);
 		boolean showJsonAction = PlanSourcePanel.SHOW_JSON_PLAN_DIAGRAM.equals(strPlanSourceButtonClicked);
 		boolean jsonNeedsRebuild = showJsonAction && objComponent.shouldRebuildDiagramFromCurrentJson();
-		if (forceExecuteRebuild || jsonNeedsRebuild || objComponent.getPlanTextIsDirty()) {
+		if (!suppressDiagramBusyCursor
+				&& (forceExecuteRebuild || jsonNeedsRebuild || objComponent.getPlanTextIsDirty())) {
 			setDiagramBusyCursor(this, true);
 			busyCursorShown = true;
 		}
@@ -318,6 +376,7 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 					objComponent.getPlanSourceFromQueryUserField(),
 					objComponent.getPlanSourceFromQueryPasswordField(),
 					objComponent.getPlanSourceFromQueryRememberPasswordCheckbox(),
+					objComponent.getAuthenticationTypeCode(),
 					objComponent.getPlanSourceFromQueryPreCommandField(),
 					objComponent.getSQLQueryText(),
 					objComponent.getPlanSourceFromQueryPostCommandField(),

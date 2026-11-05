@@ -2,58 +2,41 @@ package com.williammeitzen.peps.gui;
 
 import java.awt.BorderLayout;
 import java.awt.Component;
-import java.awt.Container;
-//import java.awt.Cursor;
 import java.awt.Dimension;
-//import java.awt.FlowLayout;
+import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
-//import java.awt.GridLayout;
 import java.awt.Insets;
-//import java.awt.Rectangle;
-//import java.awt.TextArea;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.FocusAdapter;
 import java.awt.event.FocusEvent;
-//import java.awt.event.KeyEvent;
+import java.awt.event.ItemEvent;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
 import java.util.Date;
 import java.util.Objects;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-//import javax.swing.BorderFactory;
+
+import javax.swing.BorderFactory;
+import javax.swing.Box;
 import javax.swing.BoxLayout;
-import javax.swing.DefaultListModel;
-//import javax.swing.ButtonGroup;
-//import javax.swing.DefaultComboBoxModel;
-//import javax.swing.DefaultListModel;
+import javax.swing.ButtonGroup;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
-import javax.swing.JDialog;
-//import javax.swing.JCheckBox;
-//import javax.swing.JComboBox;
+import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
-//import javax.swing.JList;
 import javax.swing.JPanel;
 import javax.swing.JPasswordField;
-//import javax.swing.JRadioButton;
+import javax.swing.JRadioButton;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
-//import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
-//import javax.swing.JViewport;
-//import javax.swing.KeyStroke;
-//import javax.swing.ScrollPaneConstants;
-//import javax.swing.SwingUtilities;
-//import javax.swing.border.Border;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
-//import org.json.simple.JsonObject;
-//import model.Database;
 
 import com.williammeitzen.peps.model.Database;
 
@@ -61,6 +44,11 @@ public class PlanSourcePanel extends JPanel {
 
 	public static final String SHOW_JSON_PLAN_DIAGRAM = "Show JSON Plan Diagram";
 	public static final String EXECUTE_AND_SHOW_PLAN_DIAGRAM = "Execute and Show Plan Diagram";
+	public static final String AUTH_USERNAME_PASSWORD = "Username/password";
+	public static final String AUTH_TRUST = "Trust / empty password";
+	/** Values stored in explain_plans.auth_type */
+	public static final String AUTH_TYPE_PASSWORD = "password";
+	public static final String AUTH_TYPE_TRUST = "trust";
 	
 	//private JButton okBtn;
 	private FormListener formListener;
@@ -85,8 +73,16 @@ public class PlanSourcePanel extends JPanel {
 
 	private JLabel planSourceFromQueryPasswordLabel;
 	private JTextField planSourceFromQueryPasswordField;
-	private JLabel planSourceFromQueryRememberPasswordLabel;
 	private JCheckBox planSourceFromQueryRememberPasswordCheckbox;
+
+	private JLabel connectByLabel;
+	private JRadioButton connectByHostRadio;
+	private JRadioButton connectByUrlRadio;
+	private JLabel jdbcUrlLabel;
+	private JTextField jdbcUrlField;
+	private JLabel authTypeLabel;
+	private JComboBox<String> authTypeCombo;
+	private boolean syncingConnectionFields = false;
 
 	private JLabel planSourceFromQueryPreCommandLabel;
 	private JLabel planSourceFromQueryPostCommandLabel;
@@ -94,6 +90,7 @@ public class PlanSourcePanel extends JPanel {
 	private JTextArea planSourceFromQuerySQLTextArea;
 	private JTextField planSourceFromQueryPostCommandField;
 	private JLabel planSourceFromQuerySQLLabel;
+	private JLabel jsonPlanLabel;
 	private JScrollPane planSourceFromQuerySQLTextAreaScrollPane;
 	private JButton planSourceFromQueryButton;
 	private String planName;
@@ -107,89 +104,112 @@ public class PlanSourcePanel extends JPanel {
 	/** Normalized JSON last used to build the Plan Diagram; null if never built. */
 	private String jsonRenderedInDiagram = null;
 	public int intZoomPercentage = 100;
-	
-	private final Insets EAST_INSETS = new Insets(2, 4, 12, 12);
-	private final Insets WEST_INSETS = new Insets(2, 12, 12, 4);
-	private final ArrayList<Component> labels = new ArrayList<Component>();
-	private final ArrayList<Component> fields = new ArrayList<Component>();
+
+	private static final Pattern JDBC_URL_PATTERN = Pattern.compile(
+			"(?i)^jdbc:postgresql://([^:/]+)(?::(\\d+))?/([^?]*)");
+
+	private final Insets LABEL_INSETS = new Insets(4, 8, 4, 8);
+	private final Insets FIELD_INSETS = new Insets(4, 0, 4, 8);
+	private final Insets SECTION_INSETS = new Insets(14, 8, 6, 8);
+
+	/** Same wheel step as Plan Diagram / OperatorDetailsPanel scrolling. */
+	private static final int WHEEL_UNIT_INCREMENT = 48;
+
+	/** Hybrid widths: connection fields stay compact; SQL/JSON can be wider. */
+	private static final int FIELD_WIDTH = 360;
+	private static final int HOST_WIDTH = 280;
+	private static final int PORT_WIDTH = 72;
+	private static final int PASSWORD_WIDTH = 280;
+	private static final int COMBO_WIDTH = 220;
+	private static final int AREA_WIDTH = 680;
+	private static final int AREA_HEIGHT = 150;
 	
 	public PlanSourcePanel(JTabbedPane objCurrentPlanTabs) {
 		boolean bolShowTiming = false;
 		Dimension dim = getPreferredSize();
-		//System.out.println(dim);
 		dim.width = 300;
 		setMinimumSize(dim);
-		//String strSQL;
-		//Integer idExplainPlan = -1;
-		//JsonObject objRow = null;
 		
 		this.objCurrentPlanTabs = objCurrentPlanTabs;
 		
-		//okBtn = new JButton("OK");
-		
-		//planSourceRadioGroup = new ButtonGroup();
-		//planSourceFromQueryRadio = new JRadioButton("Retrieve plan from EXPLAIN SELECT query");
-		//planSourceFromJSONRadio = new JRadioButton("Paste JSON Plan");
-		//planSourceFromPEGRadio = new JRadioButton("Paste PEG Plan");
-		//planSourceRadioGroup.add(planSourceFromQueryRadio);
-		//planSourceRadioGroup.add(planSourceFromJSONRadio);
-		//planSourceRadioGroup.add(planSourceFromPEGRadio);
-		//planSourceFromJSONRadio.setSelected(true);
-		
 		planSourceFromQueryPlanNameLabel = new JLabel("Plan name:");
-		planSourceFromQueryPlanNameField = new JTextField(20);
-		planSourceFromQueryServerLabel = new JLabel("Server:");
-		planSourceFromQueryServerField = new JTextField(20);
+		planSourceFromQueryPlanNameField = new JTextField(24);
+
+		connectByLabel = new JLabel("Connect by:");
+		connectByHostRadio = new JRadioButton("Host");
+		connectByUrlRadio = new JRadioButton("URL");
+		ButtonGroup connectByGroup = new ButtonGroup();
+		connectByGroup.add(connectByHostRadio);
+		connectByGroup.add(connectByUrlRadio);
+		connectByHostRadio.setSelected(true);
+
+		jdbcUrlLabel = new JLabel("URL:");
+		jdbcUrlField = new JTextField(36);
+		jdbcUrlField.setEnabled(false);
+
+		planSourceFromQueryServerLabel = new JLabel("Host:");
+		planSourceFromQueryServerField = new JTextField(24);
 		planSourceFromQueryPortLabel = new JLabel("Port:");
 		planSourceFromQueryPortField = new JTextField(7);
 		planSourceFromQueryPortField.setText("5432");
 		planSourceFromQueryDatabaseLabel = new JLabel("Database:");
-		planSourceFromQueryDatabaseField = new JTextField(10);
+		planSourceFromQueryDatabaseField = new JTextField(18);
+
+		authTypeLabel = new JLabel("Authentication:");
+		authTypeCombo = new JComboBox<>(new String[] { AUTH_USERNAME_PASSWORD, AUTH_TRUST });
+		authTypeCombo.setSelectedItem(AUTH_USERNAME_PASSWORD);
+		authTypeCombo.addItemListener(e -> {
+			if (e.getStateChange() == ItemEvent.SELECTED) {
+				updateAuthenticationMode();
+			}
+		});
+
 		planSourceFromQueryUserLabel = new JLabel("Username:");
-		planSourceFromQueryUserField = new JTextField(10);
+		planSourceFromQueryUserField = new JTextField(18);
 
 		planSourceFromQueryPasswordLabel = new JLabel("Password:");
-		planSourceFromQueryPasswordField = new JPasswordField(10);
-		planSourceFromQueryRememberPasswordLabel = new JLabel("Remember password?");
-		planSourceFromQueryRememberPasswordCheckbox = new JCheckBox();
+		planSourceFromQueryPasswordField = new JPasswordField(18);
+		planSourceFromQueryRememberPasswordCheckbox = new JCheckBox("Save password");
 
-		planSourceFromQueryPreCommandLabel = new JLabel("Execute before running EXPLAIN command:");
-		planSourceFromQueryPreCommandField = new JTextField(40);
-		planSourceFromQueryPostCommandLabel = new JLabel("Execute after running EXPLAIN command:");
-		planSourceFromQueryPostCommandField = new JTextField(20);
-		
-		// disable editing until all of it works
-		//planSourceFromQueryPlanNameField.setEnabled(false);
-
-		// Put all labels to array
-		labels.add(planSourceFromQueryPlanNameLabel);
-		labels.add(planSourceFromQueryServerLabel);
-		labels.add(planSourceFromQueryPortLabel);
-		labels.add(planSourceFromQueryDatabaseLabel);
-		labels.add(planSourceFromQueryUserLabel);
-		labels.add(planSourceFromQueryPasswordLabel);
-		labels.add(planSourceFromQueryRememberPasswordLabel);
-		labels.add(planSourceFromQueryPreCommandLabel);
-		labels.add(planSourceFromQueryPostCommandLabel);
-		
-		// Put all fields to array
-		fields.add(planSourceFromQueryPlanNameField);
-		fields.add(planSourceFromQueryServerField);
-		fields.add(planSourceFromQueryPortField);
-		fields.add(planSourceFromQueryDatabaseField);
-		fields.add(planSourceFromQueryUserField);
-		fields.add(planSourceFromQueryPasswordField);
-		fields.add(planSourceFromQueryRememberPasswordCheckbox);
-		fields.add(planSourceFromQueryPreCommandField);
-		fields.add(planSourceFromQueryPostCommandField);
+		planSourceFromQueryPreCommandLabel = new JLabel("Before EXPLAIN:");
+		planSourceFromQueryPreCommandField = new JTextField(36);
+		planSourceFromQueryPostCommandLabel = new JLabel("After EXPLAIN:");
+		planSourceFromQueryPostCommandField = new JTextField(36);
 		
 		planSourceFromQuerySQLLabel = new JLabel("EXPLAIN (with options) and SQL command:");
-		planSourceFromQuerySQLTextArea = new JTextArea(10, 40);
+		planSourceFromQuerySQLTextArea = new JTextArea(8, 40);
 		planSourceFromQuerySQLTextArea.setText("\nexplain (analyze, buffers, format json, verbose)\n\nselect \n");
 		planSourceFromQuerySQLTextAreaScrollPane = new JScrollPane(planSourceFromQuerySQLTextArea);
-		
-		jsonPlanTextArea = new JTextArea(10, 40);
+
+		jsonPlanLabel = new JLabel("JSON plan:");
+		jsonPlanTextArea = new JTextArea(8, 40);
 		jsonPlanTextAreaScrollPane = new JScrollPane(jsonPlanTextArea);
+
+		DocumentListener hostFieldsListener = new DocumentListener() {
+			public void insertUpdate(DocumentEvent e) { syncJdbcUrlFromHostFields(); }
+			public void removeUpdate(DocumentEvent e) { syncJdbcUrlFromHostFields(); }
+			public void changedUpdate(DocumentEvent e) { syncJdbcUrlFromHostFields(); }
+		};
+		planSourceFromQueryServerField.getDocument().addDocumentListener(hostFieldsListener);
+		planSourceFromQueryPortField.getDocument().addDocumentListener(hostFieldsListener);
+		planSourceFromQueryDatabaseField.getDocument().addDocumentListener(hostFieldsListener);
+		jdbcUrlField.getDocument().addDocumentListener(new DocumentListener() {
+			public void insertUpdate(DocumentEvent e) { syncHostFieldsFromJdbcUrl(); }
+			public void removeUpdate(DocumentEvent e) { syncHostFieldsFromJdbcUrl(); }
+			public void changedUpdate(DocumentEvent e) { syncHostFieldsFromJdbcUrl(); }
+		});
+		connectByHostRadio.addItemListener(e -> {
+			if (e.getStateChange() == ItemEvent.SELECTED) {
+				updateConnectByMode();
+			}
+		});
+		connectByUrlRadio.addItemListener(e -> {
+			if (e.getStateChange() == ItemEvent.SELECTED) {
+				updateConnectByMode();
+			}
+		});
+		syncJdbcUrlFromHostFields();
+		updateConnectByMode();
 		
 		DocumentListener jsonPlanTextAreaDocumentListener = new DocumentListener() {
 
@@ -337,13 +357,14 @@ public class PlanSourcePanel extends JPanel {
 		showPlanGraphButton.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
 				if (bolShowTiming == true) { System.out.println("before PlanSourcePanel.showPlanGraphButton.addActionListener(): " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
+				if (!canOpenPlanDiagramTab()) {
+					return;
+				}
 				PlanGraphPanel.setDiagramBusyCursor(PlanSourcePanel.this, true);
 				setPlanSourceButtonClicked(SHOW_JSON_PLAN_DIAGRAM);
 
 				objCurrentPlanTabs.setEnabled(true);
-				if (objCurrentPlanTabs.getTabCount() > 2) {
-					objCurrentPlanTabs.setEnabledAt(2, true);
-				}
+				objCurrentPlanTabs.setEnabledAt(2, true);
 				objCurrentPlanTabs.setSelectedIndex(2);
 				if (bolShowTiming == true) { System.out.println("after PlanSourcePanel.showPlanGraphButton.addActionListener(): " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
 			}
@@ -374,13 +395,10 @@ public class PlanSourcePanel extends JPanel {
 				if (bolShowProperties == true) { System.out.println("planSourceFromQueryPlanNameField.addFocusListener"); }
 				setPlanSourceButtonClicked(EXECUTE_AND_SHOW_PLAN_DIAGRAM);
 				
-				// prompt for password
-				if (getPlanSourceFromQueryPasswordField().equals("") == true) {
+				// prompt for password unless Trust / empty password is selected
+				if (!isTrustAuthentication() && getPlanSourceFromQueryPasswordField().equals("")) {
 
 					JPasswordField objPasswordField = new JPasswordField();
-					//objPasswordField.addAncestorListener( new RequestFocusListener() );
-					//objPasswordField.setVisible( true );
-					//objPasswordField.requestFocusInWindow();
 					int okCxl = JOptionPane.showConfirmDialog(null, objPasswordField, "Enter Password for '" + getPlanSourceFromQueryUserField() + "'", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
 					
 					if (okCxl == JOptionPane.OK_OPTION) {
@@ -392,11 +410,12 @@ public class PlanSourcePanel extends JPanel {
 					}
 				}
 
+				if (!canOpenPlanDiagramTab()) {
+					return;
+				}
 				PlanGraphPanel.setDiagramBusyCursor(PlanSourcePanel.this, true);
 				objCurrentPlanTabs.setEnabled(true);
-				if (objCurrentPlanTabs.getTabCount() > 2) {
-					objCurrentPlanTabs.setEnabledAt(2, true);
-				}
+				objCurrentPlanTabs.setEnabledAt(2, true);
 				objCurrentPlanTabs.setSelectedIndex(2);
 				if (bolShowTiming == true) { System.out.println("after PlanSourcePanel.planSourceFromQueryButton.addActionListener(): " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
 			}
@@ -409,107 +428,269 @@ public class PlanSourcePanel extends JPanel {
 	}
 	
 	public void setShowPlanGraphButton(boolean enable) {
-		//showPlanGraphButton.enable(enable);
 		showPlanGraphButton.setEnabled(enable);
 	}
-	
-	private GridBagConstraints createGbc(int x, int y) {
+
+	private JLabel createSectionHeader(String title) {
+		JLabel header = new JLabel(title);
+		header.setFont(header.getFont().deriveFont(Font.BOLD, header.getFont().getSize2D() + 1f));
+		return header;
+	}
+
+	private GridBagConstraints labelGbc(int x, int y) {
 		GridBagConstraints gbc = new GridBagConstraints();
-		gbc.fill = GridBagConstraints.NONE;
 		gbc.gridx = x;
 		gbc.gridy = y;
-		gbc.weightx = 0.1;
-		gbc.anchor = (x == 0) ? GridBagConstraints.EAST : GridBagConstraints.WEST;
-		gbc.insets = (x == 0) ? EAST_INSETS : WEST_INSETS;
+		gbc.anchor = GridBagConstraints.EAST;
+		gbc.insets = LABEL_INSETS;
 		return gbc;
 	}
 
-	private Component displayLabels() {
-		JPanel panel = new JPanel(new GridBagLayout());
-		
-		GridBagConstraints gbc = null;
-		for (int i = 0; i < labels.size(); i++) {
-			// Label - x = 0
-			Component label = labels.get(i);
-			gbc = createGbc(0, i);
-			panel.add(label, gbc);
-		
-			// Field - x = 1
-			Component field = fields.get(i);
-			gbc = createGbc(1, i);
-			panel.add(field, gbc);
+	private GridBagConstraints fieldGbc(int x, int y, int width) {
+		GridBagConstraints gbc = new GridBagConstraints();
+		gbc.gridx = x;
+		gbc.gridy = y;
+		gbc.gridwidth = width;
+		gbc.weightx = 0;
+		gbc.fill = GridBagConstraints.NONE;
+		gbc.anchor = GridBagConstraints.WEST;
+		gbc.insets = FIELD_INSETS;
+		return gbc;
+	}
 
+	private GridBagConstraints sectionGbc(int y) {
+		GridBagConstraints gbc = new GridBagConstraints();
+		gbc.gridx = 0;
+		gbc.gridy = y;
+		gbc.gridwidth = 5;
+		gbc.anchor = GridBagConstraints.WEST;
+		gbc.insets = SECTION_INSETS;
+		return gbc;
+	}
+
+	private void sizeField(Component field, int width) {
+		int height = Math.max(field.getPreferredSize().height, 24);
+		Dimension size = new Dimension(width, height);
+		field.setPreferredSize(size);
+		field.setMinimumSize(new Dimension(Math.min(120, width), height));
+		field.setMaximumSize(size);
+	}
+
+	private void sizeTextArea(JScrollPane scrollPane, int width, int height) {
+		Dimension size = new Dimension(width, height);
+		scrollPane.setPreferredSize(size);
+		scrollPane.setMinimumSize(new Dimension(Math.min(280, width), 80));
+		scrollPane.setMaximumSize(new Dimension(width, Integer.MAX_VALUE));
+		applyWheelUnitIncrement(scrollPane);
+	}
+
+	private static void applyWheelUnitIncrement(JScrollPane scrollPane) {
+		scrollPane.getVerticalScrollBar().setUnitIncrement(WHEEL_UNIT_INCREMENT);
+		scrollPane.getHorizontalScrollBar().setUnitIncrement(WHEEL_UNIT_INCREMENT);
+	}
+
+	private JPanel buildConnectionForm() {
+		sizeField(planSourceFromQueryPlanNameField, FIELD_WIDTH);
+		sizeField(jdbcUrlField, FIELD_WIDTH);
+		sizeField(planSourceFromQueryServerField, HOST_WIDTH);
+		sizeField(planSourceFromQueryPortField, PORT_WIDTH);
+		sizeField(planSourceFromQueryDatabaseField, FIELD_WIDTH);
+		sizeField(authTypeCombo, COMBO_WIDTH);
+		sizeField(planSourceFromQueryUserField, FIELD_WIDTH);
+		sizeField(planSourceFromQueryPasswordField, PASSWORD_WIDTH);
+		sizeField(planSourceFromQueryPreCommandField, FIELD_WIDTH);
+		sizeField(planSourceFromQueryPostCommandField, FIELD_WIDTH);
+		sizeTextArea(planSourceFromQuerySQLTextAreaScrollPane, AREA_WIDTH, AREA_HEIGHT);
+		sizeTextArea(jsonPlanTextAreaScrollPane, AREA_WIDTH, AREA_HEIGHT);
+
+		JPanel panel = new JPanel(new GridBagLayout());
+		int row = 0;
+
+		panel.add(createSectionHeader("Plan"), sectionGbc(row++));
+		panel.add(planSourceFromQueryPlanNameLabel, labelGbc(0, row));
+		panel.add(planSourceFromQueryPlanNameField, fieldGbc(1, row++, 3));
+
+		panel.add(createSectionHeader("Server"), sectionGbc(row++));
+
+		panel.add(connectByLabel, labelGbc(0, row));
+		JPanel connectByPanel = new JPanel();
+		connectByPanel.setLayout(new BoxLayout(connectByPanel, BoxLayout.X_AXIS));
+		connectByPanel.setOpaque(false);
+		connectByPanel.add(connectByHostRadio);
+		connectByPanel.add(Box.createHorizontalStrut(12));
+		connectByPanel.add(connectByUrlRadio);
+		panel.add(connectByPanel, fieldGbc(1, row++, 3));
+
+		panel.add(jdbcUrlLabel, labelGbc(0, row));
+		panel.add(jdbcUrlField, fieldGbc(1, row++, 3));
+
+		panel.add(planSourceFromQueryServerLabel, labelGbc(0, row));
+		panel.add(planSourceFromQueryServerField, fieldGbc(1, row, 1));
+		panel.add(planSourceFromQueryPortLabel, labelGbc(2, row));
+		panel.add(planSourceFromQueryPortField, fieldGbc(3, row++, 1));
+
+		panel.add(planSourceFromQueryDatabaseLabel, labelGbc(0, row));
+		panel.add(planSourceFromQueryDatabaseField, fieldGbc(1, row++, 3));
+
+		panel.add(createSectionHeader("Authentication"), sectionGbc(row++));
+
+		panel.add(authTypeLabel, labelGbc(0, row));
+		panel.add(authTypeCombo, fieldGbc(1, row++, 3));
+
+		panel.add(planSourceFromQueryUserLabel, labelGbc(0, row));
+		panel.add(planSourceFromQueryUserField, fieldGbc(1, row++, 3));
+
+		panel.add(planSourceFromQueryPasswordLabel, labelGbc(0, row));
+		JPanel passwordRow = new JPanel();
+		passwordRow.setLayout(new BoxLayout(passwordRow, BoxLayout.X_AXIS));
+		passwordRow.setOpaque(false);
+		passwordRow.add(planSourceFromQueryPasswordField);
+		passwordRow.add(Box.createHorizontalStrut(10));
+		passwordRow.add(planSourceFromQueryRememberPasswordCheckbox);
+		panel.add(passwordRow, fieldGbc(1, row++, 3));
+
+		panel.add(createSectionHeader("Commands"), sectionGbc(row++));
+
+		panel.add(planSourceFromQueryPreCommandLabel, labelGbc(0, row));
+		panel.add(planSourceFromQueryPreCommandField, fieldGbc(1, row++, 3));
+
+		panel.add(planSourceFromQueryPostCommandLabel, labelGbc(0, row));
+		panel.add(planSourceFromQueryPostCommandField, fieldGbc(1, row++, 3));
+
+		GridBagConstraints sqlLabelGbc = fieldGbc(1, row++, 3);
+		sqlLabelGbc.insets = new Insets(10, 0, 2, 8);
+		panel.add(planSourceFromQuerySQLLabel, sqlLabelGbc);
+
+		GridBagConstraints sqlAreaGbc = fieldGbc(1, row++, 3);
+		sqlAreaGbc.weighty = 0.45;
+		sqlAreaGbc.fill = GridBagConstraints.VERTICAL;
+		sqlAreaGbc.insets = new Insets(0, 0, 4, 8);
+		panel.add(planSourceFromQuerySQLTextAreaScrollPane, sqlAreaGbc);
+
+		panel.add(planSourceFromQueryButton, fieldGbc(1, row++, 3));
+
+		GridBagConstraints jsonLabelGbc = fieldGbc(1, row++, 3);
+		jsonLabelGbc.insets = new Insets(10, 0, 2, 8);
+		panel.add(jsonPlanLabel, jsonLabelGbc);
+
+		GridBagConstraints jsonAreaGbc = fieldGbc(1, row++, 3);
+		jsonAreaGbc.weighty = 0.45;
+		jsonAreaGbc.fill = GridBagConstraints.VERTICAL;
+		jsonAreaGbc.insets = new Insets(0, 0, 4, 8);
+		panel.add(jsonPlanTextAreaScrollPane, jsonAreaGbc);
+
+		panel.add(showPlanGraphButton, fieldGbc(1, row++, 3));
+
+		// Absorb extra horizontal space so fields stay left-aligned at hybrid widths.
+		GridBagConstraints hSpacer = new GridBagConstraints();
+		hSpacer.gridx = 4;
+		hSpacer.gridy = 0;
+		hSpacer.weightx = 1.0;
+		hSpacer.fill = GridBagConstraints.HORIZONTAL;
+		panel.add(Box.createHorizontalGlue(), hSpacer);
+
+		GridBagConstraints vSpacer = new GridBagConstraints();
+		vSpacer.gridx = 0;
+		vSpacer.gridy = row;
+		vSpacer.gridwidth = 5;
+		vSpacer.weighty = 0.01;
+		vSpacer.fill = GridBagConstraints.VERTICAL;
+		panel.add(Box.createVerticalGlue(), vSpacer);
+
+		return panel;
+	}
+
+	private void updateConnectByMode() {
+		boolean hostMode = connectByHostRadio.isSelected();
+		planSourceFromQueryServerField.setEnabled(hostMode);
+		planSourceFromQueryPortField.setEnabled(hostMode);
+		planSourceFromQueryDatabaseField.setEnabled(hostMode);
+		jdbcUrlField.setEnabled(!hostMode);
+		if (hostMode) {
+			syncJdbcUrlFromHostFields();
 		}
-
-		gbc = new GridBagConstraints();
-		gbc.gridx = 2;
-		gbc.gridy = 0;
-		gbc.weightx = 100;
-		gbc.anchor = GridBagConstraints.LINE_END;
-		panel.add(new Container(), gbc);
-
-		return panel;
 	}
 
-	private Component displaySQLQueryInputs() {
-		JPanel panel = new JPanel(new GridBagLayout());
-		
-		GridBagConstraints gbc = new GridBagConstraints();
-		gbc.fill = GridBagConstraints.NONE;
-
-		gbc.gridx = 0;
-	    gbc.gridy = 0;
-	    gbc.weightx = 1;
-	    gbc.anchor = GridBagConstraints.WEST;
-	    gbc.insets = WEST_INSETS;
-	    panel.add(planSourceFromQuerySQLLabel, gbc);
-		
-	    gbc.gridy = 1;
-	    panel.add(planSourceFromQuerySQLTextAreaScrollPane, gbc);
-		
-	    gbc.gridy = 2;
-	    panel.add(planSourceFromQueryButton, gbc);
-		
-		return panel;
+	private void updateAuthenticationMode() {
+		boolean trust = isTrustAuthentication();
+		planSourceFromQueryPasswordField.setEnabled(!trust);
+		planSourceFromQueryRememberPasswordCheckbox.setEnabled(!trust);
+		if (trust) {
+			planSourceFromQueryPasswordField.setText("");
+			planSourceFromQueryRememberPasswordCheckbox.setSelected(false);
+		}
 	}
-		
-	private Component displayJSONInputs() {
-		JPanel panel = new JPanel(new GridBagLayout());
-		
-		GridBagConstraints gbc = new GridBagConstraints();
-		gbc.fill = GridBagConstraints.NONE;
-		
-		gbc.gridx = 0;
-	    gbc.gridy = 0;
-	    gbc.weightx = 1;
-	    gbc.anchor = GridBagConstraints.WEST;
-	    gbc.insets = WEST_INSETS;
-	    panel.add(jsonPlanTextAreaScrollPane, gbc);
 
-	    gbc.gridy = 1;
-	    panel.add(showPlanGraphButton, gbc);
+	public boolean isTrustAuthentication() {
+		return AUTH_TRUST.equals(authTypeCombo.getSelectedItem());
+	}
 
-	    //gbc.gridy = 2;
-	    //panel.add(planSourceFromPEGRadio, gbc);
-		
-		return panel;
+	public String getAuthenticationTypeCode() {
+		return isTrustAuthentication() ? AUTH_TYPE_TRUST : AUTH_TYPE_PASSWORD;
+	}
+
+	public void setAuthenticationTypeCode(String authTypeCode) {
+		if (AUTH_TYPE_TRUST.equalsIgnoreCase(authTypeCode)) {
+			authTypeCombo.setSelectedItem(AUTH_TRUST);
+		} else {
+			authTypeCombo.setSelectedItem(AUTH_USERNAME_PASSWORD);
+		}
+		updateAuthenticationMode();
+	}
+
+	private void syncJdbcUrlFromHostFields() {
+		if (syncingConnectionFields || connectByUrlRadio.isSelected()) {
+			return;
+		}
+		syncingConnectionFields = true;
+		try {
+			String host = safeText(planSourceFromQueryServerField);
+			String port = safeText(planSourceFromQueryPortField);
+			String database = safeText(planSourceFromQueryDatabaseField);
+			if (port.isBlank()) {
+				port = "5432";
+			}
+			jdbcUrlField.setText("jdbc:postgresql://" + host + ":" + port + "/" + database);
+		} finally {
+			syncingConnectionFields = false;
+		}
+	}
+
+	private void syncHostFieldsFromJdbcUrl() {
+		if (syncingConnectionFields || connectByHostRadio.isSelected()) {
+			return;
+		}
+		Matcher matcher = JDBC_URL_PATTERN.matcher(safeText(jdbcUrlField).trim());
+		if (!matcher.matches()) {
+			return;
+		}
+		syncingConnectionFields = true;
+		try {
+			planSourceFromQueryServerField.setText(matcher.group(1));
+			String port = matcher.group(2);
+			planSourceFromQueryPortField.setText(port == null || port.isBlank() ? "5432" : port);
+			planSourceFromQueryDatabaseField.setText(matcher.group(3) == null ? "" : matcher.group(3));
+		} finally {
+			syncingConnectionFields = false;
+		}
+	}
+
+	private static String safeText(JTextField field) {
+		return field.getText() == null ? "" : field.getText().trim();
 	}
 		
 	public void layoutComponents() {
+		removeAll();
 		setLayout(new BorderLayout());
+		setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
 
-		JPanel panel = new JPanel();
-		panel.setLayout(new BoxLayout(panel, BoxLayout.X_AXIS | BoxLayout.Y_AXIS));
-		
-	    panel.add(displayLabels());
-	    panel.add(displaySQLQueryInputs());
-	    panel.add(displayJSONInputs());
-
-	    JScrollPane js = new JScrollPane(panel);
-	    js.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
-	    js.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
-
-	    add(js, BorderLayout.CENTER);
+		JPanel form = buildConnectionForm();
+		JScrollPane js = new JScrollPane(form);
+		js.setBorder(BorderFactory.createEmptyBorder());
+		js.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+		js.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+		applyWheelUnitIncrement(js);
+		add(js, BorderLayout.CENTER);
 	}
 /*
 	public void setPlanName(String planName) {
@@ -544,6 +725,7 @@ public class PlanSourcePanel extends JPanel {
 
 	public void setPlanSourceFromQueryServerField(String strServer) {
 		planSourceFromQueryServerField.setText(strServer);
+		syncJdbcUrlFromHostFields();
 	}
 
 	public String getPlanSourceFromQueryServerField() {
@@ -552,6 +734,7 @@ public class PlanSourcePanel extends JPanel {
 
 	public void setPlanSourceFromQueryPortField(String strPort) {
 		planSourceFromQueryPortField.setText(strPort);
+		syncJdbcUrlFromHostFields();
 	}
 
 	public String getPlanSourceFromQueryPortField() {
@@ -560,6 +743,7 @@ public class PlanSourcePanel extends JPanel {
 
 	public void setPlanSourceFromQueryDatabaseField(String strDatabase) {
 		planSourceFromQueryDatabaseField.setText(strDatabase);
+		syncJdbcUrlFromHostFields();
 	}
 
 	public String getPlanSourceFromQueryDatabaseField() {
@@ -579,6 +763,9 @@ public class PlanSourcePanel extends JPanel {
 	}
 
 	public String getPlanSourceFromQueryPasswordField() {
+		if (isTrustAuthentication()) {
+			return "";
+		}
 		return planSourceFromQueryPasswordField.getText();
 	}
 
@@ -587,6 +774,9 @@ public class PlanSourcePanel extends JPanel {
 	}
 
 	public boolean getPlanSourceFromQueryRememberPasswordCheckbox() {
+		if (isTrustAuthentication()) {
+			return false;
+		}
 		return planSourceFromQueryRememberPasswordCheckbox.isSelected();
 	}
 
@@ -634,11 +824,30 @@ public class PlanSourcePanel extends JPanel {
 	public void setPlanTextIsDirty(boolean planTextIsDirty) {
 		boolean bolShowProperties = false;
 		if (bolShowProperties == true) { System.out.println("setPlanTextIsDirty(" + planTextIsDirty + ")"); }
-		// Keep Plan Diagram tab enabled so selecting it can generate the diagram
-		if (objCurrentPlanTabs != null && objCurrentPlanTabs.getTabCount() > 2) {
+		// Keep Plan Diagram tab enabled for a single selection so selecting it can generate the diagram
+		FormPanel formPanel = findFormPanel();
+		if (formPanel != null) {
+			formPanel.updatePlanDiagramTabEnabled();
+		} else if (objCurrentPlanTabs != null && objCurrentPlanTabs.getTabCount() > 2) {
 			objCurrentPlanTabs.setEnabledAt(2, true);
 		}
 		this.planTextIsDirty = planTextIsDirty;
+	}
+
+	private boolean canOpenPlanDiagramTab() {
+		if (objCurrentPlanTabs == null || objCurrentPlanTabs.getTabCount() <= 2) {
+			return false;
+		}
+		FormPanel formPanel = findFormPanel();
+		return formPanel == null || formPanel.isSinglePlanSelected();
+	}
+
+	private FormPanel findFormPanel() {
+		if (objCurrentPlanTabs == null || !(objCurrentPlanTabs.getParent() instanceof JSplitPane)) {
+			return null;
+		}
+		Component left = ((JSplitPane) objCurrentPlanTabs.getParent()).getComponent(0);
+		return left instanceof FormPanel ? (FormPanel) left : null;
 	}
 
 	public boolean getPlanTextIsDirty() {
