@@ -41,7 +41,11 @@ Copy-Item "\\maurice\Cee\docs\bitbucket\peg\peg.sqlite" ".\postgresql-explain-pl
 
 Then run from that directory and open a plan → **Show JSON Plan Diagram** (or select the Plan Diagram tab).
 
-### Windows package with bundled runtime (jpackage)
+### Package with bundled runtime (jpackage)
+
+Requires JDK 17+ with `jpackage` on `PATH`.
+
+**Windows**
 
 ```powershell
 .\mvnw.cmd -P jpackage -DskipTests verify
@@ -51,6 +55,30 @@ Outputs:
 
 - `target/jpackage/PostgreSQLExplainPlanStudio/PostgreSQLExplainPlanStudio.exe`
 - `target/PostgreSQLExplainPlanStudio-<version>-windows-x64.zip`
+
+**Ubuntu / Linux**
+
+```bash
+sudo apt update
+sudo apt install -y openjdk-17-jdk
+# confirm jpackage is available (ships with the JDK)
+jpackage --version
+
+git clone https://github.com/wmeitzen/postgresql-explain-plan-studio.git
+cd postgresql-explain-plan-studio
+./mvnw -P jpackage -DskipTests verify
+```
+
+Outputs:
+
+- `target/jpackage/PostgreSQLExplainPlanStudio/bin/PostgreSQLExplainPlanStudio`
+- `target/PostgreSQLExplainPlanStudio-<version>-linux-x64.zip`
+
+Run the app:
+
+```bash
+./target/jpackage/PostgreSQLExplainPlanStudio/bin/PostgreSQLExplainPlanStudio
+```
 
 ## License
 

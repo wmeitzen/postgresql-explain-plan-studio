@@ -6,7 +6,7 @@
 
   <groupId>com.williammeitzen</groupId>
   <artifactId>postgresql-explain-plan-studio</artifactId>
-  <version>0.0.6</version>
+  <version>0.0.7</version>
   <name>PostgreSQL Explain Plan Studio</name>
   <description>Graphical PostgreSQL EXPLAIN plan studio.</description>
   <url>https://github.com/wmeitzen/postgresql-explain-plan-studio</url>
@@ -30,10 +30,11 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.release>17</maven.compiler.release>
     <main.class>com.williammeitzen.peps.PostgreSQLExplainPlanStudio</main.class>
-    <jpackage.appVersion>0.0.6</jpackage.appVersion>
+    <jpackage.appVersion>0.0.7</jpackage.appVersion>
     <jpackage.appName>PostgreSQLExplainPlanStudio</jpackage.appName>
     <jpackage.vendor>William Meitzen</jpackage.vendor>
     <jpackage.description>PostgreSQL Explain Plan Studio</jpackage.description>
+    <jpackage.zipClassifier>windows-x64</jpackage.zipClassifier>
     <batik.version>1.17</batik.version>
   </properties>
 
@@ -133,9 +134,44 @@
   </build>
 
   <profiles>
+    <profile>
+      <id>os-windows</id>
+      <activation>
+        <os>
+          <family>windows</family>
+        </os>
+      </activation>
+      <properties>
+        <jpackage.zipClassifier>windows-x64</jpackage.zipClassifier>
+      </properties>
+    </profile>
+    <profile>
+      <id>os-linux</id>
+      <activation>
+        <os>
+          <name>linux</name>
+        </os>
+      </activation>
+      <properties>
+        <jpackage.zipClassifier>linux-x64</jpackage.zipClassifier>
+      </properties>
+    </profile>
+    <profile>
+      <id>os-mac</id>
+      <activation>
+        <os>
+          <family>mac</family>
+        </os>
+      </activation>
+      <properties>
+        <jpackage.zipClassifier>osx</jpackage.zipClassifier>
+      </properties>
+    </profile>
+
     <!--
-      Bundled-runtime Windows package via jpackage (app-image + zip).
+      Bundled-runtime package via jpackage (app-image + zip).
       Usage: mvnw -P jpackage -DskipTests verify
+      Zip classifier follows the OS (windows-x64, linux-x64, osx).
     -->
     <profile>
       <id>jpackage</id>
@@ -170,7 +206,7 @@
                 </goals>
                 <configuration>
                   <target>
-                    <zip destfile="${project.build.directory}/${jpackage.appName}-${jpackage.appVersion}-windows-x64.zip"
+                    <zip destfile="${project.build.directory}/${jpackage.appName}-${jpackage.appVersion}-${jpackage.zipClassifier}.zip"
                          basedir="${project.build.directory}/jpackage"
                          includes="${jpackage.appName}/**"/>
                   </target>
