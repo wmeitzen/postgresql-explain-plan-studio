@@ -1458,6 +1458,10 @@ select id_explain_plan_property, parent_id_explain_plan_property, x_cart, y_cart
 	}
 	
 	public void setTotalExecutionTimeSlider(int idExplainPlan) {
+		// Off-screen Compare Plans generation must not touch the shared Sliders dockable.
+		if (suppressDiagramBusyCursor) {
+			return;
+		}
 		SliderPanel sliderPanel = findSliderPanelInSelectedTab();
 		if (sliderPanel != null) {
 			sliderPanel.setPlanTotalTimeMs(idExplainPlan);
@@ -1467,6 +1471,10 @@ select id_explain_plan_property, parent_id_explain_plan_property, x_cart, y_cart
 	}
 	
 	public void setTotalExecutionCostSlider(int idExplainPlan) {
+		// Off-screen Compare Plans generation must not touch the shared Sliders dockable.
+		if (suppressDiagramBusyCursor) {
+			return;
+		}
 		SliderPanel sliderPanel = findSliderPanelInSelectedTab();
 		if (sliderPanel != null) {
 			sliderPanel.setPlanTotalCost(idExplainPlan);

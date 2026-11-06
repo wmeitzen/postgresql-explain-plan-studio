@@ -78,8 +78,17 @@ public class PlanStatisticsPanel extends JTable {
 	
 	public PlanStatisticsPanel() {
 		super();
-		createComponents();
+		// Never paint a partial/stale grid from a previous Compare Plans visit.
+		readStatisticsDataFlag = false;
+		clearPendingDisplay();
 		_instance = this;
+	}
+
+	/** Empty the table while diagrams are still being generated. */
+	public void clearPendingDisplay() {
+		readStatisticsDataFlag = false;
+		setModel(new DefaultTableModel());
+		setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
 	}
 	
 	static public PlanStatisticsPanel getInstance() {
@@ -152,7 +161,7 @@ public class PlanStatisticsPanel extends JTable {
 			    Vector vctRow = new Vector();
 				vctRow.addElement(jsnPlanName.getString("plan_name"));
 				if (jsnPlanName.get("epgv_id_explain_plan") == null) { // see if we joined with epgv at all
-					vctRow.addElement("(plan graph not generated yet)");
+					vctRow.addElement("(Plan diagram not generated yet)");
 				} else if (jsnPlanName.get("execution_time_ms") == null || jsnPlanName.get("total_execution_time_percentage") == null) {
 					vctRow.addElement("");
 				} else {

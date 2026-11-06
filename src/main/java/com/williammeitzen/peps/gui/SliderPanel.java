@@ -94,6 +94,17 @@ public class SliderPanel extends JPanel implements Scrollable {
 		//layoutComponents_OLD();
 		layoutComponents();
 	}
+
+	public void setPlanGraphPanel(PlanGraphPanel graphPanel) {
+		planGraphPanel = graphPanel;
+		selectedOperatorId = null;
+		selectedSpanStart = null;
+		selectedSpanEnd = null;
+		spanSlider = null;
+		if (selectedOperatorLabel != null) {
+			selectedOperatorLabel.setText("");
+		}
+	}
 	
 	private static int dblRoundedToInt(Double dblValue) {
 		if (dblValue == null)
@@ -150,22 +161,29 @@ public class SliderPanel extends JPanel implements Scrollable {
 		String strSQL;
 		JsonObject jsnRow;
 
-		int idExplainPlan = (planGraphPanel.getIdExplainPlan() != null) ? planGraphPanel.getIdExplainPlan().intValue() : -1;
+		int idExplainPlan = (planGraphPanel != null && planGraphPanel.getIdExplainPlan() != null)
+				? planGraphPanel.getIdExplainPlan().intValue() : -1;
 
 		ButtonGroup sliderLabelButtonGroup = new ButtonGroup();
 		//JRadioButton timeSliderRB = new JRadioButton("Time Difference Slider");
 		timeSliderRB = new JRadioButton("Time Difference Slider");
 		//JRadioButton costSliderRB = new JRadioButton("Cost Slider");
 		costSliderRB = new JRadioButton("Cost Slider");
-		
-		strSQL = "select cost_enabled, exclusive_time_enabled, time_difference_enabled\n"
-				+ "from explain_plan_generated_values where id_explain_plan = " + idExplainPlan; 
-		if (bolShowSQL == true) { System.out.println(strSQL); }
-		jsnRow = Database.row(strSQL);
 
-		boolean bolEnableCost = Utils.objectToBoolean(jsnRow.get("cost_enabled"));
-		boolean bolEnableExclusiveTime = Utils.objectToBoolean(jsnRow.get("exclusive_time_enabled"));
-		boolean bolEnableTimeDifference = Utils.objectToBoolean(jsnRow.get("time_difference_enabled"));
+		boolean bolEnableCost = false;
+		boolean bolEnableExclusiveTime = false;
+		boolean bolEnableTimeDifference = false;
+		if (idExplainPlan >= 0) {
+			strSQL = "select cost_enabled, exclusive_time_enabled, time_difference_enabled\n"
+					+ "from explain_plan_generated_values where id_explain_plan = " + idExplainPlan;
+			if (bolShowSQL == true) { System.out.println(strSQL); }
+			jsnRow = Database.row(strSQL);
+			if (jsnRow != null) {
+				bolEnableCost = Utils.objectToBoolean(jsnRow.get("cost_enabled"));
+				bolEnableExclusiveTime = Utils.objectToBoolean(jsnRow.get("exclusive_time_enabled"));
+				bolEnableTimeDifference = Utils.objectToBoolean(jsnRow.get("time_difference_enabled"));
+			}
+		}
 /*
 		if (bolEnableCost == false)
 			costSliderRB.setEnabled(false);
@@ -177,12 +195,13 @@ public class SliderPanel extends JPanel implements Scrollable {
 		if (bolShowProperties == true) { System.out.println("bolEnableExclusiveTime: " + bolEnableExclusiveTime); }
 		if (bolShowProperties == true) { System.out.println("bolEnableTimeDifference: " + bolEnableTimeDifference); }
 		timeSliderRB.setEnabled(bolEnableExclusiveTime || bolEnableTimeDifference);
-		
-		if (planGraphPanel.getSliderType() == SliderPanel.SLIDER_TYPE_TIME && timeSliderRB.isEnabled() == true) {
+
+		int sliderType = planGraphPanel != null ? planGraphPanel.getSliderType() : SliderPanel.SLIDER_TYPE_COST;
+		if (sliderType == SliderPanel.SLIDER_TYPE_TIME && timeSliderRB.isEnabled() == true) {
 			timeSliderRB.setSelected(true);
-		} else if (planGraphPanel.getSliderType() == SliderPanel.SLIDER_TYPE_COST && costSliderRB.isEnabled() == true) {
+		} else if (sliderType == SliderPanel.SLIDER_TYPE_COST && costSliderRB.isEnabled() == true) {
 			costSliderRB.setSelected(true);
-		} else if (planGraphPanel.getSliderType() != SliderPanel.SLIDER_TYPE_TIME && planGraphPanel.getSliderType() != SliderPanel.SLIDER_TYPE_COST) {
+		} else if (sliderType != SliderPanel.SLIDER_TYPE_TIME && sliderType != SliderPanel.SLIDER_TYPE_COST) {
 			System.out.println("Error in SliderPanel.createComponents(): Unknown slider type");
 		}
 		sliderLabelButtonGroup.add(timeSliderRB);
@@ -222,7 +241,9 @@ public class SliderPanel extends JPanel implements Scrollable {
 					//setCurrentPlanTimeLabel(value);
 					setCurrentPlanTimeMs(msValue);
 					setCurrentPlanTimeLabel(msValue);
-					planGraphPanel.repaint();
+					if (planGraphPanel != null) {
+						planGraphPanel.repaint();
+					}
 				}
 			}
 		};
@@ -240,7 +261,9 @@ public class SliderPanel extends JPanel implements Scrollable {
 					setCurrentPlanCost(msValue);
 					setCurrentPlanCostLabel(msValue);
 					//setCurrentPlanCostLabel(Utils.formattedCost(msValue));
-					planGraphPanel.repaint();
+					if (planGraphPanel != null) {
+						planGraphPanel.repaint();
+					}
 				}
 			}
 		};
@@ -249,7 +272,9 @@ public class SliderPanel extends JPanel implements Scrollable {
 			public void actionPerformed(ActionEvent e) {
 				//repaintOnPercentageByChange(PercentageBy.COST);
 				//planGraphPanel.getSliderType() == SliderPanel.SLIDER_TYPE_TIME
-				planGraphPanel.setSliderType(SliderPanel.SLIDER_TYPE_TIME);
+				if (planGraphPanel != null) {
+					planGraphPanel.setSliderType(SliderPanel.SLIDER_TYPE_TIME);
+				}
 				//repaint();
 				refreshComponents();
 			}
@@ -258,7 +283,9 @@ public class SliderPanel extends JPanel implements Scrollable {
 		costSliderRB.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
 				//repaintOnPercentageByChange(PercentageBy.COST);
-				planGraphPanel.setSliderType(SliderPanel.SLIDER_TYPE_COST);
+				if (planGraphPanel != null) {
+					planGraphPanel.setSliderType(SliderPanel.SLIDER_TYPE_COST);
+				}
 				//repaint();
 				refreshComponents();
 			}
@@ -273,9 +300,9 @@ public class SliderPanel extends JPanel implements Scrollable {
 		if (planTotalTimeMs == null) planTotalTimeMs = 0d;
 		if (planTotalCost == null) planTotalCost = 0d;
 
-		if (planGraphPanel.getSliderType() == SliderPanel.SLIDER_TYPE_TIME) {
+		if (sliderType == SliderPanel.SLIDER_TYPE_TIME) {
 			position.put(0, new JLabel("0 sec"));
-		} else if (planGraphPanel.getSliderType() == SliderPanel.SLIDER_TYPE_COST) {
+		} else if (sliderType == SliderPanel.SLIDER_TYPE_COST) {
 			position.put(0, new JLabel("0"));
 		} else {
 			System.out.println("Error in SliderPanel.createComponents(): Unknown slider type");
@@ -295,12 +322,12 @@ public class SliderPanel extends JPanel implements Scrollable {
 		}
 		selectedOperatorLabel.setToolTipText("Selected operator span on this slider");
 
-		if (planGraphPanel.getSliderType() == SliderPanel.SLIDER_TYPE_TIME) {
+		if (sliderType == SliderPanel.SLIDER_TYPE_TIME) {
 			// Set the label to be drawn
 			timeSlider.setLabelTable(position);
 			formattedCurrentTime = new JLabel("0.00 sec");
 			thumbValueLabel.setText(formatThreeDigitTimeMs(0));
-		} else if (planGraphPanel.getSliderType() == SliderPanel.SLIDER_TYPE_COST) {
+		} else if (sliderType == SliderPanel.SLIDER_TYPE_COST) {
 			// Set the label to be drawn
 			costSlider.setLabelTable(position);
 			formattedCurrentCost = new JLabel("0.00");
@@ -352,10 +379,11 @@ public class SliderPanel extends JPanel implements Scrollable {
 		clearSliderComponent(formattedCurrentTime);
 		clearSliderComponent(sliderHost);
 
+		int sliderType = planGraphPanel != null ? planGraphPanel.getSliderType() : SliderPanel.SLIDER_TYPE_COST;
 		JSlider activeSlider = null;
-		if (planGraphPanel.getSliderType() == SliderPanel.SLIDER_TYPE_TIME) {
+		if (sliderType == SliderPanel.SLIDER_TYPE_TIME) {
 			activeSlider = timeSlider;
-		} else if (planGraphPanel.getSliderType() == SliderPanel.SLIDER_TYPE_COST) {
+		} else if (sliderType == SliderPanel.SLIDER_TYPE_COST) {
 			activeSlider = costSlider;
 		} else {
 			System.out.println("Error in SliderPanel.layoutComponents(): Unknown slider type");
@@ -390,14 +418,16 @@ public class SliderPanel extends JPanel implements Scrollable {
 			spanSlider = null;
 		}
 		
-		if (planGraphPanel.getSliderType() == SliderPanel.SLIDER_TYPE_TIME) {
-			setPlanTotalTimeMs(planGraphPanel.getIdExplainPlan());
-			setCurrentPlanTimeLabel(getCurrentPlanTimeMs() != null ? getCurrentPlanTimeMs() : 0);
-		} else if (planGraphPanel.getSliderType() == SliderPanel.SLIDER_TYPE_COST) {
-			setPlanTotalCost(planGraphPanel.getIdExplainPlan());
-			setCurrentPlanCostLabel(getCurrentPlanCost() != null ? getCurrentPlanCost() : 0);
-		} else {
-			System.out.println("Error in SliderPanel.layoutComponents(): Unknown slider type");
+		if (planGraphPanel != null && planGraphPanel.getIdExplainPlan() != null) {
+			if (sliderType == SliderPanel.SLIDER_TYPE_TIME) {
+				setPlanTotalTimeMs(planGraphPanel.getIdExplainPlan());
+				setCurrentPlanTimeLabel(getCurrentPlanTimeMs() != null ? getCurrentPlanTimeMs() : 0);
+			} else if (sliderType == SliderPanel.SLIDER_TYPE_COST) {
+				setPlanTotalCost(planGraphPanel.getIdExplainPlan());
+				setCurrentPlanCostLabel(getCurrentPlanCost() != null ? getCurrentPlanCost() : 0);
+			} else {
+				System.out.println("Error in SliderPanel.layoutComponents(): Unknown slider type");
+			}
 		}
 
 		Integer operatorToShow = selectedOperatorId;
@@ -922,7 +952,8 @@ public class SliderPanel extends JPanel implements Scrollable {
 		if (bolShowFunctionName == true) { System.out.println("SliderPanel.setPlanTotalTimeMs()"); }
 		strSQL = "select execution_time_ms from explain_plan_generated_values where id_explain_plan = " + idExplainPlan;
 		if (bolShowSQL == true) { System.out.println(strSQL); }
-		fltPlanTotalTimeMs = (Double) Database.row(strSQL).get("execution_time_ms");
+		JsonObject timeRow = Database.row(strSQL);
+		fltPlanTotalTimeMs = timeRow != null ? (Double) timeRow.get("execution_time_ms") : null;
 
 		if (fltPlanTotalTimeMs != null) {
 			timeSlider.setMaximum(5000);
@@ -931,11 +962,11 @@ public class SliderPanel extends JPanel implements Scrollable {
 			//position.put(dblRoundedToInt(timeSlider.getMaximum() * 0.25), new JLabel(dblRoundedToString(timeSlider.getMaximum() * 0.25)));
 			//position.put(dblRoundedToInt(timeSlider.getMaximum() * 0.50), new JLabel(dblRoundedToString(timeSlider.getMaximum() * 0.50)));
 			dblPercent = 0.25;
-			position.put(dblRoundedToInt(timeSlider.getMaximum() * dblPercent), new JLabel(Utils.elapsed_time_ms(getPlanTotalTimeMs() * dblPercent)));
+			position.put(dblRoundedToInt(timeSlider.getMaximum() * dblPercent), new JLabel(Utils.elapsed_time_ms(fltPlanTotalTimeMs * dblPercent)));
 			dblPercent = 0.50;
-			position.put(dblRoundedToInt(timeSlider.getMaximum() * dblPercent), new JLabel(Utils.elapsed_time_ms(getPlanTotalTimeMs() * dblPercent)));
+			position.put(dblRoundedToInt(timeSlider.getMaximum() * dblPercent), new JLabel(Utils.elapsed_time_ms(fltPlanTotalTimeMs * dblPercent)));
 			dblPercent = 0.75;
-			position.put(dblRoundedToInt(timeSlider.getMaximum() * dblPercent), new JLabel(Utils.elapsed_time_ms(getPlanTotalTimeMs() * dblPercent)));
+			position.put(dblRoundedToInt(timeSlider.getMaximum() * dblPercent), new JLabel(Utils.elapsed_time_ms(fltPlanTotalTimeMs * dblPercent)));
 			//position.put(dblRoundedToInt(timeSlider.getMaximum() * 0.75), new JLabel(dblRoundedToString(timeSlider.getMaximum() * 0.75)));
 			if (bolShowProperties == true) { System.out.println("timeSlider.getMajorTickSpacing(): " + timeSlider.getMajorTickSpacing()); }
 			timeSlider.setPaintTicks(true);
@@ -968,18 +999,19 @@ public class SliderPanel extends JPanel implements Scrollable {
 		if (bolShowFunctionName == true) { System.out.println("SliderPanel.setPlanTotalCost()"); }
 		strSQL = "select max_total_cost from explain_plan_generated_values where id_explain_plan = " + idExplainPlan;
 		if (bolShowSQL == true) { System.out.println(strSQL); }
-		fltPlanTotalCost = (Double) Database.row(strSQL).get("max_total_cost");
+		JsonObject costRow = Database.row(strSQL);
+		fltPlanTotalCost = costRow != null ? (Double) costRow.get("max_total_cost") : null;
 
 		if (fltPlanTotalCost != null) {
 			costSlider.setMaximum(5000);
 			costSlider.setMajorTickSpacing(100);
 
 			dblPercent = 0.25;
-			position.put(dblRoundedToInt(costSlider.getMaximum() * dblPercent), new JLabel(Utils.formattedCost(getPlanTotalCost() * dblPercent)));
+			position.put(dblRoundedToInt(costSlider.getMaximum() * dblPercent), new JLabel(Utils.formattedCost(fltPlanTotalCost * dblPercent)));
 			dblPercent = 0.50;
-			position.put(dblRoundedToInt(costSlider.getMaximum() * dblPercent), new JLabel(Utils.formattedCost(getPlanTotalCost() * dblPercent)));
+			position.put(dblRoundedToInt(costSlider.getMaximum() * dblPercent), new JLabel(Utils.formattedCost(fltPlanTotalCost * dblPercent)));
 			dblPercent = 0.75;
-			position.put(dblRoundedToInt(costSlider.getMaximum() * dblPercent), new JLabel(Utils.formattedCost(getPlanTotalCost() * dblPercent)));
+			position.put(dblRoundedToInt(costSlider.getMaximum() * dblPercent), new JLabel(Utils.formattedCost(fltPlanTotalCost * dblPercent)));
 
 			if (bolShowProperties == true) { System.out.println("costSlider.getMajorTickSpacing(): " + costSlider.getMajorTickSpacing()); }
 			costSlider.setPaintTicks(true);
@@ -1016,15 +1048,22 @@ public class SliderPanel extends JPanel implements Scrollable {
 		Double fltPlanTotalTimeMs;
 		String strSQL;
 		if (bolShowFunctionName == true) { System.out.println("SliderPanel.setPlanTotalTimeMs()"); }
+		if (planGraphPanel == null || planGraphPanel.getIdExplainPlan() == null) {
+			return 0d;
+		}
 		//int idExplainPlan = 4; // how do I get the current id_explain_plan number?
-		int idExplainPlan = (planGraphPanel.getIdExplainPlan() != null) ? planGraphPanel.getIdExplainPlan().intValue() : -1;
+		int idExplainPlan = planGraphPanel.getIdExplainPlan().intValue();
 		strSQL = "select execution_time_ms from explain_plan_generated_values where id_explain_plan = " + idExplainPlan;
 		if (bolShowSQL == true) { System.out.println(strSQL); }
-		fltPlanTotalTimeMs = (Double) Database.row(strSQL).get("execution_time_ms");
+		JsonObject row = Database.row(strSQL);
+		if (row == null) {
+			return 0d;
+		}
+		fltPlanTotalTimeMs = (Double) row.get("execution_time_ms");
 		//fltPlanTotalTimeMs = 54318.152; // actual total execution time for idExplainPlan = 4, a.k.a. "Plan 5", is 54 sec
 		//if (fltPlanTotalTimeMs == null)
 		//	fltPlanTotalTimeMs = (5 * 60 + 10) * 1000d; // 5 min 10 sec
-		return fltPlanTotalTimeMs;
+		return fltPlanTotalTimeMs != null ? fltPlanTotalTimeMs : 0d;
 	}
 
 	public Double getPlanTotalCost() {
@@ -1033,17 +1072,26 @@ public class SliderPanel extends JPanel implements Scrollable {
 		Double fltPlanTotalCost;
 		String strSQL;
 		if (bolShowFunctionName == true) { System.out.println("SliderPanel.getPlanTotalCost()"); }
+		if (planGraphPanel == null || planGraphPanel.getIdExplainPlan() == null) {
+			return 0d;
+		}
 		//int idExplainPlan = 4; // how do I get the current id_explain_plan number?
-		int idExplainPlan = (planGraphPanel.getIdExplainPlan() != null) ? planGraphPanel.getIdExplainPlan().intValue() : -1;
+		int idExplainPlan = planGraphPanel.getIdExplainPlan().intValue();
 		strSQL = "select max_total_cost from explain_plan_generated_values where id_explain_plan = " + idExplainPlan;
 		if (bolShowSQL == true) { System.out.println(strSQL); }
-		fltPlanTotalCost = (Double) Database.row(strSQL).get("max_total_cost");
-		return fltPlanTotalCost;
+		JsonObject row = Database.row(strSQL);
+		if (row == null) {
+			return 0d;
+		}
+		fltPlanTotalCost = (Double) row.get("max_total_cost");
+		return fltPlanTotalCost != null ? fltPlanTotalCost : 0d;
 	}
 
 	// set / get where the slider bar is while the plan is running
 	public void setCurrentPlanTimeMs(Double fltCurrentPlanTimeMs) {
-		planGraphPanel.setPlanTimeSliderMs(fltCurrentPlanTimeMs); 
+		if (planGraphPanel != null) {
+			planGraphPanel.setPlanTimeSliderMs(fltCurrentPlanTimeMs);
+		}
 	}
 	
 	public void setCurrentPlanTimeMs(int intCurrentPlanTimeMs) {
@@ -1085,15 +1133,17 @@ public class SliderPanel extends JPanel implements Scrollable {
 	}
 	
 	public Double getCurrentPlanTimeMs() {
-		return planGraphPanel.getPlanTimeSliderValueMs(); 
+		return planGraphPanel != null ? planGraphPanel.getPlanTimeSliderValueMs() : 0d;
 	}
 	
 	public void setCurrentPlanCost(Double fltCurrentPlanCost) {
-		planGraphPanel.setPlanCostSlider(fltCurrentPlanCost); 
+		if (planGraphPanel != null) {
+			planGraphPanel.setPlanCostSlider(fltCurrentPlanCost);
+		}
 	}
 
 	public Double getCurrentPlanCost() {
-		return planGraphPanel.getPlanCostSlider(); 
+		return planGraphPanel != null ? planGraphPanel.getPlanCostSlider() : 0d;
 	}
 	
 /*

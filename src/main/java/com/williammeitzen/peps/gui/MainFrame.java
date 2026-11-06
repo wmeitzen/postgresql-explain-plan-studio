@@ -34,8 +34,10 @@ import java.net.URISyntaxException;
 //import java.util.Date;
 //import java.util.prefs.Preferences;
 
+import javax.swing.AbstractAction;
 import javax.swing.ButtonGroup;
 import javax.swing.JButton;
+import javax.swing.JComponent;
 //import javax.swing.JCheckBoxMenuItem;
 import javax.swing.JDialog;
 //import javax.swing.JFileChooser;
@@ -46,9 +48,9 @@ import javax.swing.JMenuBar;
 import javax.swing.JMenuItem;
 //import javax.swing.JOptionPane;
 import javax.swing.JPanel;
-import javax.swing.JRadioButton;
+import javax.swing.JRadioButtonMenuItem;
+import javax.swing.JRootPane;
 import javax.swing.JScrollPane;
-import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
 //import javax.swing.JTextArea;
 //import javax.swing.JTextField;
@@ -68,14 +70,17 @@ public class MainFrame extends JFrame {
 	
 	private static final long serialVersionUID = 1L;
 	
-	private static final String APPLICATION_VERSION = "0.0.7";
+	private static final String APPLICATION_VERSION = "0.0.8";
 	private PlanDiagramToolbar planDiagramToolbar;
 	private FormPanel formPanel;
 	//private JFileChooser fileChooser;
 	//private PrefsDialog prefsDialog;
 	//private Preferences prefs;
-	private JSplitPane splitPane;
+	private DockingLayout dockingLayout;
 	private JTabbedPane tabPane;
+	private JMenu fileMenuForAlt;
+	private JMenu viewMenuForAlt;
+	private JMenu helpMenuForAlt;
 	
 	public MainFrame() {
 		super("PostgreSQL Explain Plan Studio");
@@ -97,11 +102,10 @@ public class MainFrame extends JFrame {
 		tabPane.putClientProperty("JTabbedPane.tabSeparatorsFullHeight", Boolean.TRUE);
 		tabPane.setTabLayoutPolicy(JTabbedPane.SCROLL_TAB_LAYOUT);
 		formPanel = new FormPanel(tabPane, planDiagramToolbar);
-
-		splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, formPanel, tabPane);
-		splitPane.setOneTouchExpandable(true); // adds arrows to split bar
+		dockingLayout = new DockingLayout(this, formPanel, tabPane);
 		
 		setJMenuBar(createMenuBar()); // can't call set JMenuBar for historical / compatibility reasons
+		installMenuAltShortcuts();
 		
 		addWindowListener(new WindowAdapter() {
  			public void windowClosing(WindowEvent e) {
@@ -114,6 +118,9 @@ public class MainFrame extends JFrame {
  				Integer intWidth = dimApplicationSize.width;
  				Integer intHeight = dimApplicationSize.height;
  				Database.dml("update config set application_width = " + intWidth + ", application_height = " + intHeight);
+ 				if (dockingLayout != null) {
+ 					dockingLayout.saveLayout();
+ 				}
  				dispose();
  				System.gc();
 			}
@@ -178,7 +185,7 @@ public class MainFrame extends JFrame {
 		});
 
 		// Toolbar lives inside the Plan Diagram tab content (see FormPanel.createPlanDiagramTab)
-		add(splitPane, BorderLayout.CENTER);
+		add(dockingLayout.getContentArea(), BorderLayout.CENTER);
 		
 		setMinimumSize(new Dimension(100, 100));
 
@@ -191,6 +198,29 @@ public class MainFrame extends JFrame {
 
 		setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
 		setVisible(true);
+	}
+
+	/** Open a top-level menu with Alt+mnemonic even when LAF only underlines the letter. */
+	private void installMenuAltShortcuts() {
+		bindAltMenuOpen(fileMenuForAlt, KeyEvent.VK_F);
+		bindAltMenuOpen(viewMenuForAlt, KeyEvent.VK_V);
+		bindAltMenuOpen(helpMenuForAlt, KeyEvent.VK_H);
+	}
+
+	private void bindAltMenuOpen(JMenu menu, int keyCode) {
+		JRootPane root = getRootPane();
+		if (root == null || menu == null) {
+			return;
+		}
+		String actionKey = "peps.openMenu." + keyCode;
+		KeyStroke stroke = KeyStroke.getKeyStroke(keyCode, KeyEvent.ALT_DOWN_MASK);
+		root.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(stroke, actionKey);
+		root.getActionMap().put(actionKey, new AbstractAction() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				menu.doClick();
+			}
+		});
 	}
 
 	private JMenuBar createMenuBar() {
@@ -207,36 +237,37 @@ public class MainFrame extends JFrame {
 		fileMenu.add(exitItem);
 		
 		JMenu viewMenu = new JMenu("View");
-		JMenu colorSchemeMenu = new JMenu("Color scheme");
-		viewMenu.add(colorSchemeMenu);
 		ButtonGroup colorSchemeGroup = new ButtonGroup();
-		JRadioButton defaultSchemeRB = new JRadioButton(UiTheme.Scheme.DEFAULT.label());
-		JRadioButton lightSchemeRB = new JRadioButton(UiTheme.Scheme.LIGHT.label());
-		JRadioButton darkSchemeRB = new JRadioButton(UiTheme.Scheme.DARK.label());
-		colorSchemeGroup.add(defaultSchemeRB);
-		colorSchemeGroup.add(lightSchemeRB);
-		colorSchemeGroup.add(darkSchemeRB);
-		colorSchemeMenu.add(defaultSchemeRB);
-		colorSchemeMenu.add(lightSchemeRB);
-		colorSchemeMenu.add(darkSchemeRB);
+		JRadioButtonMenuItem defaultSchemeItem = new JRadioButtonMenuItem(UiTheme.Scheme.DEFAULT.label());
+		JRadioButtonMenuItem lightSchemeItem = new JRadioButtonMenuItem(UiTheme.Scheme.LIGHT.label());
+		JRadioButtonMenuItem darkSchemeItem = new JRadioButtonMenuItem(UiTheme.Scheme.DARK.label());
+		colorSchemeGroup.add(defaultSchemeItem);
+		colorSchemeGroup.add(lightSchemeItem);
+		colorSchemeGroup.add(darkSchemeItem);
+		viewMenu.add(defaultSchemeItem);
+		viewMenu.add(lightSchemeItem);
+		viewMenu.add(darkSchemeItem);
+		if (dockingLayout != null) {
+			dockingLayout.installViewMenuItems(viewMenu);
+		}
 
 		UiTheme.Scheme savedScheme = UiTheme.loadSavedScheme();
 		switch (savedScheme) {
 		case LIGHT:
-			lightSchemeRB.setSelected(true);
+			lightSchemeItem.setSelected(true);
 			break;
 		case DARK:
-			darkSchemeRB.setSelected(true);
+			darkSchemeItem.setSelected(true);
 			break;
 		case DEFAULT:
 		default:
-			defaultSchemeRB.setSelected(true);
+			defaultSchemeItem.setSelected(true);
 			break;
 		}
 
-		defaultSchemeRB.addActionListener(e -> UiTheme.applyAndRefresh(UiTheme.Scheme.DEFAULT, MainFrame.this));
-		lightSchemeRB.addActionListener(e -> UiTheme.applyAndRefresh(UiTheme.Scheme.LIGHT, MainFrame.this));
-		darkSchemeRB.addActionListener(e -> UiTheme.applyAndRefresh(UiTheme.Scheme.DARK, MainFrame.this));
+		defaultSchemeItem.addActionListener(e -> UiTheme.applyAndRefresh(UiTheme.Scheme.DEFAULT, MainFrame.this));
+		lightSchemeItem.addActionListener(e -> UiTheme.applyAndRefresh(UiTheme.Scheme.LIGHT, MainFrame.this));
+		darkSchemeItem.addActionListener(e -> UiTheme.applyAndRefresh(UiTheme.Scheme.DARK, MainFrame.this));
 
 		JMenu helpMenu = new JMenu("Help");
 		JMenuItem helpMenuAboutItem = new JMenuItem("About ...");
@@ -246,8 +277,15 @@ public class MainFrame extends JFrame {
 		menuBar.add(viewMenu);
 		menuBar.add(helpMenu);
 
-		fileMenu.setMnemonic(KeyEvent.VK_F); // option-F underlines, but does not pull down, File menu. Why?
-		exitItem.setMnemonic(KeyEvent.VK_X); // option-X underlines, but does not select, Exit item. Why?
+		fileMenu.setMnemonic(KeyEvent.VK_F);
+		viewMenu.setMnemonic(KeyEvent.VK_V);
+		helpMenu.setMnemonic(KeyEvent.VK_H);
+		exitItem.setMnemonic(KeyEvent.VK_X);
+
+		// Bound after setJMenuBar() so the root pane InputMap is ready (see installMenuAltShortcuts).
+		this.fileMenuForAlt = fileMenu;
+		this.viewMenuForAlt = viewMenu;
+		this.helpMenuForAlt = helpMenu;
 		
 		exitItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_X, ActionEvent.CTRL_MASK));
 

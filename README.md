@@ -25,7 +25,7 @@ Unsigned downloads often show **Windows protected your PC**. Click **More info**
 - JDK 17 or newer (`java`, `javac`, and `jpackage` on `PATH`)
 - Apache Maven 3.9+ (or the Maven Wrapper: `mvnw` / `mvnw.cmd`)
 
-### Run from source
+### Run from source (one-shot)
 
 ```powershell
 .\mvnw.cmd -q compile exec:java
@@ -40,6 +40,66 @@ Copy-Item "\\maurice\Cee\docs\bitbucket\peg\peg.sqlite" ".\postgresql-explain-pl
 ```
 
 Then run from that directory and open a plan → **Show JSON Plan Diagram** (or select the Plan Diagram tab).
+
+### Dev watch + run (recommended while coding)
+
+Rebuilds the shaded jar when sources change. Uses a lock file so launch waits if a build is in progress. Does **not** auto-restart a running PEPS window. jpackage remains the release path (below).
+
+**Windows** — two terminals from the repo root:
+
+```powershell
+# Terminal 1 — keep running while developing
+.\scripts\dev-watch.ps1
+
+# Terminal 2 — launch when you want to test
+.\scripts\dev-run.ps1
+```
+
+**Ubuntu / Linux (VMware guest)** — edit on Windows, build on a **local disk copy** (`~/peps`). Shared-folder watches under `/mnt/hgfs` are unreliable, so use sync+build:
+
+```bash
+sudo apt install -y openjdk-17-jdk rsync
+# Shared folders must be enabled in VMware (Windows host path = this repo).
+# Confirm the share is visible:
+#   ls /mnt/hgfs
+#   vmware-hgfsclient
+
+# Terminal 1 — sync Windows → ~/peps and recompile whenever host sources change
+# (first run can be started from the share until ~/peps has the script)
+bash /mnt/hgfs/<share>/.../postgresql-explain-plan-studio/scripts/dev-sync-watch.sh
+# later, after the first sync:
+#   ~/peps/scripts/dev-sync-watch.sh
+
+# Terminal 2 — launch when you want to test
+cd ~/peps
+./scripts/dev-run.sh
+```
+
+If auto-detect fails, set the host path explicitly:
+
+```bash
+export PEPS_HOST_REPO=/mnt/hgfs/peps
+~/peps/scripts/dev-sync-watch.sh
+```
+
+**Start sync+build when the VM boots / you log in** (one-time install):
+
+```bash
+# Recommended: systemd user service (restarts if the watcher dies)
+bash /mnt/hgfs/peps/scripts/install-dev-sync-autostart.sh
+
+# Or classic cron @reboot:
+bash /mnt/hgfs/peps/scripts/install-dev-sync-autostart.sh --cron
+```
+
+Useful checks:
+
+```bash
+systemctl --user status peps-dev-sync-watch.service
+journalctl --user -u peps-dev-sync-watch.service -f
+```
+
+For a checkout that already lives only on the VM disk (no Windows share), use `./scripts/dev-watch.sh` instead — it watches local `src/` and rebuilds (falls back to polling if `inotify-tools` is missing).
 
 ### Package with bundled runtime (jpackage)
 

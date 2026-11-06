@@ -2,11 +2,13 @@ package com.williammeitzen.peps.gui;
 
 import java.awt.BorderLayout;
 import java.awt.Component;
+import java.awt.Container;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.awt.Window;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.FocusAdapter;
@@ -31,10 +33,10 @@ import javax.swing.JPanel;
 import javax.swing.JPasswordField;
 import javax.swing.JRadioButton;
 import javax.swing.JScrollPane;
-import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
+import javax.swing.SwingUtilities;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 
@@ -235,9 +237,8 @@ public class PlanSourcePanel extends JPanel {
 			
 			public void focusGained(FocusEvent e) {
 				strOldPlanName = getPlanSourceFromQueryPlanNameField();
-				JSplitPane jSplitPane = (JSplitPane) objCurrentPlanTabs.getParent();
-				FormPanel formPanel = (FormPanel) jSplitPane.getComponent(0);
-				oldPlanNameIndex = formPanel.getSelectedIndex();
+				FormPanel formPanel = findFormPanel();
+				oldPlanNameIndex = formPanel != null ? formPanel.getSelectedIndex() : -1;
 			}
 			
 			public void focusLost(FocusEvent e) {
@@ -338,12 +339,10 @@ public class PlanSourcePanel extends JPanel {
 				setPlanSourceFromQueryPlanNameField(strNewPlanName);
 				planSourceFromQueryPlanNameField.setText(strNewPlanName);
 				// call FormPanel.setSelectedPlanName(strNewPlanName);
-				if (objCurrentPlanTabs.getParent() instanceof JSplitPane) {
-					JSplitPane jSplitPane = (JSplitPane) objCurrentPlanTabs.getParent();
-					FormPanel formPanel = (FormPanel) jSplitPane.getComponent(0);
+				FormPanel formPanel = findFormPanel();
+				if (formPanel != null) {
 					formPanel.updatePlanMapper(strOldPlanName, strNewPlanName);
 					formPanel.setSelectedPlanName(oldPlanNameIndex, strNewPlanName);
-					//((FormPanel) ((JSplitPane) objCurrentPlanTabs.getParent()).getComponent(0)).setSelectedPlanName(strNewPlanName); // weird, but equivalent
 				}
 				objCurrentPlanTabs.setTitleAt(0, strNewPlanName + " - Plan Source");
 				objCurrentPlanTabs.setTitleAt(2, strNewPlanName + " - Plan Diagram");
@@ -824,12 +823,10 @@ public class PlanSourcePanel extends JPanel {
 	public void setPlanTextIsDirty(boolean planTextIsDirty) {
 		boolean bolShowProperties = false;
 		if (bolShowProperties == true) { System.out.println("setPlanTextIsDirty(" + planTextIsDirty + ")"); }
-		// Keep Plan Diagram tab enabled for a single selection so selecting it can generate the diagram
+		// Keep Plan Diagram enabled only for a single selection (multi-select stays greyed out).
 		FormPanel formPanel = findFormPanel();
 		if (formPanel != null) {
 			formPanel.updatePlanDiagramTabEnabled();
-		} else if (objCurrentPlanTabs != null && objCurrentPlanTabs.getTabCount() > 2) {
-			objCurrentPlanTabs.setEnabledAt(2, true);
 		}
 		this.planTextIsDirty = planTextIsDirty;
 	}
@@ -839,15 +836,34 @@ public class PlanSourcePanel extends JPanel {
 			return false;
 		}
 		FormPanel formPanel = findFormPanel();
-		return formPanel == null || formPanel.isSinglePlanSelected();
+		return formPanel != null && formPanel.isSinglePlanSelected();
 	}
 
+	/** FormPanel is a docking sibling of the tab strip, not a JSplitPane child anymore. */
 	private FormPanel findFormPanel() {
-		if (objCurrentPlanTabs == null || !(objCurrentPlanTabs.getParent() instanceof JSplitPane)) {
+		if (objCurrentPlanTabs == null) {
 			return null;
 		}
-		Component left = ((JSplitPane) objCurrentPlanTabs.getParent()).getComponent(0);
-		return left instanceof FormPanel ? (FormPanel) left : null;
+		Window window = SwingUtilities.getWindowAncestor(objCurrentPlanTabs);
+		if (window == null) {
+			return findFormPanelInHierarchy(objCurrentPlanTabs);
+		}
+		return findFormPanelInHierarchy(window);
+	}
+
+	private static FormPanel findFormPanelInHierarchy(Component root) {
+		if (root instanceof FormPanel) {
+			return (FormPanel) root;
+		}
+		if (root instanceof Container) {
+			for (Component child : ((Container) root).getComponents()) {
+				FormPanel found = findFormPanelInHierarchy(child);
+				if (found != null) {
+					return found;
+				}
+			}
+		}
+		return null;
 	}
 
 	public boolean getPlanTextIsDirty() {

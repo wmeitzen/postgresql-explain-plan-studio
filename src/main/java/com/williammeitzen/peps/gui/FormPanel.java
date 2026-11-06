@@ -22,6 +22,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListModel;
@@ -34,10 +36,8 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JProgressBar;
 import javax.swing.JScrollPane;
-import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
 import javax.swing.SwingUtilities;
-import javax.swing.border.Border;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
 import javax.swing.event.ListSelectionEvent;
@@ -568,10 +568,8 @@ public class FormPanel extends JPanel {
 			}
 		});
 		
-		//setBorder(BorderFactory.createTitledBorder("Add Person"));
-		Border innerBorder = BorderFactory.createTitledBorder("Plans");
-		Border outerBorder = BorderFactory.createEmptyBorder(1, 1, 1, 1);
-		setBorder(BorderFactory.createCompoundBorder(outerBorder, innerBorder));
+		// Dockable title is "Plans"; avoid a second titled border here.
+		setBorder(BorderFactory.createEmptyBorder(1, 1, 1, 1));
 		
 		layoutComponents();
 	}
@@ -716,6 +714,15 @@ public class FormPanel extends JPanel {
 			return;
 		}
 
+		// Hide residual / partial rows until every selected plan has been generated.
+		if (statisticsPanel != null) {
+			statisticsPanel.clearPendingDisplay();
+		}
+		PlanStatisticsPanel visible = findVisibleComparePlansPanel();
+		if (visible != null && visible != statisticsPanel) {
+			visible.clearPendingDisplay();
+		}
+
 		generatePlanDiagramsWithProgress(plansToGenerate, finishRefresh);
 	}
 
@@ -737,6 +744,9 @@ public class FormPanel extends JPanel {
 		final int planCount = planNames.size();
 		final String dialogTitle = planCount == 1 ? "Generating Plan" : ("Generating " + planCount + " Plans");
 		final int minVisibleMs = 700;
+		final AtomicBoolean cancelRequested = new AtomicBoolean(false);
+		final AtomicInteger nextIndex = new AtomicInteger(0);
+		final long startedAt = System.currentTimeMillis();
 
 		Window owner = SwingUtilities.getWindowAncestor(this);
 		JDialog progressDialog = new JDialog(owner, dialogTitle, Dialog.ModalityType.MODELESS);
@@ -757,59 +767,93 @@ public class FormPanel extends JPanel {
 		content.setOpaque(true);
 		content.add(statusLabel, BorderLayout.NORTH);
 		content.add(progressBar, BorderLayout.CENTER);
+
+		if (planCount > 1) {
+			JButton cancelButton = new JButton("Cancel");
+			cancelButton.addActionListener(e -> {
+				cancelRequested.set(true);
+				cancelButton.setEnabled(false);
+				statusLabel.setText("Cancelling after current plan…");
+				paintProgressDialogNow(progressDialog);
+			});
+			JPanel buttonRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+			buttonRow.setOpaque(false);
+			buttonRow.add(cancelButton);
+			content.add(buttonRow, BorderLayout.SOUTH);
+		}
+
 		progressDialog.setContentPane(content);
 		progressDialog.setResizable(false);
 		progressDialog.pack();
 		progressDialog.setLocationRelativeTo(owner != null ? owner : this);
 
-		// Show first and force a full paint so the dialog isn't blank/partial when work starts.
+		Runnable closeAndFinish = () -> {
+			progressDialog.setVisible(false);
+			progressDialog.dispose();
+			if (onComplete != null) {
+				onComplete.run();
+			}
+		};
+
+		Runnable finishWithMinVisible = () -> {
+			long elapsed = System.currentTimeMillis() - startedAt;
+			int remaining = (int) Math.max(0, minVisibleMs - elapsed);
+			if (remaining > 0) {
+				javax.swing.Timer holdOpen = new javax.swing.Timer(remaining, e -> closeAndFinish.run());
+				holdOpen.setRepeats(false);
+				holdOpen.start();
+			} else {
+				closeAndFinish.run();
+			}
+		};
+
+		// One plan per EDT turn so Cancel can be processed between plans (after the current one).
+		Runnable generateNext = new Runnable() {
+			@Override
+			public void run() {
+				int i = nextIndex.get();
+				if (cancelRequested.get() || i >= planCount) {
+					finishWithMinVisible.run();
+					return;
+				}
+
+				String planName = planNames.get(i);
+				statusLabel.setText(planCount == 1
+						? "Generating Plan"
+						: ("Generating Plan " + (i + 1) + " of " + planCount));
+				progressBar.setValue(i);
+				if (planCount > 1) {
+					progressBar.setString((i + 1) + " / " + planCount);
+				}
+				progressBar.setToolTipText(planName);
+				paintProgressDialogNow(progressDialog);
+
+				PlanEvent planEvent = plansMapper.get(planName);
+				if (planEvent != null) {
+					try {
+						planEvent.getPlanGraphPanel().ensurePlanDataGenerated(planEvent.getPlanSourcePanel());
+					} catch (RuntimeException ex) {
+						System.out.println("generatePlanDiagramsWithProgress: failed for " + planName);
+						ex.printStackTrace();
+					}
+				}
+
+				progressBar.setValue(i + 1);
+				paintProgressDialogNow(progressDialog);
+				nextIndex.incrementAndGet();
+
+				if (cancelRequested.get() || nextIndex.get() >= planCount) {
+					finishWithMinVisible.run();
+				} else {
+					SwingUtilities.invokeLater(this);
+				}
+			}
+		};
+
 		progressDialog.setVisible(true);
 		progressDialog.toFront();
 		paintProgressDialogNow(progressDialog);
-
-		// Defer generation so the dialog can finish its first clean paint cycle.
-		SwingUtilities.invokeLater(() -> {
-			long startedAt = System.currentTimeMillis();
-			try {
-				for (int i = 0; i < planCount; i++) {
-					String planName = planNames.get(i);
-					statusLabel.setText(planCount == 1
-							? "Generating Plan"
-							: ("Generating Plan " + (i + 1) + " of " + planCount));
-					progressBar.setValue(i);
-					if (planCount > 1) {
-						progressBar.setString((i + 1) + " / " + planCount);
-					}
-					progressBar.setToolTipText(planName);
-					paintProgressDialogNow(progressDialog);
-
-					PlanEvent planEvent = plansMapper.get(planName);
-					if (planEvent != null) {
-						planEvent.getPlanGraphPanel().ensurePlanDataGenerated(planEvent.getPlanSourcePanel());
-					}
-
-					progressBar.setValue(i + 1);
-					paintProgressDialogNow(progressDialog);
-				}
-			} finally {
-				long elapsed = System.currentTimeMillis() - startedAt;
-				int remaining = (int) Math.max(0, minVisibleMs - elapsed);
-				Runnable closeAndFinish = () -> {
-					progressDialog.setVisible(false);
-					progressDialog.dispose();
-					if (onComplete != null) {
-						onComplete.run();
-					}
-				};
-				if (remaining > 0) {
-					javax.swing.Timer holdOpen = new javax.swing.Timer(remaining, e -> closeAndFinish.run());
-					holdOpen.setRepeats(false);
-					holdOpen.start();
-				} else {
-					closeAndFinish.run();
-				}
-			}
-		});
+		SwingUtilities.invokeLater(generateNext);
 	}
 
 	/** Force the progress dialog to paint fully before blocking work continues on the EDT. */
@@ -914,54 +958,16 @@ public class FormPanel extends JPanel {
 
 	}
 	
-	/**
-	 * Plan Diagram tab layout: properties pane full height on the right;
-	 * graph and time/cost sliders stacked on the left only.
-	 * Zoom / Line Thickness / Percentage stay in MainFrame's top toolbar.
-	 */
 	/** Same wheel step as OperatorDetailsPanel Property/Value scrolling. */
 	private static final int DIAGRAM_WHEEL_UNIT_INCREMENT = 48;
 
-	/** Plan Diagram tab content: compact toolbar on top, graph/sliders/properties below. */
+	/**
+	 * Plan Diagram tab: nested docking for Graph / Properties / Sliders
+	 * (reposition only within this tab).
+	 */
 	private JPanel createPlanDiagramTab(PlanGraphPanel graphPanel,
 			int horizontalDivider, int verticalDivider) {
-		JScrollPane planGraphScrollPane = new JScrollPane(graphPanel,
-				JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_ALWAYS);
-		planGraphScrollPane.setPreferredSize(new Dimension(320, 480));
-		planGraphScrollPane.getVerticalScrollBar().setUnitIncrement(DIAGRAM_WHEEL_UNIT_INCREMENT);
-		planGraphScrollPane.getHorizontalScrollBar().setUnitIncrement(DIAGRAM_WHEEL_UNIT_INCREMENT);
-
-		OperatorDetailsPanel operatorDetailsPanel = new OperatorDetailsPanel(graphPanel);
-		operatorDetailsPanel.setPreferredSize(new Dimension(520, 680));
-
-		SliderPanel sliderPanel = new SliderPanel(graphPanel);
-		JScrollPane sliderPanelScrollPane = new JScrollPane(sliderPanel,
-				JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
-		sliderPanelScrollPane.setMinimumSize(new Dimension(320, 120));
-		sliderPanelScrollPane.getVerticalScrollBar().setUnitIncrement(DIAGRAM_WHEEL_UNIT_INCREMENT);
-		sliderPanelScrollPane.getHorizontalScrollBar().setUnitIncrement(DIAGRAM_WHEEL_UNIT_INCREMENT);
-
-		JSplitPane graphAndSlidersSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, planGraphScrollPane, sliderPanelScrollPane);
-		graphAndSlidersSplitPane.setOneTouchExpandable(true);
-		graphAndSlidersSplitPane.setDividerLocation(verticalDivider);
-		graphAndSlidersSplitPane.setResizeWeight(1.0);
-
-		JSplitPane rootSplitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, graphAndSlidersSplitPane, operatorDetailsPanel);
-		rootSplitPane.setOneTouchExpandable(true);
-		rootSplitPane.setDividerLocation(horizontalDivider);
-		rootSplitPane.setResizeWeight(0.65);
-
-		JPanel tabContent = new JPanel(new BorderLayout(0, 4));
-		tabContent.setBorder(BorderFactory.createEmptyBorder(4, 4, 4, 4));
-		if (planDiagramToolbar != null) {
-			Container previousParent = planDiagramToolbar.getParent();
-			if (previousParent != null) {
-				previousParent.remove(planDiagramToolbar);
-			}
-			tabContent.add(planDiagramToolbar, BorderLayout.NORTH);
-		}
-		tabContent.add(rootSplitPane, BorderLayout.CENTER);
-		return tabContent;
+		return new DiagramDockingPanel(graphPanel, planDiagramToolbar, DIAGRAM_WHEEL_UNIT_INCREMENT);
 	}
 
 	public JList getPlanList() { 

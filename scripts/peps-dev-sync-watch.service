@@ -1,0 +1,17 @@
+[Unit]
+Description=PEPS sync from VMware shared folder and rebuild
+# Give HGFS a moment after boot before the first rsync.
+After=default.target
+
+[Service]
+Type=simple
+Environment=PEPS_HOST_REPO=/mnt/hgfs/peps
+Environment=PEPS_LOCAL_REPO=%h/peps
+# Always start from the share so the first boot works even if ~/peps is stale.
+ExecStartPre=/bin/sleep 15
+ExecStart=/bin/bash /mnt/hgfs/peps/scripts/dev-sync-watch.sh
+Restart=on-failure
+RestartSec=20
+
+[Install]
+WantedBy=default.target

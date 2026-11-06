@@ -512,6 +512,7 @@ public final class Database {
 
 		// Existing DBs created before color_scheme: add the column if missing
 		ensureConfigColumn("color_scheme", "varchar(32) not null default 'default'");
+		ensureConfigColumn("docking_layout", "text");
 		
 		// just in case the db schema minor version changed
         strSQL = "update config set db_alter_version = " + dbSchemaVersionNumber() + ";\n";
@@ -1442,6 +1443,38 @@ south_1_fontmetrics_width = null;
     	String strSQL = "";
     	return strSQL;
     }
+
+	/** Persist Docking Frames layout XML (nullable = use default layout). */
+	public static void saveDockingLayout(String layoutXml) {
+		if (objConnection == null) {
+			return;
+		}
+		String sql = "update config set docking_layout = ?";
+		try (PreparedStatement ps = objConnection.prepareStatement(sql)) {
+			if (layoutXml == null || layoutXml.isBlank()) {
+				ps.setNull(1, Types.VARCHAR);
+			} else {
+				ps.setString(1, layoutXml);
+			}
+			ps.executeUpdate();
+		} catch (SQLException ex) {
+			System.out.println("function Database.saveDockingLayout()");
+			ex.printStackTrace();
+		}
+	}
+
+	/** Load Docking Frames layout XML, or null if missing. */
+	public static String loadDockingLayout() {
+		JsonObject row = row("select docking_layout from config;");
+		if (row == null || row.get("docking_layout") == null) {
+			return null;
+		}
+		String value = String.valueOf(row.get("docking_layout"));
+		if (value.isBlank() || "null".equalsIgnoreCase(value)) {
+			return null;
+		}
+		return value;
+	}
 
 	/** Add a config column if an older database is missing it. */
 	private static void ensureConfigColumn(String columnName, String columnSqlType) {

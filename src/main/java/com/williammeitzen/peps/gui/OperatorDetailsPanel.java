@@ -48,7 +48,12 @@ public class OperatorDetailsPanel extends JPanel {
 
 	public OperatorDetailsPanel(PlanGraphPanel graphPanel) {
 		super(new BorderLayout());
-		propertiesPanel = new OperationPropertiesPanel(graphPanel);
+		propertiesPanel = graphPanel != null
+				? new OperationPropertiesPanel(graphPanel)
+				: new OperationPropertiesPanel();
+		if (graphPanel == null) {
+			propertiesPanel.createComponents();
+		}
 
 		expandAllCheckbox = new JCheckBox("Expand all");
 		expandAllCheckbox.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
@@ -203,6 +208,10 @@ public class OperatorDetailsPanel extends JPanel {
 
 	public OperationPropertiesPanel getPropertiesPanel() {
 		return propertiesPanel;
+	}
+
+	public void setPlanGraphPanel(PlanGraphPanel graphPanel) {
+		propertiesPanel.setPlanGraphPanel(graphPanel);
 	}
 
 	public void showOperatorProperties(int operatorPropertyId) {

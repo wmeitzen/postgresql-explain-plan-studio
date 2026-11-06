@@ -42,6 +42,21 @@ public class OperationPropertiesPanel extends JTable {
 		planGraphPanel = graphPanel;
 		createComponents();
 	}
+
+	public void setPlanGraphPanel(PlanGraphPanel graphPanel) {
+		planGraphPanel = graphPanel;
+		selectedOperatorPropertyId = Integer.MIN_VALUE;
+		expandedLists.clear();
+		workersExpanded = false;
+		if (getModel() instanceof DefaultTableModel) {
+			((DefaultTableModel) getModel()).setDataVector(new Object[0][0], columnNames);
+			getColumnModel().getColumn(0).setPreferredWidth(200);
+			getColumnModel().getColumn(1).setPreferredWidth(200);
+		}
+		if (notesListener != null) {
+			notesListener.accept("");
+		}
+	}
 	
 	public void createComponents() {
 		DefaultTableModel model = new DefaultTableModel(data, columnNames) {
