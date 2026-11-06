@@ -1,6 +1,7 @@
 package com.williammeitzen.peps.gui;
 
 import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.Component;
 import java.awt.Container;
 import java.awt.Dimension;
@@ -37,6 +38,8 @@ import javax.swing.JTabbedPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
+import javax.swing.Timer;
+import javax.swing.border.Border;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 
@@ -106,6 +109,12 @@ public class PlanSourcePanel extends JPanel {
 	/** Normalized JSON last used to build the Plan Diagram; null if never built. */
 	private String jsonRenderedInDiagram = null;
 	public int intZoomPercentage = 100;
+
+	private static final Color JSON_ERROR_BORDER = new Color(0xC0, 0x28, 0x28);
+	private static final Color JSON_ERROR_BORDER_PEAK = new Color(0xFF, 0x45, 0x45);
+	private Border jsonPlanDefaultBorder;
+	private Timer jsonErrorPulseTimer;
+	private boolean jsonPlanShowingError = false;
 
 	private static final Pattern JDBC_URL_PATTERN = Pattern.compile(
 			"(?i)^jdbc:postgresql://([^:/]+)(?::(\\d+))?/([^?]*)");
@@ -186,6 +195,7 @@ public class PlanSourcePanel extends JPanel {
 		jsonPlanLabel = new JLabel("JSON plan:");
 		jsonPlanTextArea = new JTextArea(8, 40);
 		jsonPlanTextAreaScrollPane = new JScrollPane(jsonPlanTextArea);
+		jsonPlanDefaultBorder = jsonPlanTextAreaScrollPane.getBorder();
 
 		DocumentListener hostFieldsListener = new DocumentListener() {
 			public void insertUpdate(DocumentEvent e) { syncJdbcUrlFromHostFields(); }
@@ -216,14 +226,17 @@ public class PlanSourcePanel extends JPanel {
 		DocumentListener jsonPlanTextAreaDocumentListener = new DocumentListener() {
 
 			public void insertUpdate(DocumentEvent e) {
+				clearJsonPlanErrorStyle();
 				setPlanTextIsDirty(true);
 			}
 
 			public void removeUpdate(DocumentEvent e) {
+				clearJsonPlanErrorStyle();
 				setPlanTextIsDirty(true);
 			}
 
 			public void changedUpdate(DocumentEvent e) {
+				clearJsonPlanErrorStyle();
 				setPlanTextIsDirty(true);
 			}
 
@@ -389,10 +402,8 @@ public class PlanSourcePanel extends JPanel {
 		planSourceFromQueryButton.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
 				boolean bolShowProperties = false;
-				boolean bolShowSQL = false;
 				
 				if (bolShowProperties == true) { System.out.println("planSourceFromQueryPlanNameField.addFocusListener"); }
-				setPlanSourceButtonClicked(EXECUTE_AND_SHOW_PLAN_DIAGRAM);
 				
 				// prompt for password unless Trust / empty password is selected
 				if (!isTrustAuthentication() && getPlanSourceFromQueryPasswordField().equals("")) {
@@ -412,11 +423,29 @@ public class PlanSourcePanel extends JPanel {
 				if (!canOpenPlanDiagramTab()) {
 					return;
 				}
+
+				PlanGraphPanel graphPanel = findPlanGraphPanel();
+				if (graphPanel == null) {
+					return;
+				}
+
 				PlanGraphPanel.setDiagramBusyCursor(PlanSourcePanel.this, true);
-				objCurrentPlanTabs.setEnabled(true);
-				objCurrentPlanTabs.setEnabledAt(2, true);
-				objCurrentPlanTabs.setSelectedIndex(2);
-				if (bolShowTiming == true) { System.out.println("after PlanSourcePanel.planSourceFromQueryButton.addActionListener(): " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
+				boolean ok;
+				try {
+					ok = graphPanel.executeAndBuildDiagram(PlanSourcePanel.this);
+				} finally {
+					PlanGraphPanel.setDiagramBusyCursor(PlanSourcePanel.this, false);
+				}
+
+				if (ok) {
+					clearJsonPlanErrorStyle();
+					objCurrentPlanTabs.setEnabled(true);
+					objCurrentPlanTabs.setEnabledAt(2, true);
+					objCurrentPlanTabs.setSelectedIndex(2);
+				} else if (!isJsonPlanShowingError()) {
+					// Unexpected failure without a DB error string — keep user on Plan Source.
+					showJsonPlanExecutionError("Could not build the plan diagram. Check connection settings and SQL.");
+				}
 			}
 		});
 
@@ -794,6 +823,95 @@ public class PlanSourcePanel extends JPanel {
 	public void setJsonPlanText(String planText) {
 		//this.jsonText = planText;
 		jsonPlanTextArea.setText(planText);
+	}
+
+	/** Show an execute/connection error in the JSON plan field and pulse the border once. */
+	public void showJsonPlanExecutionError(String errorText) {
+		// setText may fire the document listener (clears prior error style) — apply style after.
+		jsonPlanTextArea.setText(errorText == null ? "" : errorText);
+		jsonPlanShowingError = true;
+		setShowPlanGraphButton(false);
+		setPlanSourceButtonClicked(null);
+		pulseJsonPlanErrorBorderOnce();
+		SwingUtilities.invokeLater(() -> {
+			jsonPlanTextArea.requestFocusInWindow();
+			jsonPlanTextArea.setCaretPosition(0);
+		});
+	}
+
+	public boolean isJsonPlanShowingError() {
+		return jsonPlanShowingError;
+	}
+
+	public void clearJsonPlanErrorStyle() {
+		if (!jsonPlanShowingError && (jsonErrorPulseTimer == null || !jsonErrorPulseTimer.isRunning())) {
+			return;
+		}
+		jsonPlanShowingError = false;
+		if (jsonErrorPulseTimer != null) {
+			jsonErrorPulseTimer.stop();
+			jsonErrorPulseTimer = null;
+		}
+		if (jsonPlanTextAreaScrollPane != null) {
+			jsonPlanTextAreaScrollPane.setBorder(jsonPlanDefaultBorder);
+		}
+	}
+
+	/** One-shot border pulse (peak then settle to a steady red error border). */
+	private void pulseJsonPlanErrorBorderOnce() {
+		if (jsonPlanTextAreaScrollPane == null) {
+			return;
+		}
+		if (jsonErrorPulseTimer != null) {
+			jsonErrorPulseTimer.stop();
+		}
+		final int steps = 10;
+		final int[] step = { 0 };
+		jsonErrorPulseTimer = new Timer(35, e -> {
+			step[0]++;
+			float t = step[0] / (float) steps;
+			float intensity = t <= 0.35f ? (t / 0.35f) : Math.max(0f, 1f - ((t - 0.35f) / 0.65f));
+			int thickness = 2 + Math.round(3f * intensity);
+			Color color = blendColors(JSON_ERROR_BORDER, JSON_ERROR_BORDER_PEAK, intensity);
+			jsonPlanTextAreaScrollPane.setBorder(BorderFactory.createLineBorder(color, thickness));
+			if (step[0] >= steps) {
+				((Timer) e.getSource()).stop();
+				jsonErrorPulseTimer = null;
+				jsonPlanTextAreaScrollPane.setBorder(BorderFactory.createLineBorder(JSON_ERROR_BORDER, 2));
+			}
+		});
+		jsonErrorPulseTimer.setInitialDelay(0);
+		jsonErrorPulseTimer.start();
+	}
+
+	private static Color blendColors(Color a, Color b, float bWeight) {
+		float w = Math.max(0f, Math.min(1f, bWeight));
+		int r = Math.round(a.getRed() + (b.getRed() - a.getRed()) * w);
+		int g = Math.round(a.getGreen() + (b.getGreen() - a.getGreen()) * w);
+		int bl = Math.round(a.getBlue() + (b.getBlue() - a.getBlue()) * w);
+		return new Color(r, g, bl);
+	}
+
+	private PlanGraphPanel findPlanGraphPanel() {
+		if (objCurrentPlanTabs == null || objCurrentPlanTabs.getTabCount() <= 2) {
+			return null;
+		}
+		return findPlanGraphPanelInHierarchy(objCurrentPlanTabs.getComponentAt(2));
+	}
+
+	private static PlanGraphPanel findPlanGraphPanelInHierarchy(Component root) {
+		if (root instanceof PlanGraphPanel) {
+			return (PlanGraphPanel) root;
+		}
+		if (root instanceof Container) {
+			for (Component child : ((Container) root).getComponents()) {
+				PlanGraphPanel found = findPlanGraphPanelInHierarchy(child);
+				if (found != null) {
+					return found;
+				}
+			}
+		}
+		return null;
 	}
 
 	public void setSQLQueryText(String strQueryText) {

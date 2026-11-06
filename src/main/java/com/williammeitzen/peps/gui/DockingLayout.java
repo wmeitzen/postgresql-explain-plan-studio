@@ -45,6 +45,7 @@ public class DockingLayout {
 	public DockingLayout(JFrame owner, FormPanel plansPanel, JTabbedPane documentTabs) {
 		instance = this;
 		control = new CControl(owner);
+		SsmsDockingGuides.install(control);
 		installShortActionTexts();
 
 		plansPanel.setBorder(BorderFactory.createEmptyBorder(1, 1, 1, 1));

@@ -254,6 +254,39 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 		}
 	}
 
+	/**
+	 * Run EXPLAIN against the database and build the diagram without switching tabs.
+	 * On failure, {@link PlanSourcePanel#showJsonPlanExecutionError(String)} is used.
+	 */
+	public boolean executeAndBuildDiagram(PlanSourcePanel source) {
+		if (source == null || idExplainPlan == null) {
+			return false;
+		}
+		planSourceOverride = source;
+		suppressDiagramBusyCursor = true;
+		try {
+			source.clearJsonPlanErrorStyle();
+			source.setPlanSourceButtonClicked(PlanSourcePanel.EXECUTE_AND_SHOW_PLAN_DIAGRAM);
+			source.setPlanTextIsDirty(true);
+			int w = Math.max(400, Math.max(1, getWidth()));
+			int h = Math.max(300, Math.max(1, getHeight()));
+			BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+			Graphics2D g2 = img.createGraphics();
+			try {
+				paintComponent(g2);
+			} finally {
+				g2.dispose();
+			}
+			if (source.isJsonPlanShowingError()) {
+				return false;
+			}
+			return hasGeneratedPlanValues();
+		} finally {
+			planSourceOverride = null;
+			suppressDiagramBusyCursor = false;
+		}
+	}
+
 	private PlanSourcePanel resolvePlanSourcePanel() {
 		if (planSourceOverride != null) {
 			return planSourceOverride;
@@ -406,8 +439,7 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 			bolExceptionOccurred = (boolean) objPGInit.get(0);
 			strError = (String) objPGInit.get(1);
 			if (bolExceptionOccurred == true) {
-				objComponent.setJsonPlanText(strError);
-				objComponent.setShowPlanGraphButton(false);
+				objComponent.showJsonPlanExecutionError(strError);
 				return;
 			}
 
@@ -457,18 +489,17 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 			strError = (String) objPGGetPlan.get(1);
 			planText = (String) objPGGetPlan.get(2);
 			if (bolExceptionOccurred == true) {
-				objComponent.setJsonPlanText(strError);
-				objComponent.setShowPlanGraphButton(false);
+				objComponent.showJsonPlanExecutionError(strError);
 				return;
 			}
+			objComponent.clearJsonPlanErrorStyle();
 			objComponent.setJsonPlanText(planText);
 			
 			List<Object> objPGRunDML = Database.pg_dml(objComponent.getPlanSourceFromQueryPostCommandField(), ";");
 			bolExceptionOccurred = (boolean) objPGRunDML.get(0);
 			strError = (String) objPGRunDML.get(1);
 			if (bolExceptionOccurred == true) {
-				objComponent.setJsonPlanText(strError);
-				objComponent.setShowPlanGraphButton(false);
+				objComponent.showJsonPlanExecutionError(strError);
 				return;
 			}
 			

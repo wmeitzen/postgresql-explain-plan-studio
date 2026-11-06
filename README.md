@@ -111,6 +111,15 @@ Requires JDK 17+ with `jpackage` on `PATH`.
 .\mvnw.cmd -P jpackage -DskipTests verify
 ```
 
+Or prompt for a version, build **Windows + Ubuntu** zips, tag, and upload to GitHub (private repo OK if `gh auth login` is done). Ubuntu build runs over SSH against the VMware share:
+
+```powershell
+# one-time: SSH key auth to the VM (BatchMode), and optionally:
+#   Set-Content scripts\dev-release.local.ps1 '$PepsUbuntuSsh = "administrator@192.168.x.x"'
+.\scripts\dev-release.ps1
+# optional: .\scripts\dev-release.ps1 -Version 0.0.9 -UbuntuSsh administrator@192.168.x.x
+```
+
 Outputs:
 
 - `target/jpackage/PostgreSQLExplainPlanStudio/PostgreSQLExplainPlanStudio.exe`

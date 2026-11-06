@@ -36,6 +36,7 @@ public class DiagramDockingPanel extends JPanel {
 
 		// Detached control: dockables stay inside this tab and cannot join the main shell.
 		control = new CControl();
+		SsmsDockingGuides.install(control);
 		installShortActionTexts(control);
 
 		JScrollPane graphScroll = new JScrollPane(graphPanel,

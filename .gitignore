@@ -41,3 +41,4 @@ Desktop.ini
 .env.*
 *.sqlite
 *.db
+scripts/dev-release.local.ps1
