@@ -990,8 +990,18 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 					mapAnnotations.put("actual_total_time_ms", operator_value_where_operator_name_is(jsnPropertyRows, "Actual Total Time"));
 					mapAnnotations.put("alias", operator_value_where_operator_name_is(jsnPropertyRows, "Alias"));
 					mapAnnotations.put("append", operator_value_where_operator_name_is(jsnPropertyRows, "Append"));
+					mapAnnotations.put("cache_evictions", operator_value_where_operator_name_is(jsnPropertyRows, "Cache Evictions"));
+					mapAnnotations.put("cache_hits", operator_value_where_operator_name_is(jsnPropertyRows, "Cache Hits"));
+					mapAnnotations.put("cache_key", operator_value_where_operator_name_is(jsnPropertyRows, "Cache Key"));
+					mapAnnotations.put("cache_misses", operator_value_where_operator_name_is(jsnPropertyRows, "Cache Misses"));
+					mapAnnotations.put("cache_mode", operator_value_where_operator_name_is(jsnPropertyRows, "Cache Mode"));
+					mapAnnotations.put("cache_overflows", operator_value_where_operator_name_is(jsnPropertyRows, "Cache Overflows"));
 					mapAnnotations.put("command", operator_value_where_operator_name_is(jsnPropertyRows, "Command"));
 					mapAnnotations.put("cte_name", operator_value_where_operator_name_is(jsnPropertyRows, "CTE Name"));
+					mapAnnotations.put("estimated_capacity", operator_value_where_operator_name_is(jsnPropertyRows, "Estimated Capacity"));
+					mapAnnotations.put("estimated_distinct_lookup_keys", operator_value_where_operator_name_is(jsnPropertyRows, "Estimated Distinct Lookup Keys"));
+					mapAnnotations.put("estimated_hit_percent", operator_value_where_operator_name_is(jsnPropertyRows, "Estimated Hit Percent"));
+					mapAnnotations.put("estimated_lookups", operator_value_where_operator_name_is(jsnPropertyRows, "Estimated Lookups"));
 					mapAnnotations.put("execution_time", operator_value_where_operator_name_is(jsnPropertyRows, "Execution Time"));
 					mapAnnotations.put("filter", operator_value_where_operator_name_is(jsnPropertyRows, "Filter"));
 					mapAnnotations.put("function_call", operator_value_where_operator_name_is(jsnPropertyRows, "Function Call"));
@@ -1550,6 +1560,7 @@ select id_explain_plan_property, parent_id_explain_plan_property, x_cart, y_cart
 				"  union select 'Index Only Scan'\n" +
 				"  union select 'Index Scan'\n" +
 				"  union select 'Materialize'\n" +
+				"  union select 'Memoize'\n" +
 				"  union select 'Merge Append'\n" +
 				"  union select 'Merge Join'\n" +
 				"  union select 'Nested Loop'\n" +
@@ -2648,6 +2659,14 @@ from explain_plan_operator_annotations
 					if (strSubplanName != null) strSouth2Text = strSubplanName;
 				} else if (strNodeType.equals("LockRows") == true) {
 				} else if (strNodeType.equals("Materialize") == true) {
+				} else if (strNodeType.equals("Memoize") == true) {
+					strSouth2Text = jsnObject.getString("cache_key");
+					strSouth2Text = removeDatatypes(strSouth2Text);
+					strSouth2Text = removeParenthesis(strSouth2Text);
+					strSouth2Text = prefaceAndTruncate("", strSouth2Text, 40);
+					if (strPeakMemoryUsage != null) {
+						strSouth3Text = Utils.kilobytes(Double.parseDouble(strPeakMemoryUsage)) + " RAM used";
+					}
 				} else if (strNodeType.equals("Merge Append") == true) {
 				} else if (strNodeType.equals("Merge Join") == true) {
 					strSouth2Text = jsnObject.getString("join_type");
@@ -4616,6 +4635,8 @@ order by id_explain_plan_property;
 			iconFileName = "ex_lock_rows.svg";
 		} else if (nodeType.equalsIgnoreCase("materialize") == true) {
 			iconFileName = "ex_materialize.svg";
+		} else if (nodeType.equalsIgnoreCase("Memoize") == true) {
+			iconFileName = "ex_memoize.svg";
 		} else if (nodeType.equalsIgnoreCase("Merge Append") == true) {
 			iconFileName = "ex_merge_append.svg";
 		} else if (nodeType.equalsIgnoreCase("merge join") == true && (joinType.equalsIgnoreCase("anti") == true)) {

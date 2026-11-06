@@ -27,7 +27,7 @@ import com.williammeitzen.peps.gui.Utils;
 
 public final class Database {
 	
-	private static double SQLITE_DB_SCHEMA_VERSION = 4.05;
+	private static double SQLITE_DB_SCHEMA_VERSION = 4.06;
 	private static Connection objConnection = null;
 	private static Connection objPGConnection = null;
 	
@@ -561,6 +561,16 @@ public final class Database {
     		+ ", execution_time varchar(256)\n"
     		+ ", filter varchar(256)\n"
     		+ ", function_call varchar(256)\n"
+    		+ ", cache_evictions varchar(256)\n"
+    		+ ", cache_hits varchar(256)\n"
+    		+ ", cache_key varchar(256)\n"
+    		+ ", cache_misses varchar(256)\n"
+    		+ ", cache_mode varchar(256)\n"
+    		+ ", cache_overflows varchar(256)\n"
+    		+ ", estimated_capacity varchar(256)\n"
+    		+ ", estimated_distinct_lookup_keys varchar(256)\n"
+    		+ ", estimated_hit_percent varchar(256)\n"
+    		+ ", estimated_lookups varchar(256)\n"
     		+ ", hash_batches varchar(256)\n"
     		+ ", hash_buckets varchar(256)\n"
     		+ ", hash_cond varchar(256)\n"
