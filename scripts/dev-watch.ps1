@@ -1,10 +1,17 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-  Watch PEPS sources and rebuild the shaded jar on change (fast path; not jpackage).
+  Rebuild the shaded jar when the RECOMPILENOW semaphore appears (fast path; not jpackage).
 
 .DESCRIPTION
-  Keep this running in one terminal while developing. Launch the app with scripts\dev-run.ps1.
+  Keep this running in one terminal while developing. Cursor (or you) creates RECOMPILENOW
+  in the repo root when a change batch is finished.
+
+  This Windows watcher builds when it sees a *new* RECOMPILENOW (by LastWriteTime) but does
+  **not** delete the file — so Ubuntu's shared-folder sync watcher can still see it.
+  scripts/dev-sync-watch.sh (systemd on the VM) clears RECOMPILENOW after its build.
+
+  Launch the app with scripts\dev-run.ps1.
 #>
 $ErrorActionPreference = "Stop"
 
@@ -12,16 +19,14 @@ $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $RepoRoot
 
 $LockFile = Join-Path $RepoRoot "target\dev-build.lock"
-$DebounceMs = 500
+$SemaphoreFile = Join-Path $RepoRoot "RECOMPILENOW"
+$PollMs = 500
 $Mvnw = Join-Path $RepoRoot "mvnw.cmd"
 
-# Shared with FileSystemWatcher event runspaces
-$State = [hashtable]::Synchronized(@{
-	Pending = $false
-	LastChange = [datetime]::MinValue
-	BuildRunning = $false
-	RebuildQueued = $false
-})
+$BuildRunning = $false
+$RebuildQueued = $false
+# Last RECOMPILENOW stamp we already built for (do not delete the shared flag).
+$LastBuiltStamp = $null
 
 function Write-Status([string]$Message) {
 	$ts = Get-Date -Format "HH:mm:ss"
@@ -33,17 +38,34 @@ function Test-JavaAvailable {
 	return $null -ne $java
 }
 
+function Get-RecompileStamp {
+	if (-not (Test-Path -LiteralPath $SemaphoreFile)) {
+		return $null
+	}
+	$item = Get-Item -LiteralPath $SemaphoreFile
+	# String form so we can compare across polls; includes length in case of touch-only races.
+	return "{0:o}|{1}" -f $item.LastWriteTimeUtc, $item.Length
+}
+
 function Invoke-PepsBuild {
-	if ($State.BuildRunning) {
-		$State.RebuildQueued = $true
+	if ($BuildRunning) {
+		$script:RebuildQueued = $true
 		Write-Status "Build already running — queued another rebuild."
 		return
 	}
 
-	$State.BuildRunning = $true
+	$script:BuildRunning = $true
 	try {
 		do {
-			$State.RebuildQueued = $false
+			$script:RebuildQueued = $false
+			$stamp = Get-RecompileStamp
+			if ($null -eq $stamp) {
+				break
+			}
+			if ($stamp -eq $LastBuiltStamp) {
+				break
+			}
+
 			$targetDir = Join-Path $RepoRoot "target"
 			if (-not (Test-Path $targetDir)) {
 				New-Item -ItemType Directory -Path $targetDir | Out-Null
@@ -51,7 +73,7 @@ function Invoke-PepsBuild {
 			$lockBody = "pid=$PID`r`nstarted=$(Get-Date -Format o)`r`n"
 			Set-Content -Path $LockFile -Value $lockBody -Encoding ascii
 
-			Write-Status "Building…"
+			Write-Status "RECOMPILENOW seen — building (leaving flag for Ubuntu)…"
 			& $Mvnw -DskipTests package
 			$exit = $LASTEXITCODE
 			if ($exit -eq 0) {
@@ -59,35 +81,18 @@ function Invoke-PepsBuild {
 			} else {
 				Write-Status "Build FAILED (exit $exit)"
 			}
-		} while ($State.RebuildQueued)
+			# Remember this stamp so we do not rebuild in a loop; do NOT delete RECOMPILENOW.
+			$script:LastBuiltStamp = Get-RecompileStamp
+			if ($null -eq $LastBuiltStamp) {
+				$script:LastBuiltStamp = $stamp
+			}
+		} while ($RebuildQueued)
 	} finally {
 		if (Test-Path $LockFile) {
 			Remove-Item -Force $LockFile -ErrorAction SilentlyContinue
 		}
-		$State.BuildRunning = $false
+		$script:BuildRunning = $false
 	}
-}
-
-function Register-WatchHandlers {
-	param(
-		[System.IO.FileSystemWatcher]$Watcher,
-		[hashtable]$MessageData
-	)
-	$action = {
-		$name = $EventArgs.Name
-		if ($null -ne $name -and $name -notmatch '\.(java|xml)$') {
-			return
-		}
-		$data = $Event.MessageData
-		$data.Pending = $true
-		$data.LastChange = Get-Date
-	}
-	@(
-		(Register-ObjectEvent -InputObject $Watcher -EventName Changed -Action $action -MessageData $MessageData),
-		(Register-ObjectEvent -InputObject $Watcher -EventName Created -Action $action -MessageData $MessageData),
-		(Register-ObjectEvent -InputObject $Watcher -EventName Deleted -Action $action -MessageData $MessageData),
-		(Register-ObjectEvent -InputObject $Watcher -EventName Renamed -Action $action -MessageData $MessageData)
-	)
 }
 
 if (-not (Test-JavaAvailable)) {
@@ -99,58 +104,20 @@ if (-not (Test-Path $Mvnw)) {
 	exit 1
 }
 
-Write-Status "Watching $RepoRoot (src + pom.xml). Ctrl+C to stop."
-Invoke-PepsBuild
-
-$srcWatcher = New-Object System.IO.FileSystemWatcher
-$srcWatcher.Path = (Join-Path $RepoRoot "src")
-$srcWatcher.IncludeSubdirectories = $true
-$srcWatcher.Filter = "*.*"
-$srcWatcher.NotifyFilter = [IO.NotifyFilters]::FileName -bor
-	[IO.NotifyFilters]::DirectoryName -bor
-	[IO.NotifyFilters]::LastWrite
-
-$pomWatcher = New-Object System.IO.FileSystemWatcher
-$pomWatcher.Path = "$RepoRoot"
-$pomWatcher.Filter = "pom.xml"
-$pomWatcher.IncludeSubdirectories = $false
-$pomWatcher.NotifyFilter = [IO.NotifyFilters]::LastWrite -bor [IO.NotifyFilters]::FileName
-
-$handlers = @()
-$handlers += Register-WatchHandlers -Watcher $srcWatcher -MessageData $State
-$pomAction = {
-	$data = $Event.MessageData
-	$data.Pending = $true
-	$data.LastChange = Get-Date
-}
-$handlers += Register-ObjectEvent -InputObject $pomWatcher -EventName Changed -Action $pomAction -MessageData $State
-$handlers += Register-ObjectEvent -InputObject $pomWatcher -EventName Created -Action $pomAction -MessageData $State
-
-$srcWatcher.EnableRaisingEvents = $true
-$pomWatcher.EnableRaisingEvents = $true
+Write-Status "Watching for $SemaphoreFile (poll ${PollMs}ms); will not delete it. Ctrl+C to stop."
 
 try {
 	while ($true) {
-		Start-Sleep -Milliseconds 200
-		if (-not $State.Pending) {
-			continue
+		$stamp = Get-RecompileStamp
+		if ($null -eq $stamp) {
+			# Cleared by Ubuntu (or manually) — allow the next create to rebuild.
+			$LastBuiltStamp = $null
+		} elseif ($stamp -ne $LastBuiltStamp) {
+			Invoke-PepsBuild
 		}
-		$elapsed = ((Get-Date) - $State.LastChange).TotalMilliseconds
-		if ($elapsed -lt $DebounceMs) {
-			continue
-		}
-		$State.Pending = $false
-		Invoke-PepsBuild
+		Start-Sleep -Milliseconds $PollMs
 	}
 } finally {
-	$srcWatcher.EnableRaisingEvents = $false
-	$pomWatcher.EnableRaisingEvents = $false
-	foreach ($h in $handlers) {
-		Unregister-Event -SourceIdentifier $h.Name -ErrorAction SilentlyContinue
-		Remove-Job -Id $h.Id -Force -ErrorAction SilentlyContinue
-	}
-	$srcWatcher.Dispose()
-	$pomWatcher.Dispose()
 	if (Test-Path $LockFile) {
 		Remove-Item -Force $LockFile -ErrorAction SilentlyContinue
 	}

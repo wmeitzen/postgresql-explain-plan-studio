@@ -1,0 +1,21 @@
+---
+description: Signal PEPS dev-watch to rebuild via RECOMPILENOW semaphore
+alwaysApply: true
+---
+
+# RECOMPILENOW rebuild signal
+
+After finishing a batch of code changes in this repo (when a jar rebuild is needed), create the semaphore file at the repository root:
+
+`RECOMPILENOW`
+
+Write a non-empty file (HGFS often fails to show 0-byte files to the Ubuntu guest):
+
+Example (PowerShell): `Set-Content -Path RECOMPILENOW -Value ("triggered " + (Get-Date -Format o)) -Encoding ascii`  
+Example (bash): `printf 'triggered %s\n' "$(date -Iseconds)" > RECOMPILENOW`
+
+Watchers:
+- Windows `scripts/dev-watch.ps1` builds when it sees a new `RECOMPILENOW` but does **not** delete it (so Ubuntu can still see the shared file).
+- Ubuntu systemd `dev-sync-watch.sh` syncs from the HGFS share, builds in `~/peps`, then **deletes** host `RECOMPILENOW`.
+
+Do **not** run `mvnw package` yourself for routine UI/code edits when the watch script is expected to handle rebuilds. Do **not** relaunch the app unless the user asks. Do **not** delete `RECOMPILENOW` yourself after creating it.

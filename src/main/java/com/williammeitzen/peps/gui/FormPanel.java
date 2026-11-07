@@ -29,15 +29,18 @@ import javax.swing.BorderFactory;
 import javax.swing.DefaultListModel;
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
+import javax.swing.JCheckBoxMenuItem;
 import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JList;
+import javax.swing.JMenu;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JProgressBar;
 import javax.swing.JScrollPane;
 import javax.swing.JTabbedPane;
 import javax.swing.SwingUtilities;
+import javax.swing.UIManager;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
 import javax.swing.event.ListSelectionEvent;
@@ -74,6 +77,10 @@ public class FormPanel extends JPanel {
 	public Map<String, PlanEvent> plansMapper = new TreeMap<String, PlanEvent>();
 	private PlanEvent planEvent;
 	private boolean comparePlansRefreshInProgress = false;
+	private JCheckBoxMenuItem propertiesViewMenuItem;
+	private JCheckBoxMenuItem slidersViewMenuItem;
+	private JCheckBoxMenuItem zoomViewMenuItem;
+	private boolean suppressDiagramViewMenuEvents;
 
 	public FormPanel(JTabbedPane tabPane, PlanDiagramToolbar planDiagramToolbar) {
 		
@@ -600,7 +607,40 @@ public class FormPanel extends JPanel {
 		button.setMargin(new Insets(4, 6, 4, 6));
 		button.setFocusable(false);
 		button.putClientProperty("JButton.buttonType", "toolBarButton");
+		button.putClientProperty("peps.planToolbarIconKind", iconKind);
 		return button;
+	}
+
+	/** Refresh Add/Delete/Duplicate glyphs after a color-scheme change. */
+	public void refreshPlanToolbarIcons() {
+		refreshPlanToolbarButtonIcon(addPlanBtn);
+		refreshPlanToolbarButtonIcon(deletePlanBtn);
+		refreshPlanToolbarButtonIcon(duplicatePlanBtn);
+	}
+
+	private static void refreshPlanToolbarButtonIcon(JButton button) {
+		if (button == null) {
+			return;
+		}
+		Object kind = button.getClientProperty("peps.planToolbarIconKind");
+		if (kind instanceof String) {
+			button.setIcon(createPlanToolbarIcon((String) kind));
+		}
+	}
+
+	private static Color planToolbarIconColor(String kind) {
+		// Semantic accents that stay readable on both light and dark chrome.
+		if ("add".equals(kind)) {
+			return UiTheme.isDark() ? new Color(0x4A, 0xDE, 0x80) : new Color(0x16, 0xA3, 0x4A);
+		}
+		if ("delete".equals(kind)) {
+			return UiTheme.isDark() ? new Color(0xFB, 0x71, 0x85) : new Color(0xE1, 0x1D, 0x48);
+		}
+		if ("duplicate".equals(kind)) {
+			return UiTheme.isDark() ? new Color(0x93, 0xC5, 0xFD) : new Color(0x25, 0x63, 0xEB);
+		}
+		Color fg = UIManager.getColor("Button.foreground");
+		return fg != null ? fg : new Color(0x33, 0x41, 0x55);
 	}
 
 	private static ImageIcon createPlanToolbarIcon(String kind) {
@@ -609,7 +649,7 @@ public class FormPanel extends JPanel {
 		Graphics2D g = image.createGraphics();
 		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 		g.setStroke(new BasicStroke(1.8f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-		g.setColor(new Color(0x33, 0x41, 0x55));
+		g.setColor(planToolbarIconColor(kind));
 		switch (kind) {
 		case "add":
 			g.drawLine(8, 3, 8, 13);
@@ -632,6 +672,132 @@ public class FormPanel extends JPanel {
 		}
 		g.dispose();
 		return new ImageIcon(image);
+	}
+
+	/** View → Properties / Sliders / Zoom for the active Plan Diagram dockables. */
+	public void installDiagramPanelViewMenuItems(JMenu viewMenu) {
+		if (viewMenu == null) {
+			return;
+		}
+		propertiesViewMenuItem = new JCheckBoxMenuItem("Properties");
+		slidersViewMenuItem = new JCheckBoxMenuItem("Sliders");
+		zoomViewMenuItem = new JCheckBoxMenuItem("Zoom");
+		propertiesViewMenuItem.setToolTipText("Show or hide the Properties panel in Plan Diagram");
+		slidersViewMenuItem.setToolTipText("Show or hide the Sliders panel in Plan Diagram");
+		zoomViewMenuItem.setToolTipText("Show or hide the Zoom slider panel in Plan Diagram");
+
+		propertiesViewMenuItem.addActionListener(e -> {
+			if (suppressDiagramViewMenuEvents) {
+				return;
+			}
+			DiagramDockingPanel diagram = findActiveDiagramDockingPanel();
+			if (diagram != null) {
+				diagram.setPropertiesVisible(propertiesViewMenuItem.isSelected());
+			}
+		});
+		slidersViewMenuItem.addActionListener(e -> {
+			if (suppressDiagramViewMenuEvents) {
+				return;
+			}
+			DiagramDockingPanel diagram = findActiveDiagramDockingPanel();
+			if (diagram != null) {
+				diagram.setSlidersVisible(slidersViewMenuItem.isSelected());
+			}
+		});
+		zoomViewMenuItem.addActionListener(e -> {
+			if (suppressDiagramViewMenuEvents) {
+				return;
+			}
+			DiagramDockingPanel diagram = findActiveDiagramDockingPanel();
+			if (diagram != null) {
+				diagram.setZoomVisible(zoomViewMenuItem.isSelected());
+			} else if (planDiagramToolbar != null) {
+				planDiagramToolbar.setZoomSliderCheckboxSelected(zoomViewMenuItem.isSelected());
+			}
+		});
+
+		viewMenu.add(propertiesViewMenuItem);
+		viewMenu.add(slidersViewMenuItem);
+		viewMenu.add(zoomViewMenuItem);
+		if (tabPaneToLink != null) {
+			tabPaneToLink.addChangeListener(e -> syncDiagramViewMenuItems());
+		}
+		syncDiagramViewMenuItems();
+	}
+
+	/**
+	 * Diagram dockables for the <em>selected</em> Documents tab only. Using a fixed
+	 * index 2 made View → Properties/Sliders/Zoom show checked while Plan Source was
+	 * active (panels not on screen), which looked like a sync bug.
+	 */
+	public DiagramDockingPanel findActiveDiagramDockingPanel() {
+		if (tabPaneToLink == null) {
+			return null;
+		}
+		int selected = tabPaneToLink.getSelectedIndex();
+		if (selected < 0 || selected >= tabPaneToLink.getTabCount()) {
+			return null;
+		}
+		Component tab = tabPaneToLink.getComponentAt(selected);
+		if (tab instanceof DiagramDockingPanel) {
+			return (DiagramDockingPanel) tab;
+		}
+		return null;
+	}
+
+	/** Restore Plan Diagram dockables (Graph / Zoom / Properties / Sliders) to the default layout. */
+	public void resetPanelsToDefault() {
+		DiagramDockingPanel diagram = findActiveDiagramDockingPanel();
+		if (diagram != null) {
+			diagram.resetToDefaultLayout();
+		}
+		syncDiagramViewMenuItems();
+	}
+
+	/** Re-sync diagram docking after Look-and-Feel / theme changes (esp. Linux). */
+	public void repairDiagramDockingAfterThemeChange() {
+		if (tabPaneToLink != null) {
+			for (int i = 0; i < tabPaneToLink.getTabCount(); i++) {
+				Component tab = tabPaneToLink.getComponentAt(i);
+				if (tab instanceof DiagramDockingPanel) {
+					((DiagramDockingPanel) tab).repairAfterThemeChange();
+				}
+			}
+		}
+		syncDiagramViewMenuItems();
+	}
+
+	public void syncDiagramViewMenuItems() {
+		if (propertiesViewMenuItem == null || slidersViewMenuItem == null || zoomViewMenuItem == null) {
+			return;
+		}
+		Runnable sync = () -> {
+			DiagramDockingPanel diagram = findActiveDiagramDockingPanel();
+			boolean hasDiagram = diagram != null;
+			suppressDiagramViewMenuEvents = true;
+			try {
+				propertiesViewMenuItem.setEnabled(hasDiagram);
+				slidersViewMenuItem.setEnabled(hasDiagram);
+				zoomViewMenuItem.setEnabled(hasDiagram && (diagram == null || diagram.hasZoomDockable()));
+				if (hasDiagram) {
+					propertiesViewMenuItem.setSelected(diagram.isPropertiesVisible());
+					slidersViewMenuItem.setSelected(diagram.isSlidersVisible());
+					zoomViewMenuItem.setSelected(diagram.isZoomVisible());
+				} else {
+					// Not on Plan Diagram — leave unchecked so View matches what's on screen.
+					propertiesViewMenuItem.setSelected(false);
+					slidersViewMenuItem.setSelected(false);
+					zoomViewMenuItem.setSelected(false);
+				}
+			} finally {
+				suppressDiagramViewMenuEvents = false;
+			}
+		};
+		if (SwingUtilities.isEventDispatchThread()) {
+			sync.run();
+		} else {
+			SwingUtilities.invokeLater(sync);
+		}
 	}
 	
 	private String getPlanSourceTabName(String planName) {
@@ -976,7 +1142,10 @@ public class FormPanel extends JPanel {
 	 */
 	private JPanel createPlanDiagramTab(PlanGraphPanel graphPanel,
 			int horizontalDivider, int verticalDivider) {
-		return new DiagramDockingPanel(graphPanel, planDiagramToolbar, DIAGRAM_WHEEL_UNIT_INCREMENT);
+		DiagramDockingPanel diagram = new DiagramDockingPanel(graphPanel, planDiagramToolbar, DIAGRAM_WHEEL_UNIT_INCREMENT);
+		diagram.setViewMenuSyncHook(this::syncDiagramViewMenuItems);
+		SwingUtilities.invokeLater(this::syncDiagramViewMenuItems);
+		return diagram;
 	}
 
 	public JList getPlanList() { 

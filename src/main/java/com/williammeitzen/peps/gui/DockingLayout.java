@@ -17,6 +17,7 @@ import com.williammeitzen.peps.model.Database;
 
 import bibliothek.gui.dock.common.CControl;
 import bibliothek.gui.dock.common.CGrid;
+import bibliothek.gui.dock.common.CLocation;
 import bibliothek.gui.dock.common.DefaultSingleCDockable;
 import bibliothek.gui.dock.common.event.CDockableAdapter;
 import bibliothek.gui.dock.common.intern.CDockable;
@@ -41,6 +42,8 @@ public class DockingLayout {
 	private final DefaultSingleCDockable documentsDockable;
 
 	private JCheckBoxMenuItem plansMenuItem;
+	/** Called after Plans show/hide so nested Plan Diagram docks can re-sync. */
+	private Runnable layoutChangedHook;
 
 	public DockingLayout(JFrame owner, FormPanel plansPanel, JTabbedPane documentTabs) {
 		instance = this;
@@ -87,8 +90,63 @@ public class DockingLayout {
 		viewMenu.addSeparator();
 		plansMenuItem = new JCheckBoxMenuItem("Plans");
 		viewMenu.add(plansMenuItem);
-		plansMenuItem.addActionListener(e -> plansDockable.setVisible(plansMenuItem.isSelected()));
+		plansMenuItem.addActionListener(e -> setPlansVisible(plansMenuItem.isSelected()));
+		// Properties / Sliders / Zoom are installed by FormPanel for the active Plan Diagram.
 		syncViewMenuFromDockables();
+	}
+
+	public void setLayoutChangedHook(Runnable hook) {
+		this.layoutChangedHook = hook;
+	}
+
+	/**
+	 * Show Plans via location (avoids a full shell deploy that scrambled nested diagram
+	 * docks). Hide with {@code setVisible(false)}; if Docking Frames leaves a ghost,
+	 * fall back to a Documents-only deploy then repair nested docks.
+	 */
+	public void setPlansVisible(boolean visible) {
+		if (visible) {
+			plansDockable.setLocation(CLocation.base(control.getContentArea()).normalWest(0.20));
+			plansDockable.setVisible(true);
+			documentsDockable.setVisible(true);
+		} else {
+			plansDockable.setVisible(false);
+			if (plansDockable.isDockableVisible()) {
+				CGrid grid = new CGrid(control);
+				grid.add(0, 0, 5, 3, documentsDockable);
+				control.getContentArea().deploy(grid);
+				documentsDockable.setVisible(true);
+			}
+		}
+		syncViewMenuFromDockables();
+		fireLayoutChanged();
+	}
+
+	private void fireLayoutChanged() {
+		if (layoutChangedHook == null) {
+			return;
+		}
+		Runnable hook = layoutChangedHook;
+		if (SwingUtilities.isEventDispatchThread()) {
+			SwingUtilities.invokeLater(hook);
+		} else {
+			SwingUtilities.invokeLater(hook);
+		}
+	}
+
+	/**
+	 * Fresh-install shell layout: Plans on the left, Documents filling the rest.
+	 * Clears any persisted docking XML so the next launch stays reset too.
+	 */
+	public void resetToDefaultLayout() {
+		clearSavedLayout();
+		// Deploy first so dockables have locations, then ensure visibility.
+		applyDefaultLayout();
+		plansDockable.setVisible(true);
+		documentsDockable.setVisible(true);
+		syncViewMenuFromDockables();
+		saveLayout();
+		fireLayoutChanged();
 	}
 
 	public void saveLayout() {

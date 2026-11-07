@@ -91,6 +91,7 @@ public class PlanDiagramToolbar extends JPanel {
 		zoomSliderCheckBox = new JCheckBox("Slider");
 		zoomSliderCheckBox.setToolTipText("Show the Zoom slider (vertical when tall, horizontal when wide)");
 		zoomSliderCheckBox.setOpaque(false);
+		zoomSliderCheckBox.setSelected(true);
 		zoomMinusButton = new JButton("-");
 		zoomPlusButton = new JButton("+");
 		zoom100Button = new JButton("100%");
@@ -146,10 +147,10 @@ public class PlanDiagramToolbar extends JPanel {
 		zoomSliderSidePanel.setBorder(BorderFactory.createEmptyBorder(6, 2, 6, 2));
 		zoomSliderSidePanel.setOpaque(true);
 		zoomSliderSidePanel.add(zoomSlider, BorderLayout.CENTER);
-		// Portrait default; landscape docking stretches this and flips the slider horizontal.
-		zoomSliderSidePanel.setPreferredSize(new Dimension(64, 200));
-		zoomSliderSidePanel.setMinimumSize(new Dimension(48, 48));
-		zoomSliderSidePanel.setVisible(false);
+		// Narrow strip: wide enough for the "Zoom" dock title and vertical % labels.
+		zoomSliderSidePanel.setPreferredSize(new Dimension(72, 200));
+		zoomSliderSidePanel.setMinimumSize(new Dimension(56, 48));
+		zoomSliderSidePanel.setVisible(true);
 		zoomSliderSidePanel.addComponentListener(new ComponentAdapter() {
 			@Override
 			public void componentResized(ComponentEvent e) {

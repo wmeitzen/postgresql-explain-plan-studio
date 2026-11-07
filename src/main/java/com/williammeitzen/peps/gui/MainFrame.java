@@ -105,6 +105,7 @@ public class MainFrame extends JFrame {
 		dockingLayout = new DockingLayout(this, formPanel, tabPane);
 		
 		setJMenuBar(createMenuBar()); // can't call set JMenuBar for historical / compatibility reasons
+		UiTheme.styleMenuBar(getJMenuBar());
 		installMenuAltShortcuts();
 		
 		addWindowListener(new WindowAdapter() {
@@ -260,7 +261,25 @@ public class MainFrame extends JFrame {
 		viewMenu.add(darkSchemeItem);
 		if (dockingLayout != null) {
 			dockingLayout.installViewMenuItems(viewMenu);
+			if (formPanel != null) {
+				dockingLayout.setLayoutChangedHook(formPanel::repairDiagramDockingAfterThemeChange);
+			}
 		}
+		if (formPanel != null) {
+			formPanel.installDiagramPanelViewMenuItems(viewMenu);
+		}
+		viewMenu.addSeparator();
+		JMenuItem resetPanelsItem = new JMenuItem("Reset Panels");
+		resetPanelsItem.setToolTipText("Show all panels and restore the default layout");
+		resetPanelsItem.addActionListener(e -> {
+			if (dockingLayout != null) {
+				dockingLayout.resetToDefaultLayout();
+			}
+			if (formPanel != null) {
+				formPanel.resetPanelsToDefault();
+			}
+		});
+		viewMenu.add(resetPanelsItem);
 
 		UiTheme.Scheme savedScheme = UiTheme.loadSavedScheme();
 		switch (savedScheme) {
@@ -276,9 +295,9 @@ public class MainFrame extends JFrame {
 			break;
 		}
 
-		defaultSchemeItem.addActionListener(e -> UiTheme.applyAndRefresh(UiTheme.Scheme.DEFAULT, MainFrame.this));
-		lightSchemeItem.addActionListener(e -> UiTheme.applyAndRefresh(UiTheme.Scheme.LIGHT, MainFrame.this));
-		darkSchemeItem.addActionListener(e -> UiTheme.applyAndRefresh(UiTheme.Scheme.DARK, MainFrame.this));
+		defaultSchemeItem.addActionListener(e -> applyColorScheme(UiTheme.Scheme.DEFAULT));
+		lightSchemeItem.addActionListener(e -> applyColorScheme(UiTheme.Scheme.LIGHT));
+		darkSchemeItem.addActionListener(e -> applyColorScheme(UiTheme.Scheme.DARK));
 
 		JMenu helpMenu = new JMenu("Help");
 		JMenuItem helpMenuAboutItem = new JMenuItem("About ...");
@@ -387,6 +406,15 @@ public class MainFrame extends JFrame {
 		return menuBar;
 	}
 	
+	private void applyColorScheme(UiTheme.Scheme scheme) {
+		UiTheme.applyAndRefresh(scheme, MainFrame.this);
+		// Linux/VMware: updateComponentTreeUI can desync Docking Frames visibility vs View menu.
+		if (formPanel != null) {
+			formPanel.repairDiagramDockingAfterThemeChange();
+		}
+		UiTheme.styleMenuBar(getJMenuBar());
+	}
+
 	private void repaintOnZoomChange(int zoomPct, boolean keepSelectedVisible) {
 		PlanGraphPanel planGraphPanel = findSelectedPlanGraphPanel();
 		if (planGraphPanel != null) {

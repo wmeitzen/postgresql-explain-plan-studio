@@ -43,7 +43,7 @@ Then run from that directory and open a plan → **Show JSON Plan Diagram** (or 
 
 ### Dev watch + run (recommended while coding)
 
-Rebuilds the shaded jar when sources change. Uses a lock file so launch waits if a build is in progress. Does **not** auto-restart a running PEPS window. jpackage remains the release path (below).
+Rebuilds the shaded jar when the repo-root `RECOMPILENOW` semaphore file appears (Cursor creates it after a change batch). On Windows the watcher builds but leaves the flag so the Ubuntu VM can see it; `dev-sync-watch.sh` (systemd) syncs, builds in `~/peps`, then deletes `RECOMPILENOW`. Uses a lock file so launch waits if a build is in progress. Does **not** auto-restart a running PEPS window. jpackage remains the release path (below).
 
 **Windows** — two terminals from the repo root:
 
@@ -53,6 +53,9 @@ Rebuilds the shaded jar when sources change. Uses a lock file so launch waits if
 
 # Terminal 2 — launch when you want to test
 .\scripts\dev-run.ps1
+
+# Optional: trigger a rebuild by hand
+# New-Item -ItemType File -Path RECOMPILENOW -Force
 ```
 
 **Ubuntu / Linux (VMware guest)** — edit on Windows, build on a **local disk copy** (`~/peps`). Shared-folder watches under `/mnt/hgfs` are unreliable, so use sync+build:
@@ -99,7 +102,7 @@ systemctl --user status peps-dev-sync-watch.service
 journalctl --user -u peps-dev-sync-watch.service -f
 ```
 
-For a checkout that already lives only on the VM disk (no Windows share), use `./scripts/dev-watch.sh` instead — it watches local `src/` and rebuilds (falls back to polling if `inotify-tools` is missing).
+For a checkout that already lives only on the VM disk (no Windows share), use `./scripts/dev-watch.sh` instead — it polls for `RECOMPILENOW` and rebuilds the same way as the Windows watcher.
 
 ### Package with bundled runtime (jpackage)
 

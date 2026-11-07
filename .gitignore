@@ -42,3 +42,6 @@ Desktop.ini
 *.sqlite
 *.db
 scripts/dev-release.local.ps1
+
+# Dev watch semaphore (created by Cursor / developer; consumed by scripts/dev-watch.*)
+RECOMPILENOW

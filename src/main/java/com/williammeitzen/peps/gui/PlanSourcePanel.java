@@ -502,6 +502,19 @@ public class PlanSourcePanel extends JPanel {
 		return gbc;
 	}
 
+	/** Left-aligned row spanning the form (EXPLAIN / JSON blocks). */
+	private GridBagConstraints fullWidthGbc(int y, Insets insets) {
+		GridBagConstraints gbc = new GridBagConstraints();
+		gbc.gridx = 0;
+		gbc.gridy = y;
+		gbc.gridwidth = 5;
+		gbc.weightx = 1.0;
+		gbc.fill = GridBagConstraints.NONE;
+		gbc.anchor = GridBagConstraints.WEST;
+		gbc.insets = insets;
+		return gbc;
+	}
+
 	private void sizeField(Component field, int width) {
 		int height = Math.max(field.getPreferredSize().height, 24);
 		Dimension size = new Dimension(width, height);
@@ -591,29 +604,24 @@ public class PlanSourcePanel extends JPanel {
 		panel.add(planSourceFromQueryPostCommandLabel, labelGbc(0, row));
 		panel.add(planSourceFromQueryPostCommandField, fieldGbc(1, row++, 3));
 
-		GridBagConstraints sqlLabelGbc = fieldGbc(1, row++, 3);
-		sqlLabelGbc.insets = new Insets(10, 0, 2, 8);
-		panel.add(planSourceFromQuerySQLLabel, sqlLabelGbc);
+		// Full-width, left-aligned (not indented under the label/field columns).
+		panel.add(planSourceFromQuerySQLLabel, fullWidthGbc(row++, new Insets(10, 8, 2, 8)));
 
-		GridBagConstraints sqlAreaGbc = fieldGbc(1, row++, 3);
+		GridBagConstraints sqlAreaGbc = fullWidthGbc(row++, new Insets(0, 8, 4, 8));
 		sqlAreaGbc.weighty = 0.45;
-		sqlAreaGbc.fill = GridBagConstraints.VERTICAL;
-		sqlAreaGbc.insets = new Insets(0, 0, 4, 8);
+		sqlAreaGbc.fill = GridBagConstraints.BOTH;
 		panel.add(planSourceFromQuerySQLTextAreaScrollPane, sqlAreaGbc);
 
-		panel.add(planSourceFromQueryButton, fieldGbc(1, row++, 3));
+		panel.add(planSourceFromQueryButton, fullWidthGbc(row++, new Insets(4, 8, 4, 8)));
 
-		GridBagConstraints jsonLabelGbc = fieldGbc(1, row++, 3);
-		jsonLabelGbc.insets = new Insets(10, 0, 2, 8);
-		panel.add(jsonPlanLabel, jsonLabelGbc);
+		panel.add(jsonPlanLabel, fullWidthGbc(row++, new Insets(10, 8, 2, 8)));
 
-		GridBagConstraints jsonAreaGbc = fieldGbc(1, row++, 3);
+		GridBagConstraints jsonAreaGbc = fullWidthGbc(row++, new Insets(0, 8, 4, 8));
 		jsonAreaGbc.weighty = 0.45;
-		jsonAreaGbc.fill = GridBagConstraints.VERTICAL;
-		jsonAreaGbc.insets = new Insets(0, 0, 4, 8);
+		jsonAreaGbc.fill = GridBagConstraints.BOTH;
 		panel.add(jsonPlanTextAreaScrollPane, jsonAreaGbc);
 
-		panel.add(showPlanGraphButton, fieldGbc(1, row++, 3));
+		panel.add(showPlanGraphButton, fullWidthGbc(row++, new Insets(4, 8, 4, 8)));
 
 		// Absorb extra horizontal space so fields stay left-aligned at hybrid widths.
 		GridBagConstraints hSpacer = new GridBagConstraints();

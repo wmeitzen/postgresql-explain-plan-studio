@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Sync PEPS sources from the Windows/VMware shared folder into a local Ubuntu
-# work tree, then rebuild the shaded jar when host files change.
+# work tree, then rebuild the shaded jar when host files change — or when the
+# host repo contains a RECOMPILENOW semaphore (created by Cursor after edits).
+# This script deletes RECOMPILENOW on the host after the Ubuntu build so Windows
+# and Ubuntu are not racing over who clears the flag.
 #
 # Why: /mnt/hgfs watches are unreliable; build on a local disk copy (~/peps)
 # while still picking up edits made on the Windows host.
@@ -96,7 +99,16 @@ run_build() {
   local local="$1"
   local lock_file="$local/target/dev-build.lock"
   mkdir -p "$local/target"
+  # Exclusive lock so systemd sync-watch and a manual ~/peps/dev-watch.sh cannot
+  # shade-replace the same jar at once (maven-shade "Could not replace original artifact").
+  exec 9>"$lock_file"
+  if ! flock -n 9; then
+    log "Another Maven build holds $lock_file — skipping this cycle"
+    return 0
+  fi
   printf 'pid=%s\nstarted=%s\n' "$$" "$(date +%Y-%m-%dT%H:%M:%S%z)" >"$lock_file"
+  # Clear half-finished shade renames from a prior crash/race.
+  rm -f "$local"/target/*-shaded.jar
   log "Building in $local …"
   (
     cd "$local"
@@ -104,7 +116,6 @@ run_build() {
     ./mvnw -DskipTests package
     local exit_code=$?
     set -e
-    rm -f "$lock_file"
     if [[ "$exit_code" -eq 0 ]]; then
       log "Build OK"
     else
@@ -112,16 +123,27 @@ run_build() {
     fi
     return "$exit_code"
   )
+  local rc=$?
+  flock -u 9
+  exec 9>&-
+  return "$rc"
 }
 
+STOPPING=0
 cleanup() {
+  if [[ "$STOPPING" -eq 1 ]]; then
+    return 0
+  fi
+  STOPPING=1
   if [[ -n "${LOCAL_REPO:-}" && -f "$LOCAL_REPO/target/dev-build.lock" ]]; then
     # Only remove our lock if it looks like ours (best-effort).
     rm -f "$LOCAL_REPO/target/dev-build.lock"
   fi
   log "Sync watcher stopped."
 }
-trap cleanup EXIT INT TERM
+# INT/TERM must exit — otherwise Ctrl+C only runs cleanup and the poll loop continues.
+trap cleanup EXIT
+trap 'exit 130' INT TERM
 
 need_cmd java
 need_cmd rsync
@@ -152,13 +174,28 @@ fi
 
 log "Host (Windows share): $HOST_REPO"
 log "Local build tree:     $LOCAL_REPO"
+log "Also watching host RECOMPILENOW (cleared here after build)."
 log "Polling every ${POLL_SEC}s. Ctrl+C to stop."
 
 last_fp=""
+last_recompile_stamp=""
 while true; do
+  recompile_now=0
+  recompile_stamp=""
+  if [[ -f "$HOST_REPO/RECOMPILENOW" ]]; then
+    recompile_stamp="$(stat -c '%Y %s' "$HOST_REPO/RECOMPILENOW" 2>/dev/null || true)"
+    if [[ -n "$recompile_stamp" && "$recompile_stamp" != "$last_recompile_stamp" ]]; then
+      recompile_now=1
+    fi
+  else
+    last_recompile_stamp=""
+  fi
+
   fp="$(fingerprint_sources "$HOST_REPO")"
-  if [[ "$fp" != "$last_fp" ]]; then
-    if [[ -z "$last_fp" ]]; then
+  if [[ "$fp" != "$last_fp" || "$recompile_now" -eq 1 ]]; then
+    if [[ "$recompile_now" -eq 1 ]]; then
+      log "Host RECOMPILENOW seen — syncing…"
+    elif [[ -z "$last_fp" ]]; then
       log "Initial sync from host…"
     else
       log "Host sources changed — syncing…"
@@ -166,6 +203,11 @@ while true; do
     sync_from_host "$HOST_REPO" "$LOCAL_REPO"
     last_fp="$fp"
     run_build "$LOCAL_REPO" || true
+    if [[ "$recompile_now" -eq 1 ]]; then
+      last_recompile_stamp="$recompile_stamp"
+      rm -f "$HOST_REPO/RECOMPILENOW" "$LOCAL_REPO/RECOMPILENOW"
+      log "Removed host RECOMPILENOW"
+    fi
   else
     sleep "$POLL_SEC"
   fi

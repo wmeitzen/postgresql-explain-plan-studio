@@ -4553,10 +4553,9 @@ order by id_explain_plan_property;
 
 		boolean hovered = hoveredOperatorId != null && hoveredOperatorId.intValue() == id_explain_plan_property;
 		boolean selected = selectedOperatorId != null && selectedOperatorId.intValue() == id_explain_plan_property;
-		if (hovered || selected) {
-			g.setColor(selected
-					? new Color(0xDB, 0xEA, 0xFE, UiTheme.isDark() ? 120 : 180)
-					: new Color(0xF1, 0xF5, 0xF9, UiTheme.isDark() ? 80 : 160));
+		// Hover may tint the box; selection uses the outer rounded outline only (no fill).
+		if (hovered && !selected) {
+			g.setColor(new Color(0xF1, 0xF5, 0xF9, UiTheme.isDark() ? 80 : 160));
 			g.fill(rctOperatorBox);
 		}
 

@@ -45,8 +45,9 @@ public class SliderPanel extends JPanel implements Scrollable {
 	private static final long serialVersionUID = 1L;
 
 	private static final int SLIDER_PREFERRED_WIDTH = 600;
-	private static final int SLIDER_PREFERRED_HEIGHT = 80;
+	private static final int SLIDER_PREFERRED_HEIGHT = 72;
 	private static final int PANEL_MINIMUM_WIDTH = 320;
+	private static final int PANEL_COMPACT_HEIGHT = 140;
 	private static final int THUMB_VALUE_TRACK_HEIGHT = 18;
 	
 	private JLabel timeSliderLabel;
@@ -86,7 +87,8 @@ public class SliderPanel extends JPanel implements Scrollable {
 	
 	public SliderPanel(PlanGraphPanel graphPanel) {
 		planGraphPanel = graphPanel;
-		setMinimumSize(new Dimension(PANEL_MINIMUM_WIDTH, 120));
+		setMinimumSize(new Dimension(PANEL_MINIMUM_WIDTH, PANEL_COMPACT_HEIGHT));
+		setPreferredSize(new Dimension(SLIDER_PREFERRED_WIDTH, PANEL_COMPACT_HEIGHT));
 
 		//createComponents_OLD();
 		createComponents();
@@ -403,8 +405,8 @@ public class SliderPanel extends JPanel implements Scrollable {
 			gc.gridy++;
 			gc.fill = GridBagConstraints.HORIZONTAL;
 			gc.weightx = 1;
-			gc.weighty = 1;
-			gc.insets = new Insets(2, 8, 8, 8);
+			gc.weighty = 0; // keep content packed; dock height stays short
+			gc.insets = new Insets(2, 8, 6, 8);
 			add(sliderHost, gc);
 
 			spanSlider.addComponentListener(new ComponentAdapter() {
@@ -534,7 +536,7 @@ public class SliderPanel extends JPanel implements Scrollable {
 
 	@Override
 	public Dimension getPreferredScrollableViewportSize() {
-		return new Dimension(SLIDER_PREFERRED_WIDTH, 160);
+		return new Dimension(SLIDER_PREFERRED_WIDTH, PANEL_COMPACT_HEIGHT);
 	}
 
 	@Override

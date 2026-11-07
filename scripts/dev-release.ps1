@@ -13,8 +13,9 @@
   Default Ubuntu SSH target: administrator@192.168.163.154
   Override with -UbuntuSsh, $env:PEPS_UBUNTU_SSH, or scripts/dev-release.local.ps1
   ($PepsUbuntuSsh / $PepsLastVersion). After each confirmed run, the chosen SSH
-  target and release version are saved to scripts/dev-release.local.ps1 (gitignored)
-  and offered as Enter defaults next time.
+  target and release version are saved to scripts/dev-release.local.ps1 (gitignored).
+  The version prompt defaults to the next patch after pom.xml (e.g. 0.0.13 → 0.0.14);
+  the SSH target still defaults to the last saved / env value.
 
   Existing git tags / GitHub releases for the same version are overwritten.
 
@@ -138,12 +139,24 @@ function Get-DefaultUbuntuSsh {
 	return "administrator@192.168.163.154"
 }
 
+function Get-NextPatchVersion {
+	param([string]$Version)
+	if ([string]::IsNullOrWhiteSpace($Version)) {
+		return $Version
+	}
+	# 0.0.13 or 0.0.13-SNAPSHOT → 0.0.14 (bump the third numeric component).
+	if ($Version.Trim() -match '^(\d+)\.(\d+)\.(\d+)') {
+		$major = [int]$Matches[1]
+		$minor = [int]$Matches[2]
+		$patch = [int]$Matches[3]
+		return "{0}.{1}.{2}" -f $major, $minor, ($patch + 1)
+	}
+	return $Version.Trim()
+}
+
 function Get-DefaultReleaseVersion {
 	param([string]$PomVersion)
-	if (-not [string]::IsNullOrWhiteSpace($PepsLastVersion)) {
-		return $PepsLastVersion.Trim()
-	}
-	return $PomVersion
+	return Get-NextPatchVersion -Version $PomVersion
 }
 
 function Save-DevReleaseLocalConfig {
@@ -194,7 +207,7 @@ function Resolve-ReleaseVersion {
 		return $Explicit.Trim()
 	}
 	$defaultVersion = Get-DefaultReleaseVersion -PomVersion $PomVersion
-	$entered = Read-Host "Release version (pom is $PomVersion) [$defaultVersion]"
+	$entered = Read-Host "Release version (pom is $PomVersion; Enter = next) [$defaultVersion]"
 	if ([string]::IsNullOrWhiteSpace($entered)) {
 		return $defaultVersion
 	}
@@ -466,8 +479,8 @@ Write-Host "  - $(if ($SkipGit) { 'Skip git commit/tag/push' } else { "Commit/ta
 Write-Host "  - $(if ($SkipBuild) { 'Skip Windows build' } else { 'Build Windows jpackage zip' })"
 Write-Host "  - $(if ($SkipBuild -or $SkipUbuntu) { 'Skip Ubuntu build' } else { "Build Ubuntu jpackage on $UbuntuSsh" })"
 Write-Host "  - Upload available zips to GitHub release $Tag"
-$confirm = Read-Host "Continue? [y/N]"
-if ($confirm -notmatch '^[Yy]') {
+$confirm = Read-Host "Continue? [Y/n]"
+if ($confirm -match '^[Nn]') {
 	Write-Status "Aborted."
 	exit 1
 }

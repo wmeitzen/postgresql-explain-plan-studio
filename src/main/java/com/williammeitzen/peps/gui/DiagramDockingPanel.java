@@ -24,10 +24,23 @@ public class DiagramDockingPanel extends JPanel {
 	private static final long serialVersionUID = 1L;
 
 	private final CControl control;
+	private final PlanDiagramToolbar toolbar;
+	private final DefaultSingleCDockable graphDockable;
+	private final DefaultSingleCDockable propertiesDockable;
+	private final DefaultSingleCDockable slidersDockable;
+	private final DefaultSingleCDockable zoomDockable;
+	private Runnable viewMenuSyncHook;
+
+	/** Intended visibility — Docking Frames isVisible/isDockableVisible can desync after shell/theme changes. */
+	private boolean wantZoom = true;
+	private boolean wantProperties = true;
+	private boolean wantSliders = true;
+	private boolean suppressVisibilityTracking;
 
 	public DiagramDockingPanel(PlanGraphPanel graphPanel, PlanDiagramToolbar toolbar, int wheelUnitIncrement) {
 		super(new BorderLayout(0, 4));
 		setBorder(BorderFactory.createEmptyBorder(4, 4, 4, 4));
+		this.toolbar = toolbar;
 
 		if (toolbar != null) {
 			if (toolbar.getParent() != null) {
@@ -53,49 +66,54 @@ public class DiagramDockingPanel extends JPanel {
 		SliderPanel sliders = new SliderPanel(graphPanel);
 		JScrollPane slidersScroll = new JScrollPane(sliders,
 				JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
-		slidersScroll.setMinimumSize(new Dimension(320, 120));
+		// Short dock: radio row + thumb label + slider (~140px) without empty band.
+		slidersScroll.setMinimumSize(new Dimension(320, 140));
+		slidersScroll.setPreferredSize(new Dimension(320, 148));
 		slidersScroll.getVerticalScrollBar().setUnitIncrement(wheelUnitIncrement);
 
 		String suffix = Integer.toHexString(System.identityHashCode(graphPanel));
-		DefaultSingleCDockable graphDockable = createInnerDockable("diagram-graph-" + suffix, "Graph", graphScroll);
+		graphDockable = createInnerDockable("diagram-graph-" + suffix, "Graph", graphScroll);
 		graphDockable.setCloseable(false);
 
-		DefaultSingleCDockable zoomDockable = null;
+		DefaultSingleCDockable createdZoom = null;
 		if (toolbar != null) {
 			JPanel zoomSide = toolbar.getZoomSliderSidePanel();
 			if (zoomSide.getParent() != null) {
 				zoomSide.getParent().remove(zoomSide);
 			}
 			zoomSide.setVisible(true);
-			zoomDockable = createInnerDockable("diagram-zoom-" + suffix, "Zoom", zoomSide);
-			zoomDockable.setCloseable(true);
-			zoomDockable.setMaximizable(false);
+			createdZoom = createInnerDockable("diagram-zoom-" + suffix, "Zoom", zoomSide);
+			createdZoom.setCloseable(true);
+			createdZoom.setMaximizable(false);
 			toolbar.refreshZoomSliderFromGraph(graphPanel);
 
-			DefaultSingleCDockable zoomRef = zoomDockable;
 			toolbar.setZoomSliderVisibilityListener(show -> {
-				zoomRef.setVisible(Boolean.TRUE.equals(show));
+				setZoomVisible(Boolean.TRUE.equals(show));
 				if (Boolean.TRUE.equals(show)) {
 					toolbar.refreshZoomSliderFromGraph(graphPanel);
 				}
 			});
-			zoomDockable.addCDockableStateListener(new CDockableAdapter() {
+			createdZoom.addCDockableStateListener(new CDockableAdapter() {
 				@Override
 				public void visibilityChanged(CDockable dockable) {
-					if (toolbar.isZoomSliderCheckboxEventSuppressed()) {
+					if (toolbar.isZoomSliderCheckboxEventSuppressed() || suppressVisibilityTracking) {
 						return;
 					}
-					boolean visible = dockable.isVisible();
-					toolbar.setZoomSliderCheckboxSelected(visible);
-					if (visible) {
+					wantZoom = dockable.isVisible();
+					toolbar.setZoomSliderCheckboxSelected(wantZoom);
+					if (wantZoom) {
 						toolbar.refreshZoomSliderFromGraph(graphPanel);
 					}
+					fireViewMenuSync();
 				}
 			});
 		}
+		this.zoomDockable = createdZoom;
 
-		DefaultSingleCDockable propertiesDockable = createInnerDockable("diagram-properties-" + suffix, "Properties", properties);
-		DefaultSingleCDockable slidersDockable = createInnerDockable("diagram-sliders-" + suffix, "Sliders", slidersScroll);
+		propertiesDockable = createInnerDockable("diagram-properties-" + suffix, "Properties", properties);
+		slidersDockable = createInnerDockable("diagram-sliders-" + suffix, "Sliders", slidersScroll);
+		propertiesDockable.addCDockableStateListener(visibilitySyncListener(true));
+		slidersDockable.addCDockableStateListener(visibilitySyncListener(false));
 
 		control.addDockable(graphDockable);
 		if (zoomDockable != null) {
@@ -104,24 +122,135 @@ public class DiagramDockingPanel extends JPanel {
 		control.addDockable(propertiesDockable);
 		control.addDockable(slidersDockable);
 
-		CGrid grid = new CGrid(control);
-		grid.add(0, 0, 3, 2, graphDockable);
-		if (zoomDockable != null) {
-			// Narrow strip between Graph and Properties (title bar matches other panes).
-			grid.add(3, 0, 0.45, 2, zoomDockable);
-			grid.add(3.45, 0, 1.5, 3, propertiesDockable);
-		} else {
-			grid.add(3, 0, 1.5, 3, propertiesDockable);
-		}
-		grid.add(0, 2, 3, 1, slidersDockable);
-		control.getContentArea().deploy(grid);
-
-		// setVisible requires the dockable to already be registered with CControl.
-		if (zoomDockable != null && toolbar != null) {
-			zoomDockable.setVisible(toolbar.isZoomSliderVisible());
-		}
+		wantZoom = true;
+		wantProperties = true;
+		wantSliders = true;
+		redeployDefaultLayout();
 
 		add(control.getContentArea(), BorderLayout.CENTER);
+	}
+
+	/**
+	 * Fresh-install diagram layout: Graph, Zoom strip, Properties, Sliders — all visible.
+	 */
+	public void resetToDefaultLayout() {
+		wantZoom = true;
+		wantProperties = true;
+		wantSliders = true;
+		redeployDefaultLayout();
+		fireViewMenuSync();
+	}
+
+	/**
+	 * Redeploy Graph | Zoom | Properties / Sliders from {@link #wantZoom} /
+	 * {@link #wantProperties} / {@link #wantSliders}. Closing a dockable clears Docking
+	 * Frames location history; plain {@code setVisible(true)} often restores it in the
+	 * wrong split. Redeploying puts each panel back in the intended strip.
+	 */
+	private void redeployDefaultLayout() {
+		suppressVisibilityTracking = true;
+		try {
+			CGrid grid = new CGrid(control);
+			if (zoomDockable != null) {
+				grid.add(0, 0, 4.0, 5.0, graphDockable);
+				grid.add(4.0, 0, 0.7, 5.0, zoomDockable);
+				grid.add(4.7, 0, 2.0, 6.0, propertiesDockable);
+				grid.add(0, 5.0, 4.7, 1.0, slidersDockable);
+			} else {
+				grid.add(0, 0, 4.0, 5.0, graphDockable);
+				grid.add(4.0, 0, 2.0, 6.0, propertiesDockable);
+				grid.add(0, 5.0, 4.0, 1.0, slidersDockable);
+			}
+			control.getContentArea().deploy(grid);
+
+			graphDockable.setVisible(true);
+			propertiesDockable.setVisible(wantProperties);
+			slidersDockable.setVisible(wantSliders);
+			if (zoomDockable != null) {
+				zoomDockable.setVisible(wantZoom);
+				if (toolbar != null) {
+					toolbar.setZoomSliderCheckboxSelected(wantZoom);
+				}
+			}
+		} finally {
+			suppressVisibilityTracking = false;
+		}
+	}
+
+	public void setViewMenuSyncHook(Runnable hook) {
+		this.viewMenuSyncHook = hook;
+	}
+
+	public boolean isPropertiesVisible() {
+		return wantProperties;
+	}
+
+	public void setPropertiesVisible(boolean visible) {
+		wantProperties = visible;
+		redeployDefaultLayout();
+		fireViewMenuSync();
+	}
+
+	public boolean isSlidersVisible() {
+		return wantSliders;
+	}
+
+	public void setSlidersVisible(boolean visible) {
+		wantSliders = visible;
+		redeployDefaultLayout();
+		fireViewMenuSync();
+	}
+
+	public boolean hasZoomDockable() {
+		return zoomDockable != null;
+	}
+
+	public boolean isZoomVisible() {
+		return zoomDockable != null && wantZoom;
+	}
+
+	public void setZoomVisible(boolean visible) {
+		if (zoomDockable == null) {
+			return;
+		}
+		wantZoom = visible;
+		redeployDefaultLayout();
+		if (toolbar != null) {
+			toolbar.setZoomSliderCheckboxSelected(visible);
+		}
+		fireViewMenuSync();
+	}
+
+	/**
+	 * After Look-and-Feel / theme swaps or shell (Plans) layout changes, Docking Frames
+	 * can leave panels painted while flags are wrong. Redeploy from intended wants.
+	 */
+	public void repairAfterThemeChange() {
+		redeployDefaultLayout();
+		fireViewMenuSync();
+	}
+
+	private CDockableAdapter visibilitySyncListener(boolean propertiesNotSliders) {
+		return new CDockableAdapter() {
+			@Override
+			public void visibilityChanged(CDockable dockable) {
+				if (suppressVisibilityTracking) {
+					return;
+				}
+				if (propertiesNotSliders) {
+					wantProperties = dockable.isVisible();
+				} else {
+					wantSliders = dockable.isVisible();
+				}
+				fireViewMenuSync();
+			}
+		};
+	}
+
+	private void fireViewMenuSync() {
+		if (viewMenuSyncHook != null) {
+			viewMenuSyncHook.run();
+		}
 	}
 
 	private static DefaultSingleCDockable createInnerDockable(String id, String title, java.awt.Component content) {
