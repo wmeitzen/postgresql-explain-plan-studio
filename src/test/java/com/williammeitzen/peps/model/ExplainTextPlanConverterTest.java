@@ -101,6 +101,19 @@ class ExplainTextPlanConverterTest {
 	}
 
 	@Test
+	void parsesSampleScanFilterAndRowsRemoved() throws Exception {
+		JsonObject plan = planFromFixture("explain-text/09-sample-scan-filter.txt");
+		assertEquals("Sample Scan", plan.get("Node Type"));
+		assertEquals("pg_class", plan.get("Relation Name"));
+		assertEquals("(c.relkind = 'r')", plan.get("Filter"));
+		assertEquals(252L, ((Number) plan.get("Rows Removed by Filter")).longValue());
+		assertEquals("bernoulli", plan.get("Sampling Method"));
+		assertEquals(7.0d, ((Number) plan.get("Repeatable Seed")).doubleValue(), 0.0001);
+		assertEquals("(c.relkind = 'r')",
+				ExplainTextPlanConverter.stripPgTypeCasts("(c.relkind = 'r'::\"char\")"));
+	}
+
+	@Test
 	void parsesMemoizeCacheDetails() throws Exception {
 		JsonObject plan = planFromFixture("explain-text/08-memoize-cache.txt");
 		JsonObject memoize = (JsonObject) ((JsonArray) plan.get("Plans")).get(1);

@@ -2479,23 +2479,43 @@ from explain_plan_operator_annotations
 
 	// lots of operators show how many rows were filtered out
 	private String rowsRemovedByFilterOrIndexRecheck(Double dblRowsRemovedByFilter, boolean bolRowsRemovedByFilterIsExact, Double dblRowsRemovedByIndexRecheck, boolean bolRowsRemovedByIndexRecheckIsExact) {
-		
-		String strReturnString = "";
-		
-		if ((dblRowsRemovedByFilter != null && dblRowsRemovedByFilter > 0 && bolRowsRemovedByFilterIsExact == false) || (dblRowsRemovedByIndexRecheck != null && dblRowsRemovedByIndexRecheck > 0 && bolRowsRemovedByIndexRecheckIsExact == false))
-			strReturnString += "~";
 		if (dblRowsRemovedByFilter != null && dblRowsRemovedByIndexRecheck == null) {
-			strReturnString += Utils.units(dblRowsRemovedByFilter) + " removed by filter";
-		} else if (dblRowsRemovedByFilter == null && dblRowsRemovedByIndexRecheck != null) {
-			strReturnString += Utils.units(dblRowsRemovedByIndexRecheck) + " removed by index recheck";
-		} else if (dblRowsRemovedByFilter != null && dblRowsRemovedByIndexRecheck != null) {
-			if (dblRowsRemovedByFilter > dblRowsRemovedByIndexRecheck) {
-				strReturnString += Utils.units(dblRowsRemovedByFilter) + " removed by filter";
-			} else {
-				strReturnString += Utils.units(dblRowsRemovedByIndexRecheck) + " removed by index recheck";
-			}
+			return rowsRemovedPhrase(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, "removed by filter");
 		}
-		return strReturnString;
+		if (dblRowsRemovedByFilter == null && dblRowsRemovedByIndexRecheck != null) {
+			return rowsRemovedPhrase(dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact, "removed by index recheck");
+		}
+		if (dblRowsRemovedByFilter != null && dblRowsRemovedByIndexRecheck != null) {
+			if (dblRowsRemovedByFilter > dblRowsRemovedByIndexRecheck) {
+				return rowsRemovedPhrase(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, "removed by filter");
+			}
+			return rowsRemovedPhrase(dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact, "removed by index recheck");
+		}
+		return "";
+	}
+
+	/** e.g. {@code 100 removed by join filter}, {@code ~1.2k removed by filter}; omit when 0. */
+	private String rowsRemovedPhrase(Double count, boolean exact, String phrase) {
+		if (count == null || count <= 0) {
+			return "";
+		}
+		StringBuilder sb = new StringBuilder();
+		if (!exact) {
+			sb.append('~');
+		}
+		sb.append(Utils.units(count)).append(' ').append(phrase);
+		return sb.toString();
+	}
+
+	/** Prefer join-filter removals when present; else filter / index-recheck phrasing. */
+	private String rowsRemovedSouthLine(Double filter, boolean filterExact,
+			Double joinFilter, boolean joinExact,
+			Double recheck, boolean recheckExact) {
+		String joinLine = rowsRemovedPhrase(joinFilter, joinExact, "removed by join filter");
+		if (joinLine != null && !joinLine.isEmpty()) {
+			return joinLine;
+		}
+		return rowsRemovedByFilterOrIndexRecheck(filter, filterExact, recheck, recheckExact);
 	}
 
 	/** Parse annotation numeric fields without Integer overflow (huge EXPLAIN values). */
@@ -2548,8 +2568,8 @@ from explain_plan_operator_annotations
 		String strSouth1Text, strSouth2Text, strSouth3Text, strSouth4Text, strSouth5Text;
 		String strRelationName, strIndexName, strAlias, strSubplanName, strPeakMemoryUsage;
 		String strStrategy, strCommand, strCTEName, strPartialMode;
-		Double dblRowsRemovedByFilter, dblRowsRemovedByIndexRecheck;
-		boolean bolRowsRemovedByFilterIsExact, bolRowsRemovedByIndexRecheckIsExact;
+		Double dblRowsRemovedByFilter, dblRowsRemovedByJoinFilter, dblRowsRemovedByIndexRecheck;
+		boolean bolRowsRemovedByFilterIsExact, bolRowsRemovedByJoinFilterIsExact, bolRowsRemovedByIndexRecheckIsExact;
 		String strSQL;
 		boolean bolShowSQL = false;
 		JsonArray jsnRows;
@@ -2622,26 +2642,33 @@ from explain_plan_operator_annotations
 				strRelationName = jsnObject.getString("relation_name");
 				strPartialMode = jsnObject.getString("partial_mode");
 				dblRowsRemovedByFilter = null;
+				dblRowsRemovedByJoinFilter = null;
 				dblRowsRemovedByIndexRecheck = null;
 				bolRowsRemovedByFilterIsExact = true;
+				bolRowsRemovedByJoinFilterIsExact = true;
 				bolRowsRemovedByIndexRecheckIsExact = true;
 
-				if (jsnObject.getString("total_rows_removed_by_filter") == null && jsnObject.getString("total_rows_removed_by_join_filter") == null)
-					dblRowsRemovedByFilter = null;
-				else if (jsnObject.getString("total_rows_removed_by_filter") != null) {
+				if (jsnObject.getString("total_rows_removed_by_filter") != null
+						|| jsnObject.getString("rows_removed_by_filter") != null) {
 					dblRowsRemovedByFilter = preferLargerAnnotationDouble(jsnObject,
 							"total_rows_removed_by_filter", "rows_removed_by_filter");
-					bolRowsRemovedByFilterIsExact = (jsnObject.getInteger("total_rows_removed_by_filter_is_exact") == 1);
-				} else if (jsnObject.getString("total_rows_removed_by_join_filter") != null) {
-					dblRowsRemovedByFilter = preferLargerAnnotationDouble(jsnObject,
+					Integer exactFilter = jsnObject.getInteger("total_rows_removed_by_filter_is_exact");
+					bolRowsRemovedByFilterIsExact = (exactFilter != null && exactFilter == 1);
+				}
+				if (jsnObject.getString("total_rows_removed_by_join_filter") != null
+						|| jsnObject.getString("rows_removed_by_join_filter") != null) {
+					dblRowsRemovedByJoinFilter = preferLargerAnnotationDouble(jsnObject,
 							"total_rows_removed_by_join_filter", "rows_removed_by_join_filter");
-					bolRowsRemovedByFilterIsExact = (jsnObject.getInteger("total_rows_removed_by_join_filter_is_exact") == 1);
+					Integer exactJoin = jsnObject.getInteger("total_rows_removed_by_join_filter_is_exact");
+					bolRowsRemovedByJoinFilterIsExact = (exactJoin != null && exactJoin == 1);
 				}
 
-				if (jsnObject.getString("total_rows_removed_by_index_recheck") != null) {
+				if (jsnObject.getString("total_rows_removed_by_index_recheck") != null
+						|| jsnObject.getString("rows_removed_by_index_recheck") != null) {
 					dblRowsRemovedByIndexRecheck = preferLargerAnnotationDouble(jsnObject,
 							"total_rows_removed_by_index_recheck", "rows_removed_by_index_recheck");
-					bolRowsRemovedByIndexRecheckIsExact = (jsnObject.getInteger("total_rows_removed_by_index_recheck_is_exact") == 1);
+					Integer exactRecheck = jsnObject.getInteger("total_rows_removed_by_index_recheck_is_exact");
+					bolRowsRemovedByIndexRecheckIsExact = (exactRecheck != null && exactRecheck == 1);
 				}
 				strStrategy = jsnObject.getString("strategy");
 				strSubplanName = jsnObject.getString("subplan_name");
@@ -2734,7 +2761,9 @@ from explain_plan_operator_annotations
 						strSouth4Text = removeDatatypes(strSouth4Text);
 						strSouth4Text = removeParenthesis(strSouth4Text);
 						strSouth4Text = prefaceAndTruncate("Filter: ", strSouth4Text, 40);
-						strSouth5Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+						strSouth5Text = rowsRemovedSouthLine(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact,
+								dblRowsRemovedByJoinFilter, bolRowsRemovedByJoinFilterIsExact,
+								dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
 					} else {
 						strSouth2Text = jsnObject.getString("hash_cond");
 						strSouth2Text = removeDatatypes(strSouth2Text);
@@ -2744,28 +2773,44 @@ from explain_plan_operator_annotations
 						strSouth3Text = removeDatatypes(strSouth3Text);
 						strSouth3Text = removeParenthesis(strSouth3Text);
 						strSouth3Text = prefaceAndTruncate("Filter: ", strSouth3Text, 40);
-						strSouth4Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+						strSouth4Text = rowsRemovedSouthLine(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact,
+								dblRowsRemovedByJoinFilter, bolRowsRemovedByJoinFilterIsExact,
+								dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
 					}
 				} else if (strNodeType.equals("Index Only Scan") == true) {
 					strSouth2Text = strRelationName;
 					strSouth3Text = strAlias;
-					strSouth4Text = strIndexName;
-					strSouth5Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
-				} else if (strNodeType.equals("Index Scan") == true) {
+					strSouth4Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+					strSouth5Text = strIndexName;
+				} else if (strNodeType.equals("Index Scan") == true
+						|| strNodeType.matches("(?i)Parallel\\s+Index Scan")) {
 					strSouth2Text = strRelationName;
 					strSouth3Text = strAlias;
-					strSouth4Text = strIndexName;
-					strSouth5Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+					String indexCond = jsnObject.getString("index_cond");
+					indexCond = removeDatatypes(indexCond);
+					indexCond = removeParenthesis(indexCond);
+					indexCond = prefaceAndTruncate("Index cond: ", indexCond, 40);
+					String removed = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+					if (indexCond != null && !indexCond.isBlank()) {
+						// Index Cond at the bottom; Index Name just above it when both exist
+						strSouth4Text = (strIndexName != null && !strIndexName.isBlank()) ? strIndexName : removed;
+						strSouth5Text = indexCond;
+					} else {
+						strSouth4Text = removed;
+						strSouth5Text = strIndexName;
+					}
 				} else if (strNodeType.equals("Limit") == true) {
 					if (strSubplanName != null) strSouth2Text = strSubplanName;
 				} else if (strNodeType.equals("LockRows") == true) {
 				} else if (strNodeType.equals("Materialize") == true) {
 				} else if (strNodeType.equals("Memoize") == true) {
-					strSouth2Text = jsnObject.getString("cache_key");
-					strSouth2Text = removeDatatypes(strSouth2Text);
-					strSouth2Text = removeParenthesis(strSouth2Text);
-					strSouth2Text = prefaceAndTruncate("", strSouth2Text, 40);
-					if (strPeakMemoryUsage != null) {
+					String cacheKey = jsnObject.getString("cache_key");
+					if (cacheKey != null && !cacheKey.isBlank()) {
+						strSouth2Text = removeDatatypes(cacheKey);
+						strSouth2Text = removeParenthesis(strSouth2Text);
+						strSouth2Text = prefaceAndTruncate("", strSouth2Text, 40);
+					}
+					if (strPeakMemoryUsage != null && !strPeakMemoryUsage.isBlank()) {
 						strSouth3Text = Utils.kilobytes(Double.parseDouble(strPeakMemoryUsage)) + " RAM used";
 					}
 				} else if (strNodeType.equals("Merge Append") == true) {
@@ -2781,7 +2826,9 @@ from explain_plan_operator_annotations
 						strSouth4Text = removeDatatypes(strSouth4Text);
 						strSouth4Text = removeParenthesis(strSouth4Text);
 						strSouth4Text = prefaceAndTruncate("Filter: ", strSouth4Text, 40);
-						strSouth5Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+						strSouth5Text = rowsRemovedSouthLine(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact,
+								dblRowsRemovedByJoinFilter, bolRowsRemovedByJoinFilterIsExact,
+								dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
 					} else {
 						strSouth2Text = jsnObject.getString("merge_cond");
 						strSouth2Text = removeDatatypes(strSouth2Text);
@@ -2791,22 +2838,34 @@ from explain_plan_operator_annotations
 						strSouth3Text = removeDatatypes(strSouth3Text);
 						strSouth3Text = removeParenthesis(strSouth3Text);
 						strSouth3Text = prefaceAndTruncate("Filter: ", strSouth3Text, 40);
-						strSouth4Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+						strSouth4Text = rowsRemovedSouthLine(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact,
+								dblRowsRemovedByJoinFilter, bolRowsRemovedByJoinFilterIsExact,
+								dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
 					}
 				} else if (strNodeType.equals("ModifyTable") == true
 						|| strNodeType.equalsIgnoreCase("Insert")
 						|| strNodeType.equalsIgnoreCase("Update")
 						|| strNodeType.equalsIgnoreCase("Delete")
 						|| strNodeType.equalsIgnoreCase("Merge")) {
-					strSouth2Text = jsnObject.getString("operation");
+					String operation = jsnObject.getString("operation");
+					if (operation == null || operation.isBlank()) {
+						operation = strNodeType;
+					}
+					strSouth2Text = operation;
 					if (strSouth2Text.equalsIgnoreCase("insert") == true) {
 						strSouth2Text += " into";
 					} else if (strSouth2Text.equalsIgnoreCase("delete") == true) {
 						strSouth2Text += " from";
 					}
-					strSouth2Text += " ";
-					strSouth2Text += strRelationName;
-					strSouth2Text += strAlias;
+					if (strRelationName != null && !strRelationName.isBlank()) {
+						strSouth2Text += " " + strRelationName;
+					}
+					// Merge: keep alias on its own south line ("as t")
+					if (operation.equalsIgnoreCase("merge") == true) {
+						strSouth3Text = strAlias;
+					} else if (strAlias != null && !strAlias.isBlank()) {
+						strSouth2Text += " " + strAlias;
+					}
 				} else if (strNodeType.equals("Named Tuplestore Scan") == true) {
 					strSouth2Text = strAlias;
 					strSouth3Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
@@ -2819,13 +2878,17 @@ from explain_plan_operator_annotations
 						strSouth3Text = removeDatatypes(strSouth3Text);
 						strSouth3Text = removeParenthesis(strSouth3Text);
 						strSouth3Text = prefaceAndTruncate("Filter: ", strSouth3Text, 40);
-						strSouth4Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+						strSouth4Text = rowsRemovedSouthLine(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact,
+								dblRowsRemovedByJoinFilter, bolRowsRemovedByJoinFilterIsExact,
+								dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
 					} else {
 						strSouth2Text = jsnObject.getString("join_filter");
 						strSouth2Text = removeDatatypes(strSouth2Text);
 						strSouth2Text = removeParenthesis(strSouth2Text);
 						strSouth2Text = prefaceAndTruncate("Filter: ", strSouth2Text, 40);
-						strSouth3Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+						strSouth3Text = rowsRemovedSouthLine(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact,
+								dblRowsRemovedByJoinFilter, bolRowsRemovedByJoinFilterIsExact,
+								dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
 					}
 				} else if (strNodeType.equals("ProjectSet") == true) {
 				} else if (strNodeType.equals("Recursive Union") == true) {
@@ -2845,7 +2908,8 @@ from explain_plan_operator_annotations
 					strSouth4Text = removeParenthesis(strSouth4Text);
 					strSouth4Text = prefaceAndTruncate("", strSouth4Text, 40);
 					strSouth5Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
-				} else if (strNodeType.equals("Seq Scan") == true) {
+				} else if (strNodeType.equals("Seq Scan") == true
+						|| strNodeType.matches("(?i)Parallel\\s+Seq Scan")) {
 					strSouth2Text = strRelationName;
 					strSouth3Text = strAlias;
 					strSouth4Text = jsnObject.getString("filter");
@@ -2893,14 +2957,23 @@ from explain_plan_operator_annotations
 					strSouth3Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
 				} else if (strNodeType.equals("Unique") == true) {
 				} else if (strNodeType.equals("Values Scan") == true) {
-					strSouth2Text = strAlias;
-					strSouth3Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+					// south_1 = "Values Scan"; south_2 = Relation Name; south_3 = as Alias
+					strSouth2Text = strRelationName;
+					strSouth3Text = strAlias;
+					strSouth4Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
 				} else if (strNodeType.equals("WindowAgg") == true) {
 				} else if (strNodeType.equals("WorkTable Scan") == true) {
 					strSouth2Text = strAlias;
 					strSouth3Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
 				}
 								
+				// Strip any remaining PG casts (NULL::name, ::anyarray, ::real[], …)
+				strSouth1Text = removeDatatypes(strSouth1Text);
+				strSouth2Text = removeDatatypes(strSouth2Text);
+				strSouth3Text = removeDatatypes(strSouth3Text);
+				strSouth4Text = removeDatatypes(strSouth4Text);
+				strSouth5Text = removeDatatypes(strSouth5Text);
+
 				if (strSouth1Text != null) {
 					strSouth1Text = strSouth1Text.replace("'", "''");
 				}
@@ -6320,7 +6393,14 @@ order by id_explain_plan_property;
 		if (strText == null) {
 			return strText;
 		}
-		return PG_TYPE_CAST_PATTERN.matcher(strText).replaceAll("");
+		String previous;
+		String current = strText;
+		// Repeat for stacked casts: NULL::anyarray::text, ('x'::name)::text, …
+		do {
+			previous = current;
+			current = PG_TYPE_CAST_PATTERN.matcher(current).replaceAll("");
+		} while (!current.equals(previous));
+		return current;
 	}
 
 	// if "and" and "or" both appear, and "=" does not appear, return string as-is

@@ -1,0 +1,8 @@
+Sample Scan on pg_catalog.pg_class c  (cost=0.00..57.69 rows=36 width=68) (actual time=0.004..0.104 rows=42.00 loops=1)
+  Output: relname, reltuples
+  Sampling: bernoulli ('15'::real) REPEATABLE ('7'::double precision)
+  Filter: (c.relkind = 'r'::"char")
+  Rows Removed by Filter: 252
+  Buffers: shared hit=54
+Planning Time: 0.206 ms
+Execution Time: 0.112 ms

@@ -72,6 +72,19 @@ public final class ExplainTextPlanConverter {
 			"^\\s*Memory Usage:\\s*([\\d.]+)\\s*kB\\s*$", Pattern.CASE_INSENSITIVE);
 	private static final Pattern PEAK_MEMORY_USAGE = Pattern.compile(
 			"^\\s*Peak Memory Usage:\\s*([\\d.]+)\\s*kB\\s*$", Pattern.CASE_INSENSITIVE);
+	private static final Pattern ROWS_REMOVED_BY_FILTER = Pattern.compile(
+			"^\\s*Rows Removed by Filter:\\s*([\\d.]+)\\s*$", Pattern.CASE_INSENSITIVE);
+	private static final Pattern ROWS_REMOVED_BY_JOIN_FILTER = Pattern.compile(
+			"^\\s*Rows Removed by Join Filter:\\s*([\\d.]+)\\s*$", Pattern.CASE_INSENSITIVE);
+	private static final Pattern ROWS_REMOVED_BY_INDEX_RECHECK = Pattern.compile(
+			"^\\s*Rows Removed by Index Recheck:\\s*([\\d.]+)\\s*$", Pattern.CASE_INSENSITIVE);
+	private static final Pattern SAMPLING = Pattern.compile(
+			"^\\s*Sampling:\\s*(\\S+)\\s*(.*)$", Pattern.CASE_INSENSITIVE);
+	private static final Pattern REPEATABLE = Pattern.compile(
+			"(?i)REPEATABLE\\s*\\(\\s*'?([\\d.]+)'?(?:::[^)]*)?\\s*\\)");
+	/** Strip Postgres casts including quoted types: {@code ::"char"}, {@code ::double precision}. */
+	private static final Pattern PG_TYPE_CAST = Pattern.compile(
+			"::(?:\"[^\"]+\"|[A-Za-z_][\\w]*(?:\\s+[A-Za-z_][\\w]*)*)(?:\\[\\])?");
 	private static final Pattern RELATION = Pattern.compile(
 			"^(?<type>.+?)\\s+on\\s+(?:(?:ONLY)\\s+)?(?<rel>(?:\"[^\"]+\"|[\\w.]+))(?:\\s+(?<alias>\"[^\"]+\"|[\\w]+))?\\s*$",
 			Pattern.CASE_INSENSITIVE);
@@ -722,17 +735,43 @@ public final class ExplainTextPlanConverter {
 			node.put("Output", outs);
 			return;
 		}
-		putIfMatch(node, body, HASH_COND, "Hash Cond");
-		putIfMatch(node, body, JOIN_FILTER, "Join Filter");
-		putIfMatch(node, body, FILTER, "Filter");
-		putIfMatch(node, body, INDEX_COND, "Index Cond");
-		putIfMatch(node, body, RECHECK_COND, "Recheck Cond");
+		putExpressionIfMatch(node, body, HASH_COND, "Hash Cond");
+		putExpressionIfMatch(node, body, JOIN_FILTER, "Join Filter");
+		putExpressionIfMatch(node, body, FILTER, "Filter");
+		putExpressionIfMatch(node, body, INDEX_COND, "Index Cond");
+		putExpressionIfMatch(node, body, RECHECK_COND, "Recheck Cond");
 		putIfMatch(node, body, SORT_METHOD, "Sort Method");
 		putIfMatch(node, body, CTE_SCAN_NAME, "CTE Name");
 		putBooleanIfMatch(node, body, INNER_UNIQUE, "Inner Unique");
 		putBooleanIfMatch(node, body, OUTER_UNIQUE, "Outer Unique");
 		putIfMatch(node, body, CACHE_KEY, "Cache Key");
 		putIfMatch(node, body, CACHE_MODE, "Cache Mode");
+
+		Matcher rowsRemoved = ROWS_REMOVED_BY_FILTER.matcher(body);
+		if (rowsRemoved.matches()) {
+			node.put("Rows Removed by Filter", parseRowCount(rowsRemoved.group(1)));
+			return;
+		}
+		Matcher rowsRemovedJoin = ROWS_REMOVED_BY_JOIN_FILTER.matcher(body);
+		if (rowsRemovedJoin.matches()) {
+			node.put("Rows Removed by Join Filter", parseRowCount(rowsRemovedJoin.group(1)));
+			return;
+		}
+		Matcher rowsRemovedRecheck = ROWS_REMOVED_BY_INDEX_RECHECK.matcher(body);
+		if (rowsRemovedRecheck.matches()) {
+			node.put("Rows Removed by Index Recheck", parseRowCount(rowsRemovedRecheck.group(1)));
+			return;
+		}
+		Matcher sampling = SAMPLING.matcher(body);
+		if (sampling.matches()) {
+			node.put("Sampling Method", sampling.group(1).toLowerCase(Locale.ROOT));
+			String rest = sampling.group(2) == null ? "" : sampling.group(2).trim();
+			Matcher rep = REPEATABLE.matcher(rest);
+			if (rep.find()) {
+				node.put("Repeatable Seed", Double.valueOf(rep.group(1)));
+			}
+			return;
+		}
 
 		Matcher memoStats = MEMOIZE_STATS.matcher(body);
 		if (memoStats.matches()) {
@@ -780,6 +819,27 @@ public final class ExplainTextPlanConverter {
 		if (m.matches()) {
 			node.put(jsonKey, m.group(1).trim());
 		}
+	}
+
+	/** Store expression properties with Postgres type casts removed (including {@code ::"char"}). */
+	private static void putExpressionIfMatch(JsonObject node, String body, Pattern pattern, String jsonKey) {
+		Matcher m = pattern.matcher(body);
+		if (m.matches()) {
+			node.put(jsonKey, stripPgTypeCasts(m.group(1).trim()));
+		}
+	}
+
+	static String stripPgTypeCasts(String text) {
+		if (text == null) {
+			return null;
+		}
+		String previous;
+		String current = text;
+		do {
+			previous = current;
+			current = PG_TYPE_CAST.matcher(current).replaceAll("");
+		} while (!current.equals(previous));
+		return current;
 	}
 
 	private static void putBooleanIfMatch(JsonObject node, String body, Pattern pattern, String jsonKey) {
