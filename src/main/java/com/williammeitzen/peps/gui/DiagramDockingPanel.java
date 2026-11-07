@@ -10,11 +10,13 @@ import javax.swing.JScrollPane;
 import bibliothek.gui.dock.common.CControl;
 import bibliothek.gui.dock.common.CGrid;
 import bibliothek.gui.dock.common.DefaultSingleCDockable;
+import bibliothek.gui.dock.common.event.CDockableAdapter;
+import bibliothek.gui.dock.common.intern.CDockable;
 import bibliothek.gui.dock.util.Priority;
 import bibliothek.gui.dock.util.TextManager;
 
 /**
- * Nested docking host for a single Plan Diagram tab: Graph, Properties, and
+ * Nested docking host for a single Plan Diagram tab: Graph, Zoom, Properties, and
  * Sliders can be rearranged only inside this panel (no float out to the desktop).
  */
 public class DiagramDockingPanel extends JPanel {
@@ -57,18 +59,67 @@ public class DiagramDockingPanel extends JPanel {
 		String suffix = Integer.toHexString(System.identityHashCode(graphPanel));
 		DefaultSingleCDockable graphDockable = createInnerDockable("diagram-graph-" + suffix, "Graph", graphScroll);
 		graphDockable.setCloseable(false);
+
+		DefaultSingleCDockable zoomDockable = null;
+		if (toolbar != null) {
+			JPanel zoomSide = toolbar.getZoomSliderSidePanel();
+			if (zoomSide.getParent() != null) {
+				zoomSide.getParent().remove(zoomSide);
+			}
+			zoomSide.setVisible(true);
+			zoomDockable = createInnerDockable("diagram-zoom-" + suffix, "Zoom", zoomSide);
+			zoomDockable.setCloseable(true);
+			zoomDockable.setMaximizable(false);
+			toolbar.refreshZoomSliderFromGraph(graphPanel);
+
+			DefaultSingleCDockable zoomRef = zoomDockable;
+			toolbar.setZoomSliderVisibilityListener(show -> {
+				zoomRef.setVisible(Boolean.TRUE.equals(show));
+				if (Boolean.TRUE.equals(show)) {
+					toolbar.refreshZoomSliderFromGraph(graphPanel);
+				}
+			});
+			zoomDockable.addCDockableStateListener(new CDockableAdapter() {
+				@Override
+				public void visibilityChanged(CDockable dockable) {
+					if (toolbar.isZoomSliderCheckboxEventSuppressed()) {
+						return;
+					}
+					boolean visible = dockable.isVisible();
+					toolbar.setZoomSliderCheckboxSelected(visible);
+					if (visible) {
+						toolbar.refreshZoomSliderFromGraph(graphPanel);
+					}
+				}
+			});
+		}
+
 		DefaultSingleCDockable propertiesDockable = createInnerDockable("diagram-properties-" + suffix, "Properties", properties);
 		DefaultSingleCDockable slidersDockable = createInnerDockable("diagram-sliders-" + suffix, "Sliders", slidersScroll);
 
 		control.addDockable(graphDockable);
+		if (zoomDockable != null) {
+			control.addDockable(zoomDockable);
+		}
 		control.addDockable(propertiesDockable);
 		control.addDockable(slidersDockable);
 
 		CGrid grid = new CGrid(control);
 		grid.add(0, 0, 3, 2, graphDockable);
-		grid.add(3, 0, 1.5, 3, propertiesDockable);
+		if (zoomDockable != null) {
+			// Narrow strip between Graph and Properties (title bar matches other panes).
+			grid.add(3, 0, 0.45, 2, zoomDockable);
+			grid.add(3.45, 0, 1.5, 3, propertiesDockable);
+		} else {
+			grid.add(3, 0, 1.5, 3, propertiesDockable);
+		}
 		grid.add(0, 2, 3, 1, slidersDockable);
 		control.getContentArea().deploy(grid);
+
+		// setVisible requires the dockable to already be registered with CControl.
+		if (zoomDockable != null && toolbar != null) {
+			zoomDockable.setVisible(toolbar.isZoomSliderVisible());
+		}
 
 		add(control.getContentArea(), BorderLayout.CENTER);
 	}

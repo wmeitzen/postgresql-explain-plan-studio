@@ -366,6 +366,7 @@ public class PlanSourcePanel extends JPanel {
 		jsonPlanTextArea.getDocument().addDocumentListener(jsonPlanTextAreaDocumentListener);
 
 		showPlanGraphButton = new JButton(SHOW_JSON_PLAN_DIAGRAM);
+		showPlanGraphButton.setEnabled(false);
 		showPlanGraphButton.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
 				if (bolShowTiming == true) { System.out.println("before PlanSourcePanel.showPlanGraphButton.addActionListener(): " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
@@ -420,7 +421,8 @@ public class PlanSourcePanel extends JPanel {
 					}
 				}
 
-				if (!canOpenPlanDiagramTab()) {
+				// Execute fetches JSON; do not require an existing plan diagram payload.
+				if (!canExecuteAgainstServer()) {
 					return;
 				}
 
@@ -439,6 +441,10 @@ public class PlanSourcePanel extends JPanel {
 
 				if (ok) {
 					clearJsonPlanErrorStyle();
+					FormPanel formPanel = findFormPanel();
+					if (formPanel != null) {
+						formPanel.updatePlanDiagramTabEnabled();
+					}
 					objCurrentPlanTabs.setEnabled(true);
 					objCurrentPlanTabs.setEnabledAt(2, true);
 					objCurrentPlanTabs.setSelectedIndex(2);
@@ -822,7 +828,22 @@ public class PlanSourcePanel extends JPanel {
 	
 	public void setJsonPlanText(String planText) {
 		//this.jsonText = planText;
-		jsonPlanTextArea.setText(planText);
+		jsonPlanTextArea.setText(planText == null ? "" : planText);
+		FormPanel formPanel = findFormPanel();
+		if (formPanel != null) {
+			formPanel.updatePlanDiagramTabEnabled();
+		} else {
+			setShowPlanGraphButton(hasUsableJsonPlan());
+		}
+	}
+
+	/** True when the JSON plan field has content that can build a diagram. */
+	public boolean hasUsableJsonPlan() {
+		if (jsonPlanShowingError) {
+			return false;
+		}
+		String json = normalizeJsonPlanText(getJsonPlanText());
+		return json != null && !json.isBlank();
 	}
 
 	/** Show an execute/connection error in the JSON plan field and pulse the border once. */
@@ -832,6 +853,10 @@ public class PlanSourcePanel extends JPanel {
 		jsonPlanShowingError = true;
 		setShowPlanGraphButton(false);
 		setPlanSourceButtonClicked(null);
+		FormPanel formPanel = findFormPanel();
+		if (formPanel != null) {
+			formPanel.updatePlanDiagramTabEnabled();
+		}
 		pulseJsonPlanErrorBorderOnce();
 		SwingUtilities.invokeLater(() -> {
 			jsonPlanTextArea.requestFocusInWindow();
@@ -949,12 +974,18 @@ public class PlanSourcePanel extends JPanel {
 		this.planTextIsDirty = planTextIsDirty;
 	}
 
-	private boolean canOpenPlanDiagramTab() {
+	/** Single-plan + diagram tab present — enough to run EXPLAIN against the server. */
+	private boolean canExecuteAgainstServer() {
 		if (objCurrentPlanTabs == null || objCurrentPlanTabs.getTabCount() <= 2) {
 			return false;
 		}
 		FormPanel formPanel = findFormPanel();
 		return formPanel != null && formPanel.isSinglePlanSelected();
+	}
+
+	/** Show JSON Plan Diagram needs usable JSON already in the field. */
+	private boolean canOpenPlanDiagramTab() {
+		return canExecuteAgainstServer() && hasUsableJsonPlan();
 	}
 
 	/** FormPanel is a docking sibling of the tab strip, not a JSplitPane child anymore. */

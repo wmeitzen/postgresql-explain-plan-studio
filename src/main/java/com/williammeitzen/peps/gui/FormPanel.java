@@ -655,10 +655,19 @@ public class FormPanel extends JPanel {
 		if (tabPaneToLink == null || tabPaneToLink.getTabCount() <= 2) {
 			return;
 		}
-		boolean enableDiagram = isSinglePlanSelected();
+		String selectedPlanName = planList == null ? null : (String) planList.getSelectedValue();
+		PlanEvent pEvent = selectedPlanName == null ? null : plansMapper.get(selectedPlanName);
+		PlanSourcePanel source = pEvent == null ? null : pEvent.getPlanSourcePanel();
+		boolean enableDiagram = isSinglePlanSelected()
+				&& source != null
+				&& source.hasUsableJsonPlan();
 		tabPaneToLink.setEnabledAt(2, enableDiagram);
+		if (source != null) {
+			source.setShowPlanGraphButton(enableDiagram);
+		}
 		if (!enableDiagram && tabPaneToLink.getSelectedIndex() == 2) {
-			tabPaneToLink.setSelectedIndex(1); // Compare Plans
+			// No JSON → Plan Source; multi-select → Compare Plans
+			tabPaneToLink.setSelectedIndex(isSinglePlanSelected() ? 0 : 1);
 		}
 	}
 

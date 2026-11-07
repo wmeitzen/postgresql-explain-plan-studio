@@ -1035,6 +1035,8 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 					mapAnnotations.put("rows_removed_by_join_filter", operator_value_where_operator_name_is(jsnPropertyRows, "Rows Removed by Join Filter"));
 					mapAnnotations.put("rows_removed_by_filter", operator_value_where_operator_name_is(jsnPropertyRows, "Rows Removed by Filter"));
 					mapAnnotations.put("rows_removed_by_index_recheck", operator_value_where_operator_name_is(jsnPropertyRows, "Rows Removed by Index Recheck"));
+					mapAnnotations.put("repeatable_seed", operator_value_where_operator_name_is(jsnPropertyRows, "Repeatable Seed"));
+					mapAnnotations.put("sampling_method", operator_value_where_operator_name_is(jsnPropertyRows, "Sampling Method"));
 					mapAnnotations.put("scan_direction", operator_value_where_operator_name_is(jsnPropertyRows, "Scan Direction"));
 					mapAnnotations.put("shared_dirtied_blocks", operator_value_where_operator_name_is(jsnPropertyRows, "Shared Dirtied Blocks"));
 					mapAnnotations.put("shared_hit_blocks", operator_value_where_operator_name_is(jsnPropertyRows, "Shared Hit Blocks"));
@@ -2445,25 +2447,66 @@ from explain_plan_operator_annotations
 */
 
 	// lots of operators show how many rows were filtered out
-	//rowsRemovedByFilterOrIndexRecheck(intRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, intRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
-	private String rowsRemovedByFilterOrIndexRecheck(Integer intRowsRemovedByFilter, boolean bolRowsRemovedByFilterIsExact, Integer intRowsRemovedByIndexRecheck, boolean bolRowsRemovedByIndexRecheckIsExact) {
+	private String rowsRemovedByFilterOrIndexRecheck(Double dblRowsRemovedByFilter, boolean bolRowsRemovedByFilterIsExact, Double dblRowsRemovedByIndexRecheck, boolean bolRowsRemovedByIndexRecheckIsExact) {
 		
 		String strReturnString = "";
 		
-		if ((intRowsRemovedByFilter != null && intRowsRemovedByFilter > 0 && bolRowsRemovedByFilterIsExact == false) || (intRowsRemovedByIndexRecheck != null && intRowsRemovedByIndexRecheck > 0 && bolRowsRemovedByIndexRecheckIsExact == false))
+		if ((dblRowsRemovedByFilter != null && dblRowsRemovedByFilter > 0 && bolRowsRemovedByFilterIsExact == false) || (dblRowsRemovedByIndexRecheck != null && dblRowsRemovedByIndexRecheck > 0 && bolRowsRemovedByIndexRecheckIsExact == false))
 			strReturnString += "~";
-		if (intRowsRemovedByFilter != null && intRowsRemovedByIndexRecheck == null) {
-			strReturnString += Utils.units(intRowsRemovedByFilter) + " removed by filter";
-		} else if (intRowsRemovedByFilter == null && intRowsRemovedByIndexRecheck != null) {
-			strReturnString += Utils.units(intRowsRemovedByIndexRecheck) + " removed by index recheck";
-		} else if (intRowsRemovedByFilter != null && intRowsRemovedByIndexRecheck != null) {
-			if (intRowsRemovedByFilter > intRowsRemovedByIndexRecheck) {
-				strReturnString += Utils.units(intRowsRemovedByFilter) + " removed by filter";
+		if (dblRowsRemovedByFilter != null && dblRowsRemovedByIndexRecheck == null) {
+			strReturnString += Utils.units(dblRowsRemovedByFilter) + " removed by filter";
+		} else if (dblRowsRemovedByFilter == null && dblRowsRemovedByIndexRecheck != null) {
+			strReturnString += Utils.units(dblRowsRemovedByIndexRecheck) + " removed by index recheck";
+		} else if (dblRowsRemovedByFilter != null && dblRowsRemovedByIndexRecheck != null) {
+			if (dblRowsRemovedByFilter > dblRowsRemovedByIndexRecheck) {
+				strReturnString += Utils.units(dblRowsRemovedByFilter) + " removed by filter";
 			} else {
-				strReturnString += Utils.units(intRowsRemovedByIndexRecheck) + " removed by index recheck";
+				strReturnString += Utils.units(dblRowsRemovedByIndexRecheck) + " removed by index recheck";
 			}
 		}
 		return strReturnString;
+	}
+
+	/** Parse annotation numeric fields without Integer overflow (huge EXPLAIN values). */
+	private Double annotationDouble(JsonObject jsnObject, String key) {
+		if (jsnObject == null || key == null) {
+			return null;
+		}
+		Object value = jsnObject.get(key);
+		if (value == null) {
+			return null;
+		}
+		if (value instanceof Number) {
+			double d = ((Number) value).doubleValue();
+			return Double.isFinite(d) ? d : Double.POSITIVE_INFINITY;
+		}
+		String text = String.valueOf(value).trim();
+		if (text.isEmpty() || text.equalsIgnoreCase("null")) {
+			return null;
+		}
+		try {
+			double d = Double.parseDouble(text);
+			return Double.isFinite(d) ? d : Double.POSITIVE_INFINITY;
+		} catch (NumberFormatException ex) {
+			// Digit soup beyond Double / non-numeric → treat as over display cap
+			return Double.POSITIVE_INFINITY;
+		}
+	}
+
+	/**
+	 * Prefer the larger of a computed total and the raw EXPLAIN property string.
+	 * Protects against SQLite/Java int clamping of absurd values.
+	 */
+	private Double preferLargerAnnotationDouble(JsonObject jsnObject, String totalKey, String rawKey) {
+		Double total = annotationDouble(jsnObject, totalKey);
+		Double raw = annotationDouble(jsnObject, rawKey);
+		if (total == null) {
+			return raw;
+		}
+		if (raw == null) {
+			return total;
+		}
+		return raw > total ? raw : total;
 	}
 
 	// REFACTOR - also updates field w/ space of entire operator,
@@ -2474,7 +2517,7 @@ from explain_plan_operator_annotations
 		String strSouth1Text, strSouth2Text, strSouth3Text, strSouth4Text, strSouth5Text;
 		String strRelationName, strIndexName, strAlias, strSubplanName, strPeakMemoryUsage;
 		String strStrategy, strCommand, strCTEName, strPartialMode;
-		Integer intRowsRemovedByFilter, intRowsRemovedByIndexRecheck;
+		Double dblRowsRemovedByFilter, dblRowsRemovedByIndexRecheck;
 		boolean bolRowsRemovedByFilterIsExact, bolRowsRemovedByIndexRecheckIsExact;
 		String strSQL;
 		boolean bolShowSQL = false;
@@ -2517,10 +2560,14 @@ from explain_plan_operator_annotations
 				if (jsnObject.getString("scan_direction") != null && jsnObject.getString("scan_direction").matches("Forward") != true) {
 					strSouth1Text += jsnObject.getString("scan_direction") + " ";
 				}
+				if (jsnObject.getString("sampling_method") != null && jsnObject.getString("sampling_method") != "") {
+					String strSamplingMethod = jsnObject.getString("sampling_method");
+					strSouth1Text += strSamplingMethod.substring(0, 1).toUpperCase() + strSamplingMethod.substring(1) + " ";
+				}
 
 				strNodeType = jsnObject.getString("node_type");
 				if (strNodeType == null) strNodeType = "";
-				strSouth1Text += strNodeType;
+				strSouth1Text += displayNodeTypeName(strNodeType);
 
 				if (jsnObject.getString("filter") != null || jsnObject.getString("join_filter") != null) {
 					strSouth1Text += " w/Filter";
@@ -2537,23 +2584,26 @@ from explain_plan_operator_annotations
 				strPeakMemoryUsage = jsnObject.getString("peak_memory_usage");
 				strRelationName = jsnObject.getString("relation_name");
 				strPartialMode = jsnObject.getString("partial_mode");
-				intRowsRemovedByFilter = null;
-				intRowsRemovedByIndexRecheck = null;
+				dblRowsRemovedByFilter = null;
+				dblRowsRemovedByIndexRecheck = null;
 				bolRowsRemovedByFilterIsExact = true;
 				bolRowsRemovedByIndexRecheckIsExact = true;
 
 				if (jsnObject.getString("total_rows_removed_by_filter") == null && jsnObject.getString("total_rows_removed_by_join_filter") == null)
-					intRowsRemovedByFilter = null;
+					dblRowsRemovedByFilter = null;
 				else if (jsnObject.getString("total_rows_removed_by_filter") != null) {
-					intRowsRemovedByFilter = jsnObject.getInteger("total_rows_removed_by_filter");
+					dblRowsRemovedByFilter = preferLargerAnnotationDouble(jsnObject,
+							"total_rows_removed_by_filter", "rows_removed_by_filter");
 					bolRowsRemovedByFilterIsExact = (jsnObject.getInteger("total_rows_removed_by_filter_is_exact") == 1);
 				} else if (jsnObject.getString("total_rows_removed_by_join_filter") != null) {
-					intRowsRemovedByFilter = jsnObject.getInteger("total_rows_removed_by_join_filter");
+					dblRowsRemovedByFilter = preferLargerAnnotationDouble(jsnObject,
+							"total_rows_removed_by_join_filter", "rows_removed_by_join_filter");
 					bolRowsRemovedByFilterIsExact = (jsnObject.getInteger("total_rows_removed_by_join_filter_is_exact") == 1);
 				}
 
 				if (jsnObject.getString("total_rows_removed_by_index_recheck") != null) {
-					intRowsRemovedByIndexRecheck = jsnObject.getInteger("total_rows_removed_by_index_recheck");
+					dblRowsRemovedByIndexRecheck = preferLargerAnnotationDouble(jsnObject,
+							"total_rows_removed_by_index_recheck", "rows_removed_by_index_recheck");
 					bolRowsRemovedByIndexRecheckIsExact = (jsnObject.getInteger("total_rows_removed_by_index_recheck_is_exact") == 1);
 				}
 				strStrategy = jsnObject.getString("strategy");
@@ -2570,7 +2620,7 @@ from explain_plan_operator_annotations
 					strSouth2Text = removeDatatypes(strSouth2Text);
 					strSouth2Text = removeParenthesis(strSouth2Text);
 					strSouth2Text = prefaceAndTruncate("Filter: ", strSouth2Text, 40);
-					strSouth3Text = rowsRemovedByFilterOrIndexRecheck(intRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, intRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+					strSouth3Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
 				} else if (strNodeType.equals("Append") == true) {
 					if (strIndexName != null)
 						strSouth2Text = strIndexName;
@@ -2579,14 +2629,14 @@ from explain_plan_operator_annotations
 				} else if (strNodeType.equals("Bitmap Heap Scan") == true) {
 					strSouth2Text = strRelationName;
 					strSouth3Text = strAlias;
-					strSouth4Text = rowsRemovedByFilterOrIndexRecheck(intRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, intRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+					strSouth4Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
 				} else if (strNodeType.equals("Bitmap Index Scan") == true) {
 					strSouth2Text = strIndexName;
 					strSouth3Text = jsnObject.getString("index_cond");
 					strSouth3Text = removeDatatypes(strSouth3Text);
 					strSouth3Text = removeParenthesis(strSouth3Text);
 					strSouth3Text = prefaceAndTruncate("Index cond: ", strSouth3Text, 40);
-					strSouth4Text = rowsRemovedByFilterOrIndexRecheck(intRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, intRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+					strSouth4Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
 				} else if (strNodeType.equals("With CTE") == true) {
 					if (strCTEName != null)
 						strSouth2Text = strCTEName;
@@ -2597,20 +2647,20 @@ from explain_plan_operator_annotations
 					strSouth4Text = removeDatatypes(strSouth4Text);
 					strSouth4Text = removeParenthesis(strSouth4Text);
 					strSouth4Text = prefaceAndTruncate("Filter: ", strSouth4Text, 40);
-					strSouth5Text = rowsRemovedByFilterOrIndexRecheck(intRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, intRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+					strSouth5Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
 				} else if (strNodeType.equals("Custom Scan") == true) {
 					strSouth2Text = strAlias;
-					strSouth3Text = rowsRemovedByFilterOrIndexRecheck(intRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, intRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+					strSouth3Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
 				} else if (strNodeType.equals("Foreign Scan") == true) {
 					strSouth2Text = strAlias;
-					strSouth3Text = rowsRemovedByFilterOrIndexRecheck(intRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, intRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+					strSouth3Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
 				} else if (strNodeType.equals("Function Scan") == true) {
 					if (strAlias.equalsIgnoreCase(jsnObject.getString("function_name")))
 						strSouth2Text = jsnObject.getString("function_call");
 					else
 						strSouth2Text = strAlias;
 				} else if (strNodeType.equals("Gather") == true || strNodeType.equals("Gather Merge") == true) {
-					strSouth2Text = rowsRemovedByFilterOrIndexRecheck(intRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, intRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+					strSouth2Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
 					if (jsnObject.getString("workers_planned") != null) {
 						strSouth3Text = "Workers planned: " + jsnObject.getString("workers_planned");
 					}
@@ -2624,7 +2674,7 @@ from explain_plan_operator_annotations
 						}
 					}
 				} else if (strNodeType.equals("Group") == true) {
-					strSouth2Text = rowsRemovedByFilterOrIndexRecheck(intRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, intRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+					strSouth2Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
 				} else if (strNodeType.equals("Hash") == true) {
 					if (strPeakMemoryUsage != null) {
 						strSouth2Text = Utils.kilobytes(Double.parseDouble(strPeakMemoryUsage)) + " RAM";
@@ -2644,17 +2694,17 @@ from explain_plan_operator_annotations
 					strSouth4Text = removeDatatypes(strSouth4Text);
 					strSouth4Text = removeParenthesis(strSouth4Text);
 					strSouth4Text = prefaceAndTruncate("Filter: ", strSouth4Text, 40);
-					strSouth5Text = rowsRemovedByFilterOrIndexRecheck(intRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, intRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+					strSouth5Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
 				} else if (strNodeType.equals("Index Only Scan") == true) {
 					strSouth2Text = strRelationName;
 					strSouth3Text = strAlias;
 					strSouth4Text = strIndexName;
-					strSouth5Text = rowsRemovedByFilterOrIndexRecheck(intRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, intRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+					strSouth5Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
 				} else if (strNodeType.equals("Index Scan") == true) {
 					strSouth2Text = strRelationName;
 					strSouth3Text = strAlias;
 					strSouth4Text = strIndexName;
-					strSouth5Text = rowsRemovedByFilterOrIndexRecheck(intRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, intRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+					strSouth5Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
 				} else if (strNodeType.equals("Limit") == true) {
 					if (strSubplanName != null) strSouth2Text = strSubplanName;
 				} else if (strNodeType.equals("LockRows") == true) {
@@ -2679,7 +2729,7 @@ from explain_plan_operator_annotations
 					strSouth4Text = removeDatatypes(strSouth4Text);
 					strSouth4Text = removeParenthesis(strSouth4Text);
 					strSouth4Text = prefaceAndTruncate("Filter: ", strSouth4Text, 40);
-					strSouth5Text = rowsRemovedByFilterOrIndexRecheck(intRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, intRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+					strSouth5Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
 				} else if (strNodeType.equals("ModifyTable") == true) {
 					strSouth2Text = jsnObject.getString("operation");
 					if (strSouth2Text.equalsIgnoreCase("insert") == true) {
@@ -2692,7 +2742,7 @@ from explain_plan_operator_annotations
 					strSouth2Text += strAlias;
 				} else if (strNodeType.equals("Named Tuplestore Scan") == true) {
 					strSouth2Text = strAlias;
-					strSouth3Text = rowsRemovedByFilterOrIndexRecheck(intRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, intRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+					strSouth3Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
 				} else if (strNodeType.equals("Nested Loop") == true) {
 					strSouth2Text = jsnObject.getString("join_type");
 					strSouth2Text = "(" + strSouth2Text + " Join)";
@@ -2700,7 +2750,7 @@ from explain_plan_operator_annotations
 					strSouth3Text = removeDatatypes(strSouth3Text);
 					strSouth3Text = removeParenthesis(strSouth3Text);
 					strSouth3Text = prefaceAndTruncate("Filter: ", strSouth3Text, 40);
-					strSouth4Text = rowsRemovedByFilterOrIndexRecheck(intRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, intRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+					strSouth4Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
 				} else if (strNodeType.equals("ProjectSet") == true) {
 				} else if (strNodeType.equals("Recursive Union") == true) {
 				} else if (strNodeType.equals("Result") == true) {
@@ -2710,9 +2760,15 @@ from explain_plan_operator_annotations
 					strSouth2Text = prefaceAndTruncate("", strSouth2Text, 40);
 					if (strSubplanName != null)
 						strSouth3Text = strSubplanName;
-					strSouth3Text = rowsRemovedByFilterOrIndexRecheck(intRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, intRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+					strSouth3Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
 				} else if (strNodeType.equals("Sample Scan") == true) {
-					strSouth2Text = strAlias;
+					strSouth2Text = strRelationName;
+					strSouth3Text = strAlias;
+					strSouth4Text = jsnObject.getString("filter");
+					strSouth4Text = removeDatatypes(strSouth4Text);
+					strSouth4Text = removeParenthesis(strSouth4Text);
+					strSouth4Text = prefaceAndTruncate("", strSouth4Text, 40);
+					strSouth5Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
 				} else if (strNodeType.equals("Seq Scan") == true) {
 					strSouth2Text = strRelationName;
 					strSouth3Text = strAlias;
@@ -2720,7 +2776,7 @@ from explain_plan_operator_annotations
 					strSouth4Text = removeDatatypes(strSouth4Text);
 					strSouth4Text = removeParenthesis(strSouth4Text);
 					strSouth4Text = prefaceAndTruncate("Filter: ", strSouth4Text, 40);
-					strSouth5Text = rowsRemovedByFilterOrIndexRecheck(intRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, intRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+					strSouth5Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
 				} else if (strNodeType.equals("SetOp") == true) {
 					if (strCommand != null)
 						strSouth2Text = strCommand;
@@ -2748,23 +2804,30 @@ from explain_plan_operator_annotations
 					strSouth3Text = removeDatatypes(strSouth3Text);
 					strSouth3Text = removeParenthesis(strSouth3Text);
 					strSouth3Text = prefaceAndTruncate("Filter: ", strSouth3Text, 40);
-					strSouth4Text = rowsRemovedByFilterOrIndexRecheck(intRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, intRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+					strSouth4Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
 				} else if (strNodeType.equals("Table Function Scan") == true) {
 					strSouth2Text = strAlias;
-					strSouth3Text = rowsRemovedByFilterOrIndexRecheck(intRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, intRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+					strSouth3Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+				} else if (strNodeType.equals("Tid Range Scan") == true) {
+					strSouth2Text = strRelationName;
+					strSouth3Text = strAlias;
+					strSouth4Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
 				} else if (strNodeType.equals("Tid Scan") == true) {
 					strSouth2Text = strAlias;
-					strSouth3Text = rowsRemovedByFilterOrIndexRecheck(intRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, intRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+					strSouth3Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
 				} else if (strNodeType.equals("Unique") == true) {
 				} else if (strNodeType.equals("Values Scan") == true) {
 					strSouth2Text = strAlias;
-					strSouth3Text = rowsRemovedByFilterOrIndexRecheck(intRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, intRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+					strSouth3Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
 				} else if (strNodeType.equals("WindowAgg") == true) {
 				} else if (strNodeType.equals("WorkTable Scan") == true) {
 					strSouth2Text = strAlias;
-					strSouth3Text = rowsRemovedByFilterOrIndexRecheck(intRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, intRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+					strSouth3Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
 				}
 								
+				if (strSouth1Text != null) {
+					strSouth1Text = strSouth1Text.replace("'", "''");
+				}
 				if (strSouth2Text != null) {
 					strSouth2Text = strSouth2Text.replace("'", "''");
 				}
@@ -2773,6 +2836,9 @@ from explain_plan_operator_annotations
 				}
 				if (strSouth4Text != null) {
 					strSouth4Text = strSouth4Text.replace("'", "''");
+				}
+				if (strSouth5Text != null) {
+					strSouth5Text = strSouth5Text.replace("'", "''");
 				}
 		
 				// shift south text up where necessary
@@ -4607,6 +4673,8 @@ order by id_explain_plan_property;
 			iconFileName = "ex_bmp_index.svg";
 		} else if (nodeType.equalsIgnoreCase("cte scan") == true || nodeType.equalsIgnoreCase("with cte") == true) {
 			iconFileName = "ex_cte_scan.svg";
+		} else if (nodeType.equalsIgnoreCase("Custom Scan") == true) {
+			iconFileName = "ex_custom_scan.svg";
 		} else if (nodeType.equalsIgnoreCase("Foreign scan") == true) {
 			iconFileName = "ex_foreign_scan.svg";
 		} else if (nodeType.equalsIgnoreCase("Function Scan") == true) {
@@ -4625,6 +4693,8 @@ order by id_explain_plan_property;
 			iconFileName = "ex_join.svg";
 		} else if (nodeType.equalsIgnoreCase("hash join") == true && (joinType.equalsIgnoreCase("left") == true || joinType.equalsIgnoreCase("right") == true || joinType.equalsIgnoreCase("semi") == true)) {
 			iconFileName = "ex_hash_semi_join.svg";
+		} else if (nodeType.equalsIgnoreCase("Incremental Sort") == true) {
+			iconFileName = "ex_incremental_sort.svg";
 		} else if (nodeType.equalsIgnoreCase("index only scan") == true) {
 			iconFileName = "ex_index_only_scan.svg";
 		} else if (nodeType.equalsIgnoreCase("index scan") == true) {
@@ -4649,6 +4719,8 @@ order by id_explain_plan_property;
 			iconFileName = "ex_delete.svg";
 		} else if (nodeType.equalsIgnoreCase("modifytable") == true && operation.equalsIgnoreCase("insert") == true) {
 			iconFileName = "ex_insert.svg";
+		} else if (nodeType.equalsIgnoreCase("modifytable") == true && operation.equalsIgnoreCase("merge") == true) {
+			iconFileName = "ex_merge_modify.svg";
 		} else if (nodeType.equalsIgnoreCase("modifytable") == true && operation.equalsIgnoreCase("update") == true) {
 			iconFileName = "ex_update.svg";
 		} else if (nodeType.equalsIgnoreCase("Named Tuplestore Scan") == true) {
@@ -4665,6 +4737,8 @@ order by id_explain_plan_property;
 			iconFileName = "ex_recursive_union.svg";
 		} else if (nodeType.equalsIgnoreCase("Result") == true) {
 			iconFileName = "ex_result.svg";
+		} else if (nodeType.equalsIgnoreCase("Sample Scan") == true) {
+			iconFileName = "ex_sample_scan.svg";
 		} else if (nodeType.equalsIgnoreCase("seq scan") == true) {
 			iconFileName = "ex_scan.svg";
 		} else if (nodeType.equalsIgnoreCase("SetOp") == true && strategy.equalsIgnoreCase("Hashed") == true && command.equalsIgnoreCase("except") == true) {
@@ -4685,6 +4759,8 @@ order by id_explain_plan_property;
 			iconFileName = "ex_subplan.svg"; // I don't think this is right
 		} else if (nodeType.equalsIgnoreCase("Table Function Scan") == true) {
 			iconFileName = "ex_table_func_scan.svg";
+		} else if (nodeType.equalsIgnoreCase("Tid Range Scan") == true) {
+			iconFileName = "ex_tid_range_scan.svg";
 		} else if (nodeType.equalsIgnoreCase("Tid Scan") == true) {
 			iconFileName = "ex_tid_scan.svg";
 		} else if (nodeType.equalsIgnoreCase("Unique") == true) {
@@ -5879,61 +5955,66 @@ order by id_explain_plan_property;
 		return null;
 	}
 	
-	public void setZoomPercentage(int intZoomPercentage) {
-		String strSQL;
-		JsonArray jsnRows;
-		JsonObject jsnRow;
-		//Integer intMaxXRect, intMaxYRect, intMaxXCart, intMaxYCart;
-		//double dblMaxYRect;
-		boolean bolShowProperties = false;
-		boolean bolShowSQL = false;
+	/**
+	 * Zoom percentage that fits the whole plan in the enclosing viewport
+	 * (same result as the Fit button / {@code setZoomPercentage(-1)}).
+	 */
+	public int computeFitZoomPercentage() {
+		if (idExplainPlan == null) {
+			return 100;
+		}
+		String strSQL = "select\n"
+				+ "max(row_boundary_bottom) as row_boundary_bottom\n"
+				+ ", max(column_boundary_right) as column_boundary_right\n"
+				+ "from explain_plan_operator_annotations\n"
+				+ "where id_explain_plan = " + idExplainPlan;
+		JsonArray jsnRows = Database.rows(strSQL);
 		int row_boundary_bottom = 0;
 		int column_boundary_right = 0;
-		double horizontalScreenToPlanRatio;
-		double verticalScreenToPlanRatio;
-		double screenToPlanRatio;
+		if (jsnRows != null) {
+			for (int intRow = 0; intRow < jsnRows.size(); intRow++) {
+				JsonObject jsnRow = (JsonObject) jsnRows.get(intRow);
+				if (jsnRow.get("row_boundary_bottom") != null) {
+					row_boundary_bottom = jsnRow.getInteger("row_boundary_bottom");
+				}
+				if (jsnRow.get("column_boundary_right") != null) {
+					column_boundary_right = jsnRow.getInteger("column_boundary_right");
+				}
+			}
+		}
+
+		int previousZoomPercentage = Math.max(this.intZoomPercentage, 1);
+		double currentZoomFactor = previousZoomPercentage / 100.0;
+		double planWidth100 = (column_boundary_right / currentZoomFactor)
+				+ GRAPH_LEFT_MARGIN + GRAPH_RIGHT_MARGIN;
+		double planHeight100 = (row_boundary_bottom / currentZoomFactor)
+				+ GRAPH_TOP_MARGIN + GRAPH_BOTTOM_MARGIN;
+
+		Dimension viewportSize = findEnclosingViewportSize();
+		if (viewportSize == null || viewportSize.width <= 0 || viewportSize.height <= 0
+				|| planWidth100 <= 0 || planHeight100 <= 0) {
+			return 100;
+		}
+		double horizontalScreenToPlanRatio = viewportSize.width / planWidth100;
+		double verticalScreenToPlanRatio = viewportSize.height / planHeight100;
+		double screenToPlanRatio = Math.min(horizontalScreenToPlanRatio, verticalScreenToPlanRatio);
+		int fit = (int) Math.floor(screenToPlanRatio * 100.0);
+		if (fit < 10) {
+			fit = 10;
+		}
+		if (fit > 400) {
+			fit = 400;
+		}
+		return fit;
+	}
+
+	public void setZoomPercentage(int intZoomPercentage) {
+		boolean bolShowProperties = false;
 		int previousZoomPercentage = Math.max(this.intZoomPercentage, 1);
 		
 		// -1 fits the entire plan into the enclosing scroll pane viewport
 		if (intZoomPercentage < 0) {
-			strSQL = "select\n"
-					+ "max(row_boundary_bottom) as row_boundary_bottom\n"
-					+ ", max(column_boundary_right) as column_boundary_right\n"
-					+ "from explain_plan_operator_annotations\n"
-					+ "where id_explain_plan = " + idExplainPlan;
-			if (bolShowSQL == true) { System.out.println(strSQL); }
-			jsnRows = Database.rows(strSQL);
-			if (jsnRows != null) {
-				for (int intRow = 0; intRow < jsnRows.size(); intRow++) {
-					jsnRow = (JsonObject) jsnRows.get(intRow);
-					row_boundary_bottom = jsnRow.getInteger("row_boundary_bottom");
-					column_boundary_right = jsnRow.getInteger("column_boundary_right");
-				}
-			}
-
-			// Stored extents are at the current zoom; normalize to 100% content size
-			double currentZoomFactor = previousZoomPercentage / 100.0;
-			double planWidth100 = (column_boundary_right / currentZoomFactor)
-					+ GRAPH_LEFT_MARGIN + GRAPH_RIGHT_MARGIN;
-			double planHeight100 = (row_boundary_bottom / currentZoomFactor)
-					+ GRAPH_TOP_MARGIN + GRAPH_BOTTOM_MARGIN;
-
-			Dimension viewportSize = findEnclosingViewportSize();
-			if (viewportSize == null || viewportSize.width <= 0 || viewportSize.height <= 0
-					|| planWidth100 <= 0 || planHeight100 <= 0) {
-				intZoomPercentage = 100;
-			} else {
-				horizontalScreenToPlanRatio = viewportSize.width / planWidth100;
-				verticalScreenToPlanRatio = viewportSize.height / planHeight100;
-				screenToPlanRatio = Math.min(horizontalScreenToPlanRatio, verticalScreenToPlanRatio);
-				intZoomPercentage = (int) Math.floor(screenToPlanRatio * 100.0);
-				if (intZoomPercentage < 10) {
-					intZoomPercentage = 10;
-				}
-				if (intZoomPercentage > 400) {
-					intZoomPercentage = 400;
-				}
-			}
+			intZoomPercentage = computeFitZoomPercentage();
 		} else {
 			if (intZoomPercentage < 10) {
 				intZoomPercentage = 10;
@@ -6119,20 +6200,33 @@ order by id_explain_plan_property;
 		//objComponent.setPlanTextIsDirty(true);
 	}
 
+	/** Diagram label for a Node Type; keeps matching keys as Postgres emits them. */
+	private String displayNodeTypeName(String nodeType) {
+		if (nodeType == null || nodeType.isEmpty()) {
+			return "";
+		}
+		if (nodeType.equals("Tid Range Scan")) {
+			return "TID Range Scan";
+		}
+		if (nodeType.equals("Tid Scan")) {
+			return "TID Scan";
+		}
+		return nodeType;
+	}
+
+	/**
+	 * Strip PostgreSQL cast suffixes from EXPLAIN expressions, e.g.
+	 * {@code '11'::oid} → {@code '11'}, {@code 'MGI:'::text} → {@code 'MGI:'},
+	 * including multi-word types like {@code ::character varying}.
+	 */
+	private static final Pattern PG_TYPE_CAST_PATTERN = Pattern.compile(
+			"::(?:\"[^\"]+\"|[A-Za-z_][\\w]*(?:\\s+[A-Za-z_][\\w]*)*)(?:\\[\\])?");
+
 	private String removeDatatypes(String strText) {
-		if (strText == null)
+		if (strText == null) {
 			return strText;
-		//if (strText.matches("\\[|\\]") == true)
-		if (strText.matches("\\[") == true || strText.matches("\\]") == true)
-			return strText;
-		strText = strText.replace("::bpchar", "");
-		strText = strText.replace("::character varying", "");
-		strText = strText.replace("::integer", "");
-		strText = strText.replace("::numeric", "");
-		strText = strText.replace("::text", "");
-		strText = strText.replace("::uuid", "");
-		
-		return strText;
+		}
+		return PG_TYPE_CAST_PATTERN.matcher(strText).replaceAll("");
 	}
 
 	// if "and" and "or" both appear, and "=" does not appear, return string as-is

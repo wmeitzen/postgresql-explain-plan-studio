@@ -27,7 +27,7 @@ import com.williammeitzen.peps.gui.Utils;
 
 public final class Database {
 	
-	private static double SQLITE_DB_SCHEMA_VERSION = 4.06;
+	private static double SQLITE_DB_SCHEMA_VERSION = 4.08;
 	private static Connection objConnection = null;
 	private static Connection objPGConnection = null;
 	
@@ -432,6 +432,13 @@ public final class Database {
 				sc.setLimit(org.sqlite.SQLiteLimits.SQLITE_LIMIT_LENGTH, 1_000_000_000);
 				sc.setLimit(org.sqlite.SQLiteLimits.SQLITE_LIMIT_SQL_LENGTH, 1_000_000_000);
 			}
+			// Apply once at connect. Toggling journal_mode around each dml() fails with
+			// "Safety level may not be changed inside a transaction" when callers pass
+			// begin/commit batches (plan property ingest).
+			try (Statement pragmaStmt = objConnection.createStatement()) {
+				pragmaStmt.executeUpdate("PRAGMA synchronous=OFF");
+				pragmaStmt.executeUpdate("PRAGMA journal_mode=MEMORY");
+			}
 		} catch (SQLException e) {
 			//System.out.println("function Database() 2");
 			//e.printStackTrace(); //  too much info
@@ -602,6 +609,8 @@ public final class Database {
     		+ ", rows_removed_by_join_filter varchar(256)\n"
     		+ ", rows_removed_by_filter varchar(256)\n"
     		+ ", rows_removed_by_index_recheck varchar(256)\n"
+    		+ ", repeatable_seed varchar(256)\n"
+    		+ ", sampling_method varchar(256)\n"
     		+ ", scan_direction varchar(256)\n"
     		+ ", shared_dirtied_blocks varchar(256)\n"
     		+ ", shared_hit_blocks varchar(256)\n"
@@ -1144,15 +1153,21 @@ south_1_fontmetrics_width = null;
         }
         
         try {
-            //objConnection.setAutoCommit(false);  // saw this, is it important?
             objStmt = objConnection.createStatement();
             objStmt.setQueryTimeout(30);
-            objStmt.executeUpdate("PRAGMA synchronous=OFF;\n");
-            objStmt.executeUpdate("PRAGMA journal_mode=MEMORY;\n");
             objStmt.executeUpdate(strSQL);
-            objStmt.executeUpdate("PRAGMA synchronous=ON;\n");
-            objStmt.executeUpdate("PRAGMA journal_mode=DELETE;\n");
         } catch (SQLException ex) {
+            // Callers often embed "begin transaction; ... commit;". If that batch fails
+            // after BEGIN, the connection stays in a transaction and later PRAGMA/DML
+            // blows up with "Safety level may not be changed inside a transaction".
+            try {
+            	objConnection.createStatement().executeUpdate("rollback");
+            } catch (SQLException ignore) {
+            }
+            try {
+            	objConnection.setAutoCommit(true);
+            } catch (SQLException ignore) {
+            }
             System.out.println("function Database.dml() 1");
             System.out.println("strSQL: " + truncateForLog(strSQL));
             ex.printStackTrace();

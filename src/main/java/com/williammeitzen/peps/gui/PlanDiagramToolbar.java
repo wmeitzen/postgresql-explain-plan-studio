@@ -1,19 +1,31 @@
 package com.williammeitzen.peps.gui;
 
+import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
+import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
 import java.util.EnumMap;
+import java.util.Hashtable;
 import java.util.Map;
+import java.util.function.Consumer;
 
+import javax.swing.BorderFactory;
 import javax.swing.DefaultListCellRenderer;
 import javax.swing.JButton;
+import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JPanel;
+import javax.swing.JSlider;
+import javax.swing.SwingConstants;
 import javax.swing.border.EmptyBorder;
+import javax.swing.event.ChangeEvent;
+import javax.swing.event.ChangeListener;
 
 import com.williammeitzen.peps.gui.Utils.LineThicknesses;
 import com.williammeitzen.peps.gui.Utils.PercentageBy;
@@ -25,11 +37,16 @@ public class PlanDiagramToolbar extends JPanel {
 
 	private static final long serialVersionUID = 1L;
 	private static final String NONE_AVAILABLE = "(none available)";
+	public static final int ZOOM_MIN_PERCENT = 10;
+	public static final int ZOOM_MAX_PERCENT = 400;
 
 	private final JButton zoomMinusButton;
 	private final JButton zoomPlusButton;
 	private final JButton zoom100Button;
 	private final JButton zoomFitButton;
+	private final JCheckBox zoomSliderCheckBox;
+	private final JSlider zoomSlider;
+	private final JPanel zoomSliderSidePanel;
 	private final JComboBox<LineThicknesses> lineThicknessCombo;
 	private final JComboBox<Object> percentageByCombo;
 
@@ -39,8 +56,24 @@ public class PlanDiagramToolbar extends JPanel {
 	private ZoomToolbarListener zoomListener;
 	private LineThicknessByRadioButtonsToolbarListener lineThicknessListener;
 	private PercentageByRadioButtonsToolbarListener percentageByListener;
+	private Runnable zoomSliderSyncHook;
+	private Consumer<Boolean> zoomSliderVisibilityListener;
 	private boolean suppressComboEvents;
+	private boolean suppressZoomSliderEvents;
+	private boolean suppressZoomSliderCheckBoxEvents;
 	private boolean percentageByNoneAvailable;
+
+	/**
+	 * Slider track floor for tick alignment (majors every 100 from 0).
+	 * Zoom itself still clamps to {@link #ZOOM_MIN_PERCENT}.
+	 */
+	private static final int ZOOM_SLIDER_TRACK_MIN = 0;
+
+	/**
+	 * Track values for labels/ticks (top = zoomed in). Bottom value 0 is labeled
+	 * {@link #ZOOM_MIN_PERCENT}% so hash marks line up with the numbers.
+	 */
+	private static final int[] ZOOM_SLIDER_LABEL_TRACK_VALUES = { 400, 300, 200, 100, 0 };
 
 	public PlanDiagramToolbar() {
 		super(new FlowLayout(FlowLayout.LEFT, 8, 2));
@@ -55,6 +88,9 @@ public class PlanDiagramToolbar extends JPanel {
 		}
 
 		JLabel zoomLabel = new JLabel("Zoom:");
+		zoomSliderCheckBox = new JCheckBox("Slider");
+		zoomSliderCheckBox.setToolTipText("Show the Zoom slider (vertical when tall, horizontal when wide)");
+		zoomSliderCheckBox.setOpaque(false);
 		zoomMinusButton = new JButton("-");
 		zoomPlusButton = new JButton("+");
 		zoom100Button = new JButton("100%");
@@ -83,6 +119,67 @@ public class PlanDiagramToolbar extends JPanel {
 		zoomFitButton.addActionListener(e -> {
 			if (zoomListener != null) {
 				zoomListener.zoomFitEventOccurred();
+			}
+		});
+
+		// Vertical: higher % at top. Track is 0–400 so major ticks hit every 100%.
+		zoomSlider = new JSlider(SwingConstants.VERTICAL, ZOOM_SLIDER_TRACK_MIN, ZOOM_MAX_PERCENT, 100);
+		zoomSlider.setPaintTicks(true);
+		zoomSlider.setSnapToTicks(false);
+		zoomSlider.setPaintLabels(true);
+		zoomSlider.setToolTipText(ZOOM_MAX_PERCENT + "% = most zoomed in; " + ZOOM_MIN_PERCENT
+				+ "% = most zoomed out. Use Fit to jump to fit-to-window.");
+		zoomSlider.setOpaque(false);
+		applyZoomSliderPercentLabels();
+		zoomSlider.addChangeListener(new ChangeListener() {
+			@Override
+			public void stateChanged(ChangeEvent e) {
+				if (suppressZoomSliderEvents || zoomListener == null) {
+					return;
+				}
+				// Apply only the zoom value — never recompute Fit/max here (that caused jerking).
+				zoomListener.zoomPercentEventOccurred(sliderValueToZoomPercent(zoomSlider.getValue()));
+			}
+		});
+
+		zoomSliderSidePanel = new JPanel(new BorderLayout(0, 2));
+		zoomSliderSidePanel.setBorder(BorderFactory.createEmptyBorder(6, 2, 6, 2));
+		zoomSliderSidePanel.setOpaque(true);
+		zoomSliderSidePanel.add(zoomSlider, BorderLayout.CENTER);
+		// Portrait default; landscape docking stretches this and flips the slider horizontal.
+		zoomSliderSidePanel.setPreferredSize(new Dimension(64, 200));
+		zoomSliderSidePanel.setMinimumSize(new Dimension(48, 48));
+		zoomSliderSidePanel.setVisible(false);
+		zoomSliderSidePanel.addComponentListener(new ComponentAdapter() {
+			@Override
+			public void componentResized(ComponentEvent e) {
+				updateZoomSliderOrientation();
+			}
+
+			@Override
+			public void componentShown(ComponentEvent e) {
+				updateZoomSliderOrientation();
+			}
+		});
+
+		zoomSliderCheckBox.addActionListener(e -> {
+			if (suppressZoomSliderCheckBoxEvents) {
+				return;
+			}
+			boolean show = zoomSliderCheckBox.isSelected();
+			if (zoomSliderVisibilityListener != null) {
+				zoomSliderVisibilityListener.accept(Boolean.valueOf(show));
+			} else {
+				zoomSliderSidePanel.setVisible(show);
+				zoomSliderSidePanel.revalidate();
+				java.awt.Container parent = zoomSliderSidePanel.getParent();
+				if (parent != null) {
+					parent.revalidate();
+					parent.repaint();
+				}
+			}
+			if (show && zoomSliderSyncHook != null) {
+				zoomSliderSyncHook.run();
 			}
 		});
 
@@ -131,6 +228,7 @@ public class PlanDiagramToolbar extends JPanel {
 		});
 
 		add(zoomLabel);
+		add(zoomSliderCheckBox);
 		add(zoomMinusButton);
 		add(zoomPlusButton);
 		add(zoom100Button);
@@ -141,8 +239,133 @@ public class PlanDiagramToolbar extends JPanel {
 		add(percentageByCombo);
 	}
 
+	/** Vertical zoom slider strip for the right edge of the Graph pane. */
+	public JPanel getZoomSliderSidePanel() {
+		return zoomSliderSidePanel;
+	}
+
+	public boolean isZoomSliderVisible() {
+		return zoomSliderCheckBox.isSelected();
+	}
+
+	/**
+	 * Align the knob with the diagram zoom. Range stays fixed at
+	 * {@link #ZOOM_MIN_PERCENT}–{@link #ZOOM_MAX_PERCENT} (Fit is a jump target, not Max).
+	 */
+	public void refreshZoomSliderFromGraph(PlanGraphPanel graphPanel) {
+		if (graphPanel == null) {
+			syncZoomPercentage(100);
+			return;
+		}
+		syncZoomPercentage(graphPanel.getZoomPercentage());
+	}
+
+	/** Keep the slider knob aligned after +/- / 100% / Fit / slider drag. */
+	public void syncZoomPercentage(int zoomPercentage) {
+		int knob = zoomPercentToSliderValue(zoomPercentage);
+		if (zoomSlider.getValue() == knob
+				&& zoomSlider.getMinimum() == ZOOM_SLIDER_TRACK_MIN
+				&& zoomSlider.getMaximum() == ZOOM_MAX_PERCENT) {
+			return;
+		}
+		suppressZoomSliderEvents = true;
+		try {
+			if (zoomSlider.getMinimum() != ZOOM_SLIDER_TRACK_MIN || zoomSlider.getMaximum() != ZOOM_MAX_PERCENT) {
+				zoomSlider.setMinimum(ZOOM_SLIDER_TRACK_MIN);
+				zoomSlider.setMaximum(ZOOM_MAX_PERCENT);
+				applyZoomSliderPercentLabels();
+			}
+			zoomSlider.setValue(knob);
+		} finally {
+			suppressZoomSliderEvents = false;
+		}
+	}
+
+	/** Map diagram zoom % onto the 0–400 track (10% sits on the bottom tick). */
+	private static int zoomPercentToSliderValue(int zoomPercentage) {
+		int zoom = Math.max(ZOOM_MIN_PERCENT, Math.min(ZOOM_MAX_PERCENT, zoomPercentage));
+		return zoom <= ZOOM_MIN_PERCENT ? ZOOM_SLIDER_TRACK_MIN : zoom;
+	}
+
+	/** Map track value back to a valid zoom % (floor at {@link #ZOOM_MIN_PERCENT}). */
+	private static int sliderValueToZoomPercent(int sliderValue) {
+		return Math.max(ZOOM_MIN_PERCENT, Math.min(ZOOM_MAX_PERCENT, sliderValue));
+	}
+
+	private void applyZoomSliderPercentLabels() {
+		Hashtable<Integer, JLabel> labels = new Hashtable<>();
+		Font labelFont = zoomSlider.getFont().deriveFont(Font.PLAIN, 10f);
+		for (int trackValue : ZOOM_SLIDER_LABEL_TRACK_VALUES) {
+			int labelPercent = trackValue == ZOOM_SLIDER_TRACK_MIN ? ZOOM_MIN_PERCENT : trackValue;
+			JLabel label = new JLabel(labelPercent + "%");
+			label.setFont(labelFont);
+			labels.put(Integer.valueOf(trackValue), label);
+		}
+		zoomSlider.setLabelTable(labels);
+		// Majors at 0/100/200/300/400 (labeled); minors every 25% for denser hash marks.
+		zoomSlider.setMajorTickSpacing(100);
+		zoomSlider.setMinorTickSpacing(25);
+		zoomSlider.setPaintTicks(true);
+		zoomSlider.setPaintLabels(true);
+	}
+
+	/**
+	 * Portrait (taller than wide) → vertical slider; landscape → horizontal.
+	 * Vertical: 400% at top. Horizontal: 400% at right.
+	 */
+	private void updateZoomSliderOrientation() {
+		int width = zoomSliderSidePanel.getWidth();
+		int height = zoomSliderSidePanel.getHeight();
+		if (width <= 0 || height <= 0) {
+			return;
+		}
+		int orientation = width > height ? SwingConstants.HORIZONTAL : SwingConstants.VERTICAL;
+		if (zoomSlider.getOrientation() == orientation) {
+			return;
+		}
+		suppressZoomSliderEvents = true;
+		try {
+			int value = zoomSlider.getValue();
+			zoomSlider.setOrientation(orientation);
+			zoomSlider.setValue(value);
+			applyZoomSliderPercentLabels();
+		} finally {
+			suppressZoomSliderEvents = false;
+		}
+		zoomSlider.revalidate();
+		zoomSliderSidePanel.revalidate();
+		zoomSliderSidePanel.repaint();
+	}
+
 	public void setZoomToolbarListener(ZoomToolbarListener listener) {
 		this.zoomListener = listener;
+	}
+
+	/** Called when the Slider checkbox is turned on so the knob can match the current diagram. */
+	public void setZoomSliderSyncHook(Runnable hook) {
+		this.zoomSliderSyncHook = hook;
+	}
+
+	/** Show/hide the Zoom dockable (or fallback side panel) when the Slider checkbox changes. */
+	public void setZoomSliderVisibilityListener(Consumer<Boolean> listener) {
+		this.zoomSliderVisibilityListener = listener;
+	}
+
+	/** Keep the Slider checkbox aligned when the Zoom dockable is closed or reopened. */
+	public void setZoomSliderCheckboxSelected(boolean selected) {
+		if (zoomSliderCheckBox.isSelected() == selected) {
+			return;
+		}
+		suppressZoomSliderCheckBoxEvents = true;
+		try {
+			zoomSliderCheckBox.setSelected(selected);
+		} finally {
+			suppressZoomSliderCheckBoxEvents = false;
+		}
+	}
+
+	public boolean isZoomSliderCheckboxEventSuppressed() {
+		return suppressZoomSliderCheckBoxEvents;
 	}
 
 	public void setLineThicknessListener(LineThicknessByRadioButtonsToolbarListener listener) {

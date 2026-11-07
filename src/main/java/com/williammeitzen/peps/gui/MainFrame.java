@@ -142,6 +142,17 @@ public class MainFrame extends JFrame {
 			public void zoomFitEventOccurred() {
 				repaintOnZoomChange(-1, false);
 			}
+
+			public void zoomPercentEventOccurred(int zoomPercentage) {
+				// Slider-driven: apply zoom only; do not rebuild slider max/Fit (that caused jerking).
+				repaintOnZoomChangeFromSlider(zoomPercentage);
+			}
+		});
+		planDiagramToolbar.setZoomSliderSyncHook(() -> {
+			PlanGraphPanel planGraphPanel = findSelectedPlanGraphPanel();
+			if (planGraphPanel != null) {
+				planDiagramToolbar.refreshZoomSliderFromGraph(planGraphPanel);
+			}
 		});
 		
 		planDiagramToolbar.setLineThicknessListener(new LineThicknessByRadioButtonsToolbarListener() {
@@ -381,7 +392,23 @@ public class MainFrame extends JFrame {
 		if (planGraphPanel != null) {
 			planGraphPanel.setZoomPercentage(zoomPct);
 			planGraphPanel.refreshScrollableSizeAfterZoom(keepSelectedVisible);
+			if (planDiagramToolbar != null) {
+				planDiagramToolbar.syncZoomPercentage(planGraphPanel.getZoomPercentage());
+			}
 		}
+	}
+
+	/** Slider path: update zoom without re-entering the slider change listener. */
+	private void repaintOnZoomChangeFromSlider(int zoomPct) {
+		PlanGraphPanel planGraphPanel = findSelectedPlanGraphPanel();
+		if (planGraphPanel == null) {
+			return;
+		}
+		if (planGraphPanel.getZoomPercentage() == zoomPct) {
+			return;
+		}
+		planGraphPanel.setZoomPercentage(zoomPct);
+		planGraphPanel.refreshScrollableSizeAfterZoom(true);
 	}
 	
 	private void repaintOnZoomPlusOrMinus(int zoomPct, boolean keepSelectedVisible) {
@@ -389,6 +416,9 @@ public class MainFrame extends JFrame {
 		if (planGraphPanel != null) {
 			planGraphPanel.setZoomPercentage(planGraphPanel.getZoomPercentage() + zoomPct);
 			planGraphPanel.refreshScrollableSizeAfterZoom(keepSelectedVisible);
+			if (planDiagramToolbar != null) {
+				planDiagramToolbar.syncZoomPercentage(planGraphPanel.getZoomPercentage());
+			}
 		}
 	}
 

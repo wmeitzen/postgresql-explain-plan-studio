@@ -114,7 +114,17 @@ public class Utils {
 	}
 	
 
+	/** Display ceiling for abbreviated magnitudes (rows, cost, bytes, …). */
+	public static final double DISPLAY_COUNT_CAP = 999_000_000_000_000d; // 999 trillion
+
+	private static boolean exceedsDisplayCap(double value) {
+		return !Double.isFinite(value) || Math.abs(value) > DISPLAY_COUNT_CAP;
+	}
+
 	public static String bytes(double bytes) {
+		if (exceedsDisplayCap(bytes)) {
+			return ">999 TB";
+		}
 		int digits = 0;
 		String[] dictionary = { " bytes", "kB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB" };
         int index = 0;
@@ -125,6 +135,9 @@ public class Utils {
             bytes = bytes / 1024;
             //bytes = bytes / 1000; // this seems weird
         }
+        if (index >= dictionary.length) {
+        	return ">999 TB";
+        }
         if (index > 0 && bytes <= 9) {
         	digits = 1;
         }
@@ -132,6 +145,9 @@ public class Utils {
 	}
 
 	public static String kilobytes(double kilobytes) {
+		if (exceedsDisplayCap(kilobytes)) {
+			return ">999 TB";
+		}
 		int digits = 0;
 		String[] dictionary = { "kB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB" };
         int index = 0;
@@ -141,6 +157,9 @@ public class Utils {
             }
             kilobytes = kilobytes / 1000; // this seems weird
         }
+        if (index >= dictionary.length) {
+        	return ">999 TB";
+        }
         if (index > 0 && kilobytes <= 9) {
         	digits = 1;
         }
@@ -148,6 +167,9 @@ public class Utils {
 	}
 
 	public static String bytesWithSpace(double bytes, int precision) {
+		if (exceedsDisplayCap(bytes)) {
+			return ">999 TB";
+		}
 		String[] dictionary = { " bytes", "kB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB" };
         int index = 0;
         for (index = 0; index < dictionary.length; index++) {
@@ -156,6 +178,9 @@ public class Utils {
             }
             bytes = bytes / 1024;
             //bytes = bytes / 1000; // this seems weird
+        }
+        if (index >= dictionary.length) {
+        	return ">999 TB";
         }
         return String.format("%." + precision + "f", bytes) + " " + dictionary[index];
 	}
@@ -186,6 +211,9 @@ public class Utils {
 	
 	// need to fix this. 30998 rows returns 30k rows
 	public static String units(double rows) {
+		if (exceedsDisplayCap(rows)) {
+			return ">999T rows";
+		}
 		int digits = 0;
 		String[] dictionary = { " rows", "k rows", "M rows", "B rows", "Tr rows", "Quadr rows", "Quint rows", "Sext rows", "Oct rows", "Noni rows" };
 		String strDictionary;
@@ -195,6 +223,9 @@ public class Utils {
                 break;
             }
             rows = rows / 1000;
+        }
+        if (index >= dictionary.length) {
+        	return ">999T rows";
         }
         strDictionary = dictionary[index];
         if (index == 0 && rows == 1) {
@@ -207,6 +238,9 @@ public class Utils {
 	}
 
 	public static String formattedCost(double cost) {
+		if (exceedsDisplayCap(cost)) {
+			return ">999T";
+		}
 		int digits = 0;
 		String[] dictionary = { "", "k", "M", "B", "Tr", "Quadr", "Quint", "Sext", "Oct", "Noni" };
 		String strDictionary;
@@ -216,6 +250,9 @@ public class Utils {
                 break;
             }
             cost = cost / 1000;
+        }
+        if (index >= dictionary.length) {
+        	return ">999T";
         }
         strDictionary = dictionary[index];
         if (index == 0 && cost == 1) {
@@ -248,6 +285,9 @@ public class Utils {
 	}
 	
 	public static String elapsed_time_sec(double seconds) {
+		if (!Double.isFinite(seconds) || Math.abs(seconds) > 999d * 24d * 60d * 60d) {
+			return seconds < 0 ? ">-999 days" : ">999 days";
+		}
 		String strElapsedTime;
 		double fltOriginalSeconds = seconds;
 		double fltAbsSeconds = Math.abs(seconds);
@@ -310,6 +350,9 @@ public class Utils {
 	}
 	
 	public static String elapsed_time_sec_one_decimal(double seconds) {
+		if (!Double.isFinite(seconds) || Math.abs(seconds) > 999d * 24d * 60d * 60d) {
+			return seconds < 0 ? ">-999 days" : ">999 days";
+		}
 		String strElapsedTime;
 		double fltOriginalSeconds = seconds;
 		double fltAbsSeconds = Math.abs(seconds);
