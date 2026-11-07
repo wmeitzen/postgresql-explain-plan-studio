@@ -860,11 +860,11 @@ public class FormPanel extends JPanel {
 			if (source == null || graph == null) {
 				continue;
 			}
-			String json = PlanSourcePanel.normalizeJsonPlanText(source.getJsonPlanText());
-			if (json == null || json.isBlank()) {
+			if (!source.hasUsableJsonPlan()) {
 				continue;
 			}
-			if (!graph.hasGeneratedPlanValues() || source.shouldRebuildDiagramFromJson(json)) {
+			String fingerprint = PlanSourcePanel.normalizeJsonPlanText(source.getJsonPlanText());
+			if (!graph.hasGeneratedPlanValues() || source.shouldRebuildDiagramFromJson(fingerprint)) {
 				plansToGenerate.add(planName);
 			}
 		}

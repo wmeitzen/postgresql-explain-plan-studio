@@ -1,0 +1,22 @@
+[
+  {
+    "Plan": {
+      "Node Type": "Limit",
+      "Startup Cost": 0.00,
+      "Total Cost": 0.04,
+      "Plan Rows": 1,
+      "Plan Width": 273,
+      "Plans": [
+        {
+          "Node Type": "Seq Scan",
+          "Parent Relationship": "Outer",
+          "Relation Name": "pg_class",
+          "Startup Cost": 0.00,
+          "Total Cost": 14.56,
+          "Plan Rows": 356,
+          "Plan Width": 273
+        }
+      ]
+    }
+  }
+]

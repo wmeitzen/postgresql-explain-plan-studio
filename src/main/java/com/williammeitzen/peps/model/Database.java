@@ -125,9 +125,20 @@ public final class Database {
 
 		if (bolExceptionOccurred == false) {
 			try {
-				if (objRS.next()) {
-					strJsonPlan = objRS.getString(1);
+				StringBuilder planBuilder = new StringBuilder();
+				boolean firstRow = true;
+				while (objRS.next()) {
+					String row = objRS.getString(1);
+					if (row == null) {
+						continue;
+					}
+					if (!firstRow) {
+						planBuilder.append('\n');
+					}
+					planBuilder.append(row);
+					firstRow = false;
 				}
+				strJsonPlan = planBuilder.length() == 0 ? null : planBuilder.toString();
 			} catch (SQLException e) {
 				strError = "Error from Database.pg_getPlan().objRS.getString():\n" + e.getMessage() + "\n";
 				bolExceptionOccurred = true;

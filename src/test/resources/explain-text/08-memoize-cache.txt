@@ -1,0 +1,9 @@
+Nested Loop  (cost=0.43..10.00 rows=10 width=40)
+  ->  Seq Scan on parent p  (cost=0.00..1.00 rows=10 width=4)
+  ->  Memoize  (cost=0.43..0.46 rows=1 width=36) (actual time=0.000..0.000 rows=1.00 loops=10)
+        Output: s2.strain, s2._strain_key
+        Cache Key: p._strain_key
+        Cache Mode: logical
+        Hits: 961954  Misses: 77  Evictions: 0  Overflows: 0  Memory Usage: 10kB
+        Buffers: shared hit=304
+        ->  Index Scan using strain_pkey on s2  (cost=0.42..0.44 rows=1 width=36)

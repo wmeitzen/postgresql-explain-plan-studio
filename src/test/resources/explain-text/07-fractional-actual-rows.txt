@@ -1,0 +1,5 @@
+Nested Loop Left Join  (cost=1307.61..161474.38 rows=962031 width=366) (actual time=15.676..1096.732 rows=962031.00 loops=1)
+  Inner Unique: true
+  Buffers: shared hit=4610 read=8138
+  ->  Seq Scan on all_cellline c  (cost=0.00..100.00 rows=1000 width=100) (actual time=0.010..1.000 rows=1000.00 loops=1)
+  ->  Index Scan using vt_pkey on voc_term vt  (cost=0.29..1.00 rows=1 width=50) (actual time=0.002..0.002 rows=1.00 loops=1000)

@@ -1,0 +1,1 @@
+Seq Scan on pg_class (cost=0.00..14.56 rows=356 width=273)

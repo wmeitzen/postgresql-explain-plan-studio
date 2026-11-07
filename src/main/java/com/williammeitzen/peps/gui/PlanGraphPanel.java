@@ -55,6 +55,8 @@ import org.json.simple.Jsoner;
 import com.williammeitzen.peps.gui.Utils.LineThicknesses;
 import com.williammeitzen.peps.gui.Utils.PercentageBy;
 import com.williammeitzen.peps.model.Database;
+import com.williammeitzen.peps.model.ExplainTextPlanConverter;
+import com.williammeitzen.peps.model.PlanFormat;
 
 //import com.github.cliftonlabs.json_simple.JsonException;
 //import com.github.cliftonlabs.json_simple.JsonArray;
@@ -226,11 +228,11 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 		if (source == null || idExplainPlan == null) {
 			return false;
 		}
-		String json = PlanSourcePanel.normalizeJsonPlanText(source.getJsonPlanText());
-		if (json == null || json.isBlank()) {
+		if (!source.hasUsableJsonPlan()) {
 			return false;
 		}
-		if (hasGeneratedPlanValues() && !source.shouldRebuildDiagramFromJson(json)) {
+		String fingerprint = PlanSourcePanel.normalizeJsonPlanText(source.getJsonPlanText());
+		if (hasGeneratedPlanValues() && !source.shouldRebuildDiagramFromJson(fingerprint)) {
 			return true;
 		}
 		planSourceOverride = source;
@@ -308,7 +310,7 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 		JsonObject jsonPGDatabaseMetadata;
 		JsonArray jsnPGConfigurationSettings;
 		JsonObject jsnPGConfigurationSetting;
-		String strPostgreSQLEnvironment;
+		String strPostgreSQLEnvironment = "";
 		String strSQL;
 		String planText = "";
 		String strPlanSourceButtonClicked;
@@ -487,13 +489,14 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 			//List<Boolean, String, String> objPGGetPlan = Database.pg_getPlan(strSQL);
 			bolExceptionOccurred = (boolean) objPGGetPlan.get(0);
 			strError = (String) objPGGetPlan.get(1);
-			planText = (String) objPGGetPlan.get(2);
+			String rawPlanFromServer = (String) objPGGetPlan.get(2);
 			if (bolExceptionOccurred == true) {
 				objComponent.showJsonPlanExecutionError(strError);
 				return;
 			}
 			objComponent.clearJsonPlanErrorStyle();
-			objComponent.setJsonPlanText(planText);
+			// Keep raw server result (JSON or text) in the plan field / SQLite.
+			objComponent.setJsonPlanText(rawPlanFromServer);
 			
 			List<Object> objPGRunDML = Database.pg_dml(objComponent.getPlanSourceFromQueryPostCommandField(), ";");
 			bolExceptionOccurred = (boolean) objPGRunDML.get(0);
@@ -502,9 +505,16 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 				objComponent.showJsonPlanExecutionError(strError);
 				return;
 			}
-			
-			planText = planText.replace("\"Plan\": {", strPostgreSQLEnvironment + ", \"Plan\": {");
-			objComponent.setJsonPlanText(planText);
+
+			PlanFormat executedFormat = PlanSourcePanel.sniffPlanFormat(rawPlanFromServer);
+			if (executedFormat == PlanFormat.JSON) {
+				// Preserve legacy JSON behavior: embed environment metadata in stored JSON.
+				planText = rawPlanFromServer.replace("\"Plan\": {", strPostgreSQLEnvironment + ", \"Plan\": {");
+				objComponent.setJsonPlanText(planText);
+			} else {
+				// Text plans stay raw in the field; convert on the fly for the diagram pipeline.
+				planText = rawPlanFromServer;
+			}
 
 			Database.updateExplainPlanText(idExplainPlan, objComponent.getJsonPlanText());
 
@@ -520,25 +530,24 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 			objComponent.setPlanSourceButtonClicked(null);
 		}
 
-		// get json text from textbox — rebuild only when JSON changed since last diagram
+		// get json text from textbox — rebuild only when plan content changed since last diagram
 		if (strPlanSourceButtonClicked != null && strPlanSourceButtonClicked.equals(PlanSourcePanel.SHOW_JSON_PLAN_DIAGRAM)) {
-			planText = PlanSourcePanel.normalizeJsonPlanText(objComponent.getJsonPlanText());
+			String fingerprint = PlanSourcePanel.normalizeJsonPlanText(objComponent.getJsonPlanText());
 			
-			if (bolShowRetrievedJsonPlan == true) { System.out.println(planText); }
+			if (bolShowRetrievedJsonPlan == true) { System.out.println(fingerprint); }
 			
-			if (objComponent.shouldRebuildDiagramFromJson(planText)) {
+			if (objComponent.shouldRebuildDiagramFromJson(fingerprint)) {
 				objComponent.setPlanTextIsDirty(true);
 			}
+			planText = "";
 			
 			objComponent.setPlanSourceButtonClicked(null);
 		}
 
 		if (objComponent.getPlanTextIsDirty() == true) {
-			if (planText == null || planText.isEmpty()) {
-				planText = PlanSourcePanel.normalizeJsonPlanText(objComponent.getJsonPlanText());
-			}
-			// Stale dirty from editors: skip full rebuild when JSON is unchanged (Execute always rebuilds)
-			if (!forceExecuteRebuild && !objComponent.shouldRebuildDiagramFromJson(planText)) {
+			String fingerprint = PlanSourcePanel.normalizeJsonPlanText(objComponent.getJsonPlanText());
+			// Stale dirty from editors: skip full rebuild when field content is unchanged (Execute always rebuilds)
+			if (!forceExecuteRebuild && !objComponent.shouldRebuildDiagramFromJson(fingerprint)) {
 				objComponent.setPlanTextIsDirty(false);
 			}
 		}
@@ -579,6 +588,23 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 			Database.dml(strSQL);
 
 			if (bolShowTiming == true) { System.out.println("after delete stuff: " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
+
+			try {
+				String rawField = objComponent.getJsonPlanText();
+				planText = PlanSourcePanel.resolvePlanFieldToJson(rawField);
+				// For text plans executed this turn, optionally stamp environment onto the
+				// diagram-only JSON (field remains raw text).
+				if (forceExecuteRebuild && PlanSourcePanel.sniffPlanFormat(rawField) == PlanFormat.TEXT
+						&& planText != null && planText.contains("\"Plan\"")) {
+					planText = planText.replace("\"Plan\":{", strPostgreSQLEnvironment + ", \"Plan\":{");
+					planText = planText.replace("\"Plan\": {", strPostgreSQLEnvironment + ", \"Plan\": {");
+				}
+			} catch (com.williammeitzen.peps.model.ExplainTextPlanConverter.ExplainTextPlanConvertException convertEx) {
+				objComponent.showJsonPlanExecutionError(
+						"Could not convert text plan to JSON for the diagram:\n" + convertEx.getMessage());
+				rebuiltPlanData = false;
+				return;
+			}
 
 			if (bolShowProperties == true) { System.out.println(planText); }
 				
@@ -775,10 +801,11 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 		//} 
 		
 		// the plan's clean now, so minimize work to draw plan on screen
+		boolean percentageByWasDirty = objComponent.getPercentageByIsDirty();
 		if (rebuiltPlanData) {
+			// Fingerprint the raw plan field (JSON or text), not the diagram-only converted JSON.
 			objComponent.markDiagramRenderedFromJson(
-					PlanSourcePanel.normalizeJsonPlanText(
-							planText != null && !planText.isEmpty() ? planText : objComponent.getJsonPlanText()));
+					PlanSourcePanel.normalizeJsonPlanText(objComponent.getJsonPlanText()));
 		}
 		objComponent.setPlanTextIsDirty(false);
 		objComponent.setLineThicknessByIsDirty(false);
@@ -801,6 +828,10 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 		if (scrollSelectedIntoViewAfterPaint) {
 			scrollSelectedIntoViewAfterPaint = false;
 			SwingUtilities.invokeLater(this::ensureSelectedOperatorVisible);
+		}
+		// Properties grid can go stale after rebuild or Percentage By change.
+		if (rebuiltPlanData || percentageByWasDirty) {
+			SwingUtilities.invokeLater(this::refreshSelectedOperatorProperties);
 		}
 
 		if (bolShowTiming == true) { System.out.println("after PlanGraphPanel.paintComponent(): " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
@@ -2547,14 +2578,22 @@ from explain_plan_operator_annotations
 				strSouth4Text = "";
 				strSouth5Text = "";
 
+				strNodeType = jsnObject.getString("node_type");
+				if (strNodeType == null) strNodeType = "";
+				boolean textNativeNodeType = isTextNativeNodeTypeLabel(strNodeType);
+
 				// add "Parallel" and/or "Reverse" and/or hash strategy where necessary
-				if (jsnObject.getString("parallel_aware") != null && jsnObject.getString("parallel_aware").matches("true") == true) {
+				// (skip when Node Type already includes them — typical of text EXPLAIN names)
+				if (!textNativeNodeType
+						&& jsnObject.getString("parallel_aware") != null
+						&& jsnObject.getString("parallel_aware").matches("true") == true) {
 					strSouth1Text += "Parallel ";
 				}
-				if (jsnObject.getString("partial_mode") != null) {
+				if (!textNativeNodeType && jsnObject.getString("partial_mode") != null) {
 					strSouth1Text += jsnObject.getString("partial_mode") + " ";
 				}
-				if (jsnObject.getString("strategy") != null && jsnObject.getString("strategy").matches("Plain") != true) {
+				if (!textNativeNodeType && jsnObject.getString("strategy") != null
+						&& jsnObject.getString("strategy").matches("Plain") != true) {
 					strSouth1Text += jsnObject.getString("strategy") + " ";
 				}
 				if (jsnObject.getString("scan_direction") != null && jsnObject.getString("scan_direction").matches("Forward") != true) {
@@ -2565,8 +2604,6 @@ from explain_plan_operator_annotations
 					strSouth1Text += strSamplingMethod.substring(0, 1).toUpperCase() + strSamplingMethod.substring(1) + " ";
 				}
 
-				strNodeType = jsnObject.getString("node_type");
-				if (strNodeType == null) strNodeType = "";
 				strSouth1Text += displayNodeTypeName(strNodeType);
 
 				if (jsnObject.getString("filter") != null || jsnObject.getString("join_filter") != null) {
@@ -2615,7 +2652,9 @@ from explain_plan_operator_annotations
 				}
 				if (strAlias != "") { strAlias = "as " + strAlias; }
 				
-				if (strNodeType.equals("Aggregate") == true) {
+				if (strNodeType.equals("Aggregate") == true
+						|| strNodeType.matches("(?i)(Hash|Group|Mixed)Aggregate")
+						|| strNodeType.matches("(?i)(Partial|Finalize)\\s+(Hash|Group|Mixed)?\\s*Aggregate")) {
 					strSouth2Text = jsnObject.getString("filter");
 					strSouth2Text = removeDatatypes(strSouth2Text);
 					strSouth2Text = removeParenthesis(strSouth2Text);
@@ -2683,18 +2722,30 @@ from explain_plan_operator_annotations
 						else
 							strSouth2Text += " used";
 					}
-				} else if (strNodeType.equals("Hash Join") == true) {
-					strSouth2Text = jsnObject.getString("join_type");
-					strSouth2Text = "(" + strSouth2Text + " Join)";
-					strSouth3Text = jsnObject.getString("hash_cond");
-					strSouth3Text = removeDatatypes(strSouth3Text);
-					strSouth3Text = removeParenthesis(strSouth3Text);
-					strSouth3Text = prefaceAndTruncate("Hash cond: ", strSouth3Text, 40);
-					strSouth4Text = jsnObject.getString("join_filter");
-					strSouth4Text = removeDatatypes(strSouth4Text);
-					strSouth4Text = removeParenthesis(strSouth4Text);
-					strSouth4Text = prefaceAndTruncate("Filter: ", strSouth4Text, 40);
-					strSouth5Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+				} else if (strNodeType.equals("Hash Join") == true || strNodeType.matches("(?i)Hash\\s+\\w+\\s+Join")) {
+					if (!isTextNativeNodeTypeLabel(strNodeType)) {
+						strSouth2Text = jsnObject.getString("join_type");
+						strSouth2Text = "(" + strSouth2Text + " Join)";
+						strSouth3Text = jsnObject.getString("hash_cond");
+						strSouth3Text = removeDatatypes(strSouth3Text);
+						strSouth3Text = removeParenthesis(strSouth3Text);
+						strSouth3Text = prefaceAndTruncate("Hash cond: ", strSouth3Text, 40);
+						strSouth4Text = jsnObject.getString("join_filter");
+						strSouth4Text = removeDatatypes(strSouth4Text);
+						strSouth4Text = removeParenthesis(strSouth4Text);
+						strSouth4Text = prefaceAndTruncate("Filter: ", strSouth4Text, 40);
+						strSouth5Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+					} else {
+						strSouth2Text = jsnObject.getString("hash_cond");
+						strSouth2Text = removeDatatypes(strSouth2Text);
+						strSouth2Text = removeParenthesis(strSouth2Text);
+						strSouth2Text = prefaceAndTruncate("Hash cond: ", strSouth2Text, 40);
+						strSouth3Text = jsnObject.getString("join_filter");
+						strSouth3Text = removeDatatypes(strSouth3Text);
+						strSouth3Text = removeParenthesis(strSouth3Text);
+						strSouth3Text = prefaceAndTruncate("Filter: ", strSouth3Text, 40);
+						strSouth4Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+					}
 				} else if (strNodeType.equals("Index Only Scan") == true) {
 					strSouth2Text = strRelationName;
 					strSouth3Text = strAlias;
@@ -2718,19 +2769,35 @@ from explain_plan_operator_annotations
 						strSouth3Text = Utils.kilobytes(Double.parseDouble(strPeakMemoryUsage)) + " RAM used";
 					}
 				} else if (strNodeType.equals("Merge Append") == true) {
-				} else if (strNodeType.equals("Merge Join") == true) {
-					strSouth2Text = jsnObject.getString("join_type");
-					strSouth2Text = "(" + strSouth2Text + " Join)";
-					strSouth3Text = jsnObject.getString("merge_cond");
-					strSouth3Text = removeDatatypes(strSouth3Text);
-					strSouth3Text = removeParenthesis(strSouth3Text);
-					strSouth3Text = prefaceAndTruncate("Merge cond: ", strSouth3Text, 40);
-					strSouth4Text = jsnObject.getString("join_filter");
-					strSouth4Text = removeDatatypes(strSouth4Text);
-					strSouth4Text = removeParenthesis(strSouth4Text);
-					strSouth4Text = prefaceAndTruncate("Filter: ", strSouth4Text, 40);
-					strSouth5Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
-				} else if (strNodeType.equals("ModifyTable") == true) {
+				} else if (strNodeType.equals("Merge Join") == true || strNodeType.matches("(?i)Merge\\s+\\w+\\s+Join")) {
+					if (!isTextNativeNodeTypeLabel(strNodeType)) {
+						strSouth2Text = jsnObject.getString("join_type");
+						strSouth2Text = "(" + strSouth2Text + " Join)";
+						strSouth3Text = jsnObject.getString("merge_cond");
+						strSouth3Text = removeDatatypes(strSouth3Text);
+						strSouth3Text = removeParenthesis(strSouth3Text);
+						strSouth3Text = prefaceAndTruncate("Merge cond: ", strSouth3Text, 40);
+						strSouth4Text = jsnObject.getString("join_filter");
+						strSouth4Text = removeDatatypes(strSouth4Text);
+						strSouth4Text = removeParenthesis(strSouth4Text);
+						strSouth4Text = prefaceAndTruncate("Filter: ", strSouth4Text, 40);
+						strSouth5Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+					} else {
+						strSouth2Text = jsnObject.getString("merge_cond");
+						strSouth2Text = removeDatatypes(strSouth2Text);
+						strSouth2Text = removeParenthesis(strSouth2Text);
+						strSouth2Text = prefaceAndTruncate("Merge cond: ", strSouth2Text, 40);
+						strSouth3Text = jsnObject.getString("join_filter");
+						strSouth3Text = removeDatatypes(strSouth3Text);
+						strSouth3Text = removeParenthesis(strSouth3Text);
+						strSouth3Text = prefaceAndTruncate("Filter: ", strSouth3Text, 40);
+						strSouth4Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+					}
+				} else if (strNodeType.equals("ModifyTable") == true
+						|| strNodeType.equalsIgnoreCase("Insert")
+						|| strNodeType.equalsIgnoreCase("Update")
+						|| strNodeType.equalsIgnoreCase("Delete")
+						|| strNodeType.equalsIgnoreCase("Merge")) {
 					strSouth2Text = jsnObject.getString("operation");
 					if (strSouth2Text.equalsIgnoreCase("insert") == true) {
 						strSouth2Text += " into";
@@ -2743,14 +2810,23 @@ from explain_plan_operator_annotations
 				} else if (strNodeType.equals("Named Tuplestore Scan") == true) {
 					strSouth2Text = strAlias;
 					strSouth3Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
-				} else if (strNodeType.equals("Nested Loop") == true) {
-					strSouth2Text = jsnObject.getString("join_type");
-					strSouth2Text = "(" + strSouth2Text + " Join)";
-					strSouth3Text = jsnObject.getString("join_filter");
-					strSouth3Text = removeDatatypes(strSouth3Text);
-					strSouth3Text = removeParenthesis(strSouth3Text);
-					strSouth3Text = prefaceAndTruncate("Filter: ", strSouth3Text, 40);
-					strSouth4Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+				} else if (strNodeType.equals("Nested Loop") == true
+						|| strNodeType.matches("(?i)Nested Loop(\\s+\\w+\\s+Join)?")) {
+					if (!isTextNativeNodeTypeLabel(strNodeType)) {
+						strSouth2Text = jsnObject.getString("join_type");
+						strSouth2Text = "(" + strSouth2Text + " Join)";
+						strSouth3Text = jsnObject.getString("join_filter");
+						strSouth3Text = removeDatatypes(strSouth3Text);
+						strSouth3Text = removeParenthesis(strSouth3Text);
+						strSouth3Text = prefaceAndTruncate("Filter: ", strSouth3Text, 40);
+						strSouth4Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+					} else {
+						strSouth2Text = jsnObject.getString("join_filter");
+						strSouth2Text = removeDatatypes(strSouth2Text);
+						strSouth2Text = removeParenthesis(strSouth2Text);
+						strSouth2Text = prefaceAndTruncate("Filter: ", strSouth2Text, 40);
+						strSouth3Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
+					}
 				} else if (strNodeType.equals("ProjectSet") == true) {
 				} else if (strNodeType.equals("Recursive Union") == true) {
 				} else if (strNodeType.equals("Result") == true) {
@@ -4651,6 +4727,8 @@ order by id_explain_plan_property;
 	// map node type to icon file
 	private String planIconFile(String nodeType, String joinType, String operation, String strategy, String command) {
 		String iconFileName = null;
+		// Text plans keep text-native Node Type in properties; icons use JSON base names.
+		nodeType = ExplainTextPlanConverter.resolveIconNodeType(nodeType, joinType, operation, strategy);
 		if (nodeType == null) { nodeType = ""; }
 		if (joinType == null) { joinType = ""; }
 		if (operation == null) { operation = ""; }
@@ -6213,6 +6291,23 @@ order by id_explain_plan_property;
 		return nodeType;
 	}
 
+	/** True when Node Type already looks like classic text EXPLAIN wording. */
+	private static boolean isTextNativeNodeTypeLabel(String nodeType) {
+		if (nodeType == null || nodeType.isBlank()) {
+			return false;
+		}
+		String t = nodeType.trim();
+		return t.matches("(?i)Nested Loop\\s+(Inner|Left|Right|Full|Semi|Anti)\\s+Join")
+				|| t.matches("(?i)(Hash|Merge)\\s+(Inner|Left|Right|Full|Semi|Anti)\\s+Join")
+				|| t.matches("(?i)Parallel\\s+.+")
+				|| t.matches("(?i)(Hash|Group|Mixed)Aggregate")
+				|| t.matches("(?i)(Partial|Finalize)\\s+(Hash|Group|Mixed)?\\s*Aggregate")
+				|| t.equalsIgnoreCase("Insert")
+				|| t.equalsIgnoreCase("Update")
+				|| t.equalsIgnoreCase("Delete")
+				|| t.equalsIgnoreCase("Merge");
+	}
+
 	/**
 	 * Strip PostgreSQL cast suffixes from EXPLAIN expressions, e.g.
 	 * {@code '11'::oid} → {@code '11'}, {@code 'MGI:'::text} → {@code 'MGI:'},
@@ -7018,17 +7113,8 @@ order by id_explain_plan_property;
 		Integer clickedOperatorId = findOperatorIdAt(e.getX(), e.getY());
 		if (clickedOperatorId != null) {
 			if (bolShowProperties == true) { System.out.println("mouse clicked in propertyVsShapesMap: " + clickedOperatorId.intValue()); }
-			PlanGraphPanel currentComponent = (PlanGraphPanel) e.getSource();
-			OperatorDetailsPanel detailsPanel = findOperatorDetailsPanel(currentComponent);
 			selectedOperatorId = clickedOperatorId;
-			if (detailsPanel != null) {
-				detailsPanel.showOperatorProperties(clickedOperatorId.intValue());
-			} else {
-				OperationPropertiesPanel propertiesPanel = findOperationPropertiesPanel(currentComponent);
-				if (propertiesPanel != null) {
-					propertiesPanel.showOperatorProperties(clickedOperatorId.intValue());
-				}
-			}
+			refreshSelectedOperatorProperties();
 			SliderPanel sliderPanel = findSliderPanelInSelectedTab();
 			if (sliderPanel != null) {
 				sliderPanel.showSelectedOperator(selectedOperatorId);
@@ -7036,6 +7122,22 @@ order by id_explain_plan_property;
 			repaint();
 		}
 
+	}
+
+	/** Reload Properties for the currently selected operator from SQLite (JSON/text plan data). */
+	private void refreshSelectedOperatorProperties() {
+		if (selectedOperatorId == null) {
+			return;
+		}
+		OperatorDetailsPanel detailsPanel = findOperatorDetailsPanel(this);
+		if (detailsPanel != null) {
+			detailsPanel.showOperatorProperties(selectedOperatorId.intValue());
+			return;
+		}
+		OperationPropertiesPanel propertiesPanel = findOperationPropertiesPanel(this);
+		if (propertiesPanel != null) {
+			propertiesPanel.showOperatorProperties(selectedOperatorId.intValue());
+		}
 	}
 
 	private OperatorDetailsPanel findOperatorDetailsPanel(Component start) {

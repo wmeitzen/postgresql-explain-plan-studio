@@ -39,7 +39,11 @@ To try with saved plans from the old PEG database, copy (do not commit):
 Copy-Item "\\maurice\Cee\docs\bitbucket\peg\peg.sqlite" ".\postgresql-explain-plan-studio.sqlite"
 ```
 
-Then run from that directory and open a plan → **Show JSON Plan Diagram** (or select the Plan Diagram tab).
+Then run from that directory and open a plan → **Show JSON Plan Diagram** / **Show Text Plan Diagram** (or select the Plan Diagram tab).
+
+Plan Source accepts pasted **JSON** (`FORMAT JSON`) or classic **text** `EXPLAIN` output. The field label and Show/Execute button titles switch based on a content sniff. Text plans stay stored as raw text; PEPS converts them to JSON on the fly only for diagram generation and Compare Plans.
+
+**Shape parity:** text EXPLAIN is normalized to the same operator-tree shape as `FORMAT JSON` (Node Type, Join Type, Parallel Aware, Aggregate Strategy, ModifyTable Operation, nesting). Text may omit extra JSON-only properties; the diagram icons and layout should still match. Offline converter tests always run; live Postgres shape checks (`ExplainFormatShapeParityTest`, `SqlitePlanFormatParityHarnessTest`) skip when the DB from SQLite connection fields is unreachable.
 
 ### Dev watch + run (recommended while coding)
 

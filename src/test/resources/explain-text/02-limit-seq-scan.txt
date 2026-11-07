@@ -1,0 +1,2 @@
+Limit  (cost=0.00..0.04 rows=1 width=273)
+  ->  Seq Scan on pg_class  (cost=0.00..14.56 rows=356 width=273)

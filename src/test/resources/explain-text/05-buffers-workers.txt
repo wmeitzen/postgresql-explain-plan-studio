@@ -1,0 +1,8 @@
+Gather  (cost=1000.00..1015.00 rows=100 width=4) (actual time=0.100..1.200 rows=100 loops=1)
+  Workers Planned: 2
+  Workers Launched: 2
+  ->  Parallel Seq Scan on big  (cost=0.00..10.00 rows=42 width=4) (actual time=0.020..0.400 rows=50 loops=2)
+        Filter: (flag = true)
+        Buffers: shared hit=12 read=3
+Planning Time: 0.200 ms
+Execution Time: 1.500 ms

@@ -44,11 +44,16 @@ import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 
 import com.williammeitzen.peps.model.Database;
+import com.williammeitzen.peps.model.ExplainTextPlanConverter;
+import com.williammeitzen.peps.model.ExplainTextPlanConverter.ExplainTextPlanConvertException;
+import com.williammeitzen.peps.model.PlanFormat;
 
 public class PlanSourcePanel extends JPanel {
 
-	public static final String SHOW_JSON_PLAN_DIAGRAM = "Show JSON Plan Diagram";
-	public static final String EXECUTE_AND_SHOW_PLAN_DIAGRAM = "Execute and Show Plan Diagram";
+	/** Stable action id (not the visible button caption). */
+	public static final String SHOW_JSON_PLAN_DIAGRAM = "SHOW_PLAN_DIAGRAM";
+	/** Stable action id (not the visible button caption). */
+	public static final String EXECUTE_AND_SHOW_PLAN_DIAGRAM = "EXECUTE_AND_SHOW_PLAN_DIAGRAM";
 	public static final String AUTH_USERNAME_PASSWORD = "Username/password";
 	public static final String AUTH_TRUST = "Trust / empty password";
 	/** Values stored in explain_plans.auth_type */
@@ -228,16 +233,19 @@ public class PlanSourcePanel extends JPanel {
 			public void insertUpdate(DocumentEvent e) {
 				clearJsonPlanErrorStyle();
 				setPlanTextIsDirty(true);
+				refreshPlanFormatChrome();
 			}
 
 			public void removeUpdate(DocumentEvent e) {
 				clearJsonPlanErrorStyle();
 				setPlanTextIsDirty(true);
+				refreshPlanFormatChrome();
 			}
 
 			public void changedUpdate(DocumentEvent e) {
 				clearJsonPlanErrorStyle();
 				setPlanTextIsDirty(true);
+				refreshPlanFormatChrome();
 			}
 
 		};
@@ -365,7 +373,7 @@ public class PlanSourcePanel extends JPanel {
 		//jsonPlanTextArea.addComponentListener(jsonPlanTextAreaListener);
 		jsonPlanTextArea.getDocument().addDocumentListener(jsonPlanTextAreaDocumentListener);
 
-		showPlanGraphButton = new JButton(SHOW_JSON_PLAN_DIAGRAM);
+		showPlanGraphButton = new JButton("Show JSON Plan Diagram");
 		showPlanGraphButton.setEnabled(false);
 		showPlanGraphButton.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
@@ -399,7 +407,7 @@ public class PlanSourcePanel extends JPanel {
 
 		};
 
-		planSourceFromQueryButton = new JButton(EXECUTE_AND_SHOW_PLAN_DIAGRAM);
+		planSourceFromQueryButton = new JButton("Execute and Show Plan Diagram");
 		planSourceFromQueryButton.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
 				boolean bolShowProperties = false;
@@ -459,6 +467,7 @@ public class PlanSourcePanel extends JPanel {
 		//okBtn.setMnemonic(KeyEvent.VK_O); // underlines "OK" but does not press "OK". Why?
 		
 		layoutComponents();
+		refreshPlanFormatChrome();
 	}
 	
 	public void setShowPlanGraphButton(boolean enable) {
@@ -837,6 +846,7 @@ public class PlanSourcePanel extends JPanel {
 	public void setJsonPlanText(String planText) {
 		//this.jsonText = planText;
 		jsonPlanTextArea.setText(planText == null ? "" : planText);
+		refreshPlanFormatChrome();
 		FormPanel formPanel = findFormPanel();
 		if (formPanel != null) {
 			formPanel.updatePlanDiagramTabEnabled();
@@ -845,13 +855,48 @@ public class PlanSourcePanel extends JPanel {
 		}
 	}
 
-	/** True when the JSON plan field has content that can build a diagram. */
+	/** True when the plan field has JSON or text content that can build a diagram. */
 	public boolean hasUsableJsonPlan() {
 		if (jsonPlanShowingError) {
 			return false;
 		}
-		String json = normalizeJsonPlanText(getJsonPlanText());
-		return json != null && !json.isBlank();
+		PlanFormat format = sniffPlanFormat(getJsonPlanText());
+		return format == PlanFormat.JSON || format == PlanFormat.TEXT;
+	}
+
+	/** Update field label and Show/Execute button captions from sniffed plan content. */
+	public void refreshPlanFormatChrome() {
+		PlanFormat format = sniffPlanFormat(getJsonPlanText());
+		if (jsonPlanLabel != null) {
+			if (format == PlanFormat.TEXT) {
+				jsonPlanLabel.setText("Text plan:");
+			} else {
+				jsonPlanLabel.setText("JSON plan:");
+			}
+		}
+		if (showPlanGraphButton != null) {
+			showPlanGraphButton.setText(format == PlanFormat.TEXT
+					? "Show Text Plan Diagram"
+					: "Show JSON Plan Diagram");
+		}
+	}
+
+	public static PlanFormat sniffPlanFormat(String planText) {
+		return ExplainTextPlanConverter.sniff(planText);
+	}
+
+	/**
+	 * Resolve the plan field to a JSON array string for diagram construction.
+	 * JSON content is normalized; text EXPLAIN is converted on the fly.
+	 * Raw field contents are never replaced — callers use the return value only.
+	 */
+	public static String resolvePlanFieldToJson(String planText) throws ExplainTextPlanConvertException {
+		String resolved = ExplainTextPlanConverter.resolveToJsonArrayString(planText);
+		if (resolved == null || resolved.isBlank()) {
+			throw new ExplainTextPlanConvertException(
+					"Plan field is empty or not recognized as JSON or text EXPLAIN.");
+		}
+		return resolved;
 	}
 
 	/** Show an execute/connection error in the JSON plan field and pulse the border once. */

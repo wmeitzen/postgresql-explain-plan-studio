@@ -1,0 +1,8 @@
+Hash Join  (cost=1.22..2.45 rows=10 width=8) (actual time=0.050..0.055 rows=10 loops=1)
+  Hash Cond: (t1.id = t2.id)
+  ->  Seq Scan on t1  (cost=0.00..1.10 rows=10 width=4) (actual time=0.008..0.009 rows=10 loops=1)
+  ->  Hash  (cost=1.10..1.10 rows=10 width=4) (actual time=0.020..0.021 rows=10 loops=1)
+        Buckets: 1024  Batches: 1  Memory Usage: 9kB
+        ->  Seq Scan on t2  (cost=0.00..1.10 rows=10 width=4) (actual time=0.004..0.006 rows=10 loops=1)
+Planning Time: 0.150 ms
+Execution Time: 0.090 ms

@@ -1,0 +1,4 @@
+Nested Loop  (cost=0.29..16.33 rows=10 width=8)
+  ->  Seq Scan on t1  (cost=0.00..1.10 rows=10 width=4)
+  ->  Index Scan using t2_pkey on t2  (cost=0.29..1.51 rows=1 width=4)
+        Index Cond: (id = t1.id)
