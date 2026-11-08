@@ -46,10 +46,21 @@ public final class ExplainTextPlanConverter {
 			"^\\s*Recheck Cond:\\s*(.+)$", Pattern.CASE_INSENSITIVE);
 	private static final Pattern SORT_KEY = Pattern.compile(
 			"^\\s*Sort Key:\\s*(.+)$", Pattern.CASE_INSENSITIVE);
+	private static final Pattern PRESORTED_KEY = Pattern.compile(
+			"^\\s*Presorted Key:\\s*(.+)$", Pattern.CASE_INSENSITIVE);
 	private static final Pattern SORT_METHOD = Pattern.compile(
 			"^\\s*Sort Method:\\s*(.+)$", Pattern.CASE_INSENSITIVE);
 	private static final Pattern GROUP_KEY = Pattern.compile(
 			"^\\s*Group Key:\\s*(.+)$", Pattern.CASE_INSENSITIVE);
+	/**
+	 * Incremental Sort text line, e.g.
+	 * {@code Full-sort Groups: 1  Sort Method: quicksort  Average Memory: 27kB  Peak Memory: 27kB}
+	 */
+	private static final Pattern SORT_GROUPS = Pattern.compile(
+			"(?i)^\\s*(Full-sort Groups|Pre-sorted Groups):\\s*(\\d+)"
+					+ "(?:\\s+Sort Method(?:s)?:\\s*(.+?)(?=\\s+Average Memory:|\\s+Peak Memory:|$))?"
+					+ "(?:\\s+Average Memory:\\s*([\\d.]+)\\s*kB)?"
+					+ "(?:\\s+Peak Memory:\\s*([\\d.]+)\\s*kB)?\\s*$");
 	private static final Pattern INIT_PLAN = Pattern.compile(
 			"^\\s*InitPlan\\s+(\\d+)\\s*\\((.+)\\)\\s*$", Pattern.CASE_INSENSITIVE);
 	private static final Pattern SUB_PLAN = Pattern.compile(
@@ -804,6 +815,21 @@ public final class ExplainTextPlanConverter {
 			node.put("Sort Key", keys);
 			return;
 		}
+		Matcher presortedKey = PRESORTED_KEY.matcher(body);
+		if (presortedKey.matches()) {
+			JsonArray keys = new JsonArray();
+			for (String part : splitCommaArgs(presortedKey.group(1))) {
+				keys.add(part);
+			}
+			node.put("Presorted Key", keys);
+			return;
+		}
+		Matcher sortGroups = SORT_GROUPS.matcher(body);
+		if (sortGroups.matches()) {
+			putSortGroupsObject(node, sortGroups.group(1), sortGroups.group(2),
+					sortGroups.group(3), sortGroups.group(4), sortGroups.group(5));
+			return;
+		}
 		Matcher groupKey = GROUP_KEY.matcher(body);
 		if (groupKey.matches()) {
 			JsonArray keys = new JsonArray();
@@ -812,6 +838,43 @@ public final class ExplainTextPlanConverter {
 			}
 			node.put("Group Key", keys);
 		}
+	}
+
+	/**
+	 * Build JSON-shaped {@code Full-sort Groups} / {@code Pre-sorted Groups} objects
+	 * so properties expand like FORMAT JSON.
+	 */
+	private static void putSortGroupsObject(JsonObject node, String groupKey, String groupCount,
+			String sortMethods, String averageMemoryKb, String peakMemoryKb) {
+		JsonObject groups = new JsonObject();
+		groups.put("Group Count", Long.valueOf(groupCount));
+		if (sortMethods != null && !sortMethods.isBlank()) {
+			JsonArray methods = new JsonArray();
+			for (String part : splitCommaArgs(sortMethods.trim())) {
+				if (!part.isBlank()) {
+					methods.add(part.trim());
+				}
+			}
+			if (!methods.isEmpty()) {
+				groups.put("Sort Methods Used", methods);
+			}
+		}
+		if ((averageMemoryKb != null && !averageMemoryKb.isBlank())
+				|| (peakMemoryKb != null && !peakMemoryKb.isBlank())) {
+			JsonObject memory = new JsonObject();
+			if (averageMemoryKb != null && !averageMemoryKb.isBlank()) {
+				memory.put("Average Sort Space Used", Double.valueOf(averageMemoryKb));
+			}
+			if (peakMemoryKb != null && !peakMemoryKb.isBlank()) {
+				memory.put("Peak Sort Space Used", Double.valueOf(peakMemoryKb));
+			}
+			groups.put("Sort Space Memory", memory);
+		}
+		// Normalize key casing to match FORMAT JSON
+		String key = groupKey.regionMatches(true, 0, "Full-sort", 0, 9)
+				? "Full-sort Groups"
+				: "Pre-sorted Groups";
+		node.put(key, groups);
 	}
 
 	private static void putIfMatch(JsonObject node, String body, Pattern pattern, String jsonKey) {

@@ -136,7 +136,8 @@ public class OperationPropertiesPanel extends JTable {
 					return;
 				}
 				String propertyName = property.toString();
-				if (PlanGraphPanel.isExpressionListProperty(propertyName)) {
+				if (PlanGraphPanel.isExpressionListProperty(propertyName)
+						|| PlanGraphPanel.isSortGroupProperty(propertyName)) {
 					toggleExpandedList(propertyName);
 				} else if ("Workers".equals(propertyName)) {
 					toggleWorkersExpanded();
@@ -147,6 +148,10 @@ public class OperationPropertiesPanel extends JTable {
 						if ((valueText.startsWith("▼ ") || valueText.startsWith("▲ "))
 								&& valueText.contains(" worker")) {
 							toggleWorkersExpanded();
+						} else if ((valueText.startsWith("▼ ") || valueText.startsWith("▲ "))
+								&& valueText.contains(" group")
+								&& PlanGraphPanel.isSortGroupProperty(propertyName)) {
+							toggleExpandedList(propertyName);
 						}
 					}
 				}
@@ -175,6 +180,9 @@ public class OperationPropertiesPanel extends JTable {
 	private void applyExpandAll() {
 		expandedLists.clear();
 		for (String name : PlanGraphPanel.EXPRESSION_LIST_PROPERTIES) {
+			expandedLists.add(name);
+		}
+		for (String name : PlanGraphPanel.SORT_GROUP_PROPERTIES) {
 			expandedLists.add(name);
 		}
 		workersExpanded = true;
@@ -280,7 +288,8 @@ public class OperationPropertiesPanel extends JTable {
 		}
 		return valueText.contains(" column")
 				|| valueText.contains(" key")
-				|| valueText.contains(" worker");
+				|| valueText.contains(" worker")
+				|| valueText.contains(" group");
 	}
 
 	private static String escapeHtml(String text) {

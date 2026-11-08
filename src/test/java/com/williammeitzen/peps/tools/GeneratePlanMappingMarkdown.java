@@ -197,7 +197,7 @@ public final class GeneratePlanMappingMarkdown {
 				south.set(south.size() - 1, line2 + " " + asAlias);
 			}
 		} else if (nodeType != null && (nodeType.equalsIgnoreCase("Hash Join")
-				|| nodeType.matches("(?i)Hash\\s+\\w+\\s+Join"))) {
+				|| nodeType.matches("(?i)(Parallel\\s+)?Hash(\\s+\\w+)?\\s+Join"))) {
 			if (nodeType.equalsIgnoreCase("Hash Join") && joinType != null && !joinType.isBlank()) {
 				south.add("(" + joinType + " Join)");
 			}
@@ -208,8 +208,21 @@ public final class GeneratePlanMappingMarkdown {
 				south.add("Filter: " + stripCastsLight(joinFilter));
 			}
 			appendRowsRemovedIfPositive(south, rowsRemovedJoin, "removed by join filter");
+		} else if (nodeType != null && (nodeType.equalsIgnoreCase("Merge Join")
+				|| nodeType.matches("(?i)(Parallel\\s+)?Merge(\\s+\\w+)?\\s+Join"))) {
+			String mergeCond = prop(props, "Merge Cond");
+			if (nodeType.equalsIgnoreCase("Merge Join") && joinType != null && !joinType.isBlank()) {
+				south.add("(" + joinType + " Join)");
+			}
+			if (mergeCond != null && !mergeCond.isBlank()) {
+				south.add("Merge cond: " + stripCastsLight(mergeCond));
+			}
+			if (joinFilter != null && !joinFilter.isBlank()) {
+				south.add("Filter: " + stripCastsLight(joinFilter));
+			}
+			appendRowsRemovedIfPositive(south, rowsRemovedJoin, "removed by join filter");
 		} else if (nodeType != null && (nodeType.equalsIgnoreCase("Nested Loop")
-				|| nodeType.matches("(?i)Nested Loop(\\s+\\w+\\s+Join)?"))) {
+				|| nodeType.matches("(?i)(Parallel\\s+)?Nested Loop(\\s+\\w+\\s+Join)?"))) {
 			if (nodeType.equalsIgnoreCase("Nested Loop") && joinType != null && !joinType.isBlank()) {
 				south.add("(" + joinType + " Join)");
 			}
@@ -262,6 +275,12 @@ public final class GeneratePlanMappingMarkdown {
 					south.add(peakMem + " RAM used");
 				}
 			}
+		} else if (nodeType != null && (nodeType.equalsIgnoreCase("Incremental Sort")
+				|| nodeType.matches("(?i)Parallel\\s+Incremental Sort"))) {
+			String presortedLine = presortedBySouthLine(props.get("Presorted Key"));
+			if (presortedLine != null) {
+				south.add(presortedLine);
+			}
 		} else if (nodeType != null && (nodeType.equalsIgnoreCase("Seq Scan")
 				|| nodeType.equalsIgnoreCase("Sample Scan")
 				|| nodeType.matches("(?i)Parallel\\s+Seq Scan"))) {
@@ -304,6 +323,40 @@ public final class GeneratePlanMappingMarkdown {
 			return null;
 		}
 		return v;
+	}
+
+	/** Mirror PEPS Incremental Sort south: one key named, else {@code Presorted by N values}. */
+	private static String presortedBySouthLine(String serializedPresortedKey) {
+		if (serializedPresortedKey == null || serializedPresortedKey.isBlank()
+				|| "null".equalsIgnoreCase(serializedPresortedKey)) {
+			return null;
+		}
+		String raw = serializedPresortedKey.trim();
+		List<String> keys = new ArrayList<>();
+		if (raw.startsWith("[")) {
+			try {
+				Object parsed = Jsoner.deserialize(raw);
+				if (parsed instanceof JsonArray) {
+					for (Object item : (JsonArray) parsed) {
+						if (item != null) {
+							String s = String.valueOf(item).trim();
+							if (!s.isEmpty() && !"null".equalsIgnoreCase(s)) {
+								keys.add(s);
+							}
+						}
+					}
+				}
+			} catch (Exception ignored) {
+				// fall through to single-value handling
+			}
+		}
+		if (keys.isEmpty()) {
+			keys.add(stripCastsLight(raw));
+		}
+		if (keys.size() == 1) {
+			return "Presorted by " + stripCastsLight(keys.get(0));
+		}
+		return "Presorted by " + keys.size() + " values";
 	}
 
 	private static String stripCastsLight(String text) {

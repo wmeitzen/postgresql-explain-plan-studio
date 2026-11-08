@@ -114,6 +114,28 @@ class ExplainTextPlanConverterTest {
 	}
 
 	@Test
+	void parsesIncrementalSortFullSortGroupsAndPresortedKey() throws Exception {
+		JsonObject plan = planFromFixture("explain-text/10-incremental-sort-groups.txt");
+		assertEquals("Limit", plan.get("Node Type"));
+		JsonObject incremental = (JsonObject) ((JsonArray) plan.get("Plans")).get(0);
+		assertEquals("Incremental Sort", incremental.get("Node Type"));
+		JsonArray presorted = (JsonArray) incremental.get("Presorted Key");
+		assertNotNull(presorted);
+		assertEquals(1, presorted.size());
+		assertEquals("x.proname", presorted.get(0));
+		JsonObject fullSort = (JsonObject) incremental.get("Full-sort Groups");
+		assertNotNull(fullSort);
+		assertEquals(1L, ((Number) fullSort.get("Group Count")).longValue());
+		JsonArray methods = (JsonArray) fullSort.get("Sort Methods Used");
+		assertNotNull(methods);
+		assertEquals("quicksort", methods.get(0));
+		JsonObject memory = (JsonObject) fullSort.get("Sort Space Memory");
+		assertNotNull(memory);
+		assertEquals(27.0d, ((Number) memory.get("Average Sort Space Used")).doubleValue(), 0.0001);
+		assertEquals(27.0d, ((Number) memory.get("Peak Sort Space Used")).doubleValue(), 0.0001);
+	}
+
+	@Test
 	void parsesMemoizeCacheDetails() throws Exception {
 		JsonObject plan = planFromFixture("explain-text/08-memoize-cache.txt");
 		JsonObject memoize = (JsonObject) ((JsonArray) plan.get("Plans")).get(1);

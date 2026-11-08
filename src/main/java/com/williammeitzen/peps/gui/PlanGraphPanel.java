@@ -2507,6 +2507,35 @@ from explain_plan_operator_annotations
 		return sb.toString();
 	}
 
+	/**
+	 * Incremental Sort south line from Presorted Key children.
+	 * One key → {@code Presorted by x.proname}; several → {@code Presorted by 3 values}.
+	 */
+	private String presortedBySouthLine(int idExplainPlan, int idExplainPlanProperty) {
+		String strSQL = "select ITEM.operator_name as key_expr\n"
+				+ "from explain_plan_properties as LIST_PROP\n"
+				+ "inner join explain_plan_properties as ITEM on LIST_PROP.id_explain_plan = ITEM.id_explain_plan\n"
+				+ "  and LIST_PROP.id_explain_plan_property = ITEM.parent_id_explain_plan_property\n"
+				+ "where LIST_PROP.id_explain_plan = " + idExplainPlan + "\n"
+				+ "and LIST_PROP.parent_id_explain_plan_property = " + idExplainPlanProperty + "\n"
+				+ "and LIST_PROP.operator_name = 'Presorted Key'\n"
+				+ "order by ITEM.id_explain_plan_property\n";
+		JsonArray rows = Database.rows(strSQL);
+		if (rows == null || rows.isEmpty()) {
+			return "";
+		}
+		if (rows.size() == 1) {
+			String key = ((JsonObject) rows.get(0)).getString("key_expr");
+			if (key == null || key.isBlank()) {
+				return "";
+			}
+			key = removeDatatypes(key);
+			key = removeParenthesis(key);
+			return prefaceAndTruncate("Presorted by ", key, 40);
+		}
+		return "Presorted by " + rows.size() + " values";
+	}
+
 	/** Prefer join-filter removals when present; else filter / index-recheck phrasing. */
 	private String rowsRemovedSouthLine(Double filter, boolean filterExact,
 			Double joinFilter, boolean joinExact,
@@ -2749,7 +2778,8 @@ from explain_plan_operator_annotations
 						else
 							strSouth2Text += " used";
 					}
-				} else if (strNodeType.equals("Hash Join") == true || strNodeType.matches("(?i)Hash\\s+\\w+\\s+Join")) {
+				} else if (strNodeType.equals("Hash Join") == true
+						|| strNodeType.matches("(?i)(Parallel\\s+)?Hash(\\s+\\w+)?\\s+Join")) {
 					if (!isTextNativeNodeTypeLabel(strNodeType)) {
 						strSouth2Text = jsnObject.getString("join_type");
 						strSouth2Text = "(" + strSouth2Text + " Join)";
@@ -2765,6 +2795,7 @@ from explain_plan_operator_annotations
 								dblRowsRemovedByJoinFilter, bolRowsRemovedByJoinFilterIsExact,
 								dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
 					} else {
+						// e.g. "Parallel Hash Anti Join" — Hash Cond if present
 						strSouth2Text = jsnObject.getString("hash_cond");
 						strSouth2Text = removeDatatypes(strSouth2Text);
 						strSouth2Text = removeParenthesis(strSouth2Text);
@@ -2799,6 +2830,12 @@ from explain_plan_operator_annotations
 						strSouth4Text = removed;
 						strSouth5Text = strIndexName;
 					}
+				} else if (strNodeType.equals("Incremental Sort") == true
+						|| strNodeType.matches("(?i)Parallel\\s+Incremental Sort")) {
+					Integer idProp = jsnObject.getInteger("id_explain_plan_property");
+					if (idProp != null) {
+						strSouth2Text = presortedBySouthLine(intIDExplainPlan, idProp.intValue());
+					}
 				} else if (strNodeType.equals("Limit") == true) {
 					if (strSubplanName != null) strSouth2Text = strSubplanName;
 				} else if (strNodeType.equals("LockRows") == true) {
@@ -2814,7 +2851,8 @@ from explain_plan_operator_annotations
 						strSouth3Text = Utils.kilobytes(Double.parseDouble(strPeakMemoryUsage)) + " RAM used";
 					}
 				} else if (strNodeType.equals("Merge Append") == true) {
-				} else if (strNodeType.equals("Merge Join") == true || strNodeType.matches("(?i)Merge\\s+\\w+\\s+Join")) {
+				} else if (strNodeType.equals("Merge Join") == true
+						|| strNodeType.matches("(?i)(Parallel\\s+)?Merge(\\s+\\w+)?\\s+Join")) {
 					if (!isTextNativeNodeTypeLabel(strNodeType)) {
 						strSouth2Text = jsnObject.getString("join_type");
 						strSouth2Text = "(" + strSouth2Text + " Join)";
@@ -2830,6 +2868,7 @@ from explain_plan_operator_annotations
 								dblRowsRemovedByJoinFilter, bolRowsRemovedByJoinFilterIsExact,
 								dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
 					} else {
+						// Merge Cond if present (e.g. plain or Parallel Merge … Join)
 						strSouth2Text = jsnObject.getString("merge_cond");
 						strSouth2Text = removeDatatypes(strSouth2Text);
 						strSouth2Text = removeParenthesis(strSouth2Text);
@@ -6370,8 +6409,8 @@ order by id_explain_plan_property;
 			return false;
 		}
 		String t = nodeType.trim();
-		return t.matches("(?i)Nested Loop\\s+(Inner|Left|Right|Full|Semi|Anti)\\s+Join")
-				|| t.matches("(?i)(Hash|Merge)\\s+(Inner|Left|Right|Full|Semi|Anti)\\s+Join")
+		return t.matches("(?i)(Parallel\\s+)?Nested Loop\\s+(Inner|Left|Right|Full|Semi|Anti)\\s+Join")
+				|| t.matches("(?i)(Parallel\\s+)?(Hash|Merge)\\s+(Inner|Left|Right|Full|Semi|Anti)\\s+Join")
 				|| t.matches("(?i)Parallel\\s+.+")
 				|| t.matches("(?i)(Hash|Group|Mixed)Aggregate")
 				|| t.matches("(?i)(Partial|Finalize)\\s+(Hash|Group|Mixed)?\\s*Aggregate")
@@ -6481,11 +6520,31 @@ order by id_explain_plan_property;
 			"Output", "Group Key", "Sort Key", "Presorted Key"
 	};
 
+	/**
+	 * Incremental Sort nested group objects (Workers-style expandable in the properties grid).
+	 * Children are flattened on expand (Sort Space Memory avg/peak hoisted one level).
+	 */
+	public static final String[] SORT_GROUP_PROPERTIES = {
+			"Full-sort Groups", "Pre-sorted Groups"
+	};
+
 	public static boolean isExpressionListProperty(String propertyName) {
 		if (propertyName == null) {
 			return false;
 		}
 		for (String name : EXPRESSION_LIST_PROPERTIES) {
+			if (name.equals(propertyName)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	public static boolean isSortGroupProperty(String propertyName) {
+		if (propertyName == null) {
+			return false;
+		}
+		for (String name : SORT_GROUP_PROPERTIES) {
 			if (name.equals(propertyName)) {
 				return true;
 			}
@@ -6502,6 +6561,21 @@ order by id_explain_plan_property;
 
 	private static String sqlLiteral(String value) {
 		return "'" + value.replace("'", "''") + "'";
+	}
+
+	/**
+	 * SQL fragment: Workers-style count summary for a Full-sort / Pre-sorted Groups parent
+	 * ({@code 1 group} / {@code 4 groups}), using alias {@code EPP} for the group shell.
+	 */
+	private static String sortGroupSummarySql() {
+		return "coalesce((select GC.operator_value from explain_plan_properties as GC\n"
+				+ "  where GC.id_explain_plan = EPP.id_explain_plan\n"
+				+ "    and GC.parent_id_explain_plan_property = EPP.id_explain_plan_property\n"
+				+ "    and GC.operator_name = 'Group Count'), '0')\n"
+				+ "|| case when coalesce((select GC.operator_value from explain_plan_properties as GC\n"
+				+ "  where GC.id_explain_plan = EPP.id_explain_plan\n"
+				+ "    and GC.parent_id_explain_plan_property = EPP.id_explain_plan_property\n"
+				+ "    and GC.operator_name = 'Group Count'), '0') = '1' then ' group' else ' groups' end";
 	}
 
 	/**
@@ -6762,6 +6836,11 @@ order by id_explain_plan_property;
 			strSQL += "	when EPP.operator_name = " + sqlLiteral(listName) + " and LISTNUM.num_items = 1 then '" + caret + "(1 " + singular + ")'\n" +
 					"	when EPP.operator_name = " + sqlLiteral(listName) + " and LISTNUM.num_items is not null then '" + caret + "(' || cast(LISTNUM.num_items as varchar(10)) || ' " + plural + ")'\n";
 		}
+		for (String groupName : SORT_GROUP_PROPERTIES) {
+			String caret = expandedLists.contains(groupName) ? "▲ " : "▼ ";
+			strSQL += "	when EPP.operator_name = " + sqlLiteral(groupName) + " then '" + caret + "(' || ("
+					+ sortGroupSummarySql() + ") || ')'\n";
+		}
 		strSQL += "	else EPP.operator_value\n" + 
 				"end as operator_value\n" + 
 				"from explain_plan_properties as EPP\n" + 
@@ -6824,6 +6903,57 @@ order by id_explain_plan_property;
 					"and LIST_PROP.parent_id_explain_plan_property = " + intIDExplainPlanProperty + "\n" +
 					"and LIST_PROP.operator_name = " + sqlLiteral(listName) + "\n";
 		}
+		for (String groupName : SORT_GROUP_PROPERTIES) {
+			if (!expandedLists.contains(groupName)) {
+				continue;
+			}
+			// Group Count (scalar child)
+			strSQL += "UNION ALL\n" +
+					"select 0, " + propertySortKey + ",\n" +
+					"  GRP.operator_name || x'01' || printf('%010d', GRP.id_explain_plan_property)"
+					+ " || x'01' || '0001' || 'Group Count',\n" +
+					"  CHILD.operator_value\n" +
+					"from explain_plan_properties as GRP\n" +
+					"inner join explain_plan_properties as CHILD on GRP.id_explain_plan = CHILD.id_explain_plan\n" +
+					"  and GRP.id_explain_plan_property = CHILD.parent_id_explain_plan_property\n" +
+					"where GRP.id_explain_plan = " + idExplainPlan + "\n" +
+					"and GRP.parent_id_explain_plan_property = " + intIDExplainPlanProperty + "\n" +
+					"and GRP.operator_name = " + sqlLiteral(groupName) + "\n" +
+					"and CHILD.operator_name = 'Group Count'\n";
+			// Sort Methods Used → one row, methods comma-joined (Workers-style name/value)
+			strSQL += "UNION ALL\n" +
+					"select 0, " + propertySortKey + ",\n" +
+					"  GRP.operator_name || x'01' || printf('%010d', GRP.id_explain_plan_property)"
+					+ " || x'01' || '0002' || 'Sort Methods Used',\n" +
+					"  group_concat(METHOD.operator_name, ', ')\n" +
+					"from explain_plan_properties as GRP\n" +
+					"inner join explain_plan_properties as METHODS on GRP.id_explain_plan = METHODS.id_explain_plan\n" +
+					"  and GRP.id_explain_plan_property = METHODS.parent_id_explain_plan_property\n" +
+					"inner join explain_plan_properties as METHOD on METHODS.id_explain_plan = METHOD.id_explain_plan\n" +
+					"  and METHODS.id_explain_plan_property = METHOD.parent_id_explain_plan_property\n" +
+					"where GRP.id_explain_plan = " + idExplainPlan + "\n" +
+					"and GRP.parent_id_explain_plan_property = " + intIDExplainPlanProperty + "\n" +
+					"and GRP.operator_name = " + sqlLiteral(groupName) + "\n" +
+					"and METHODS.operator_name = 'Sort Methods Used'\n" +
+					"group by GRP.operator_name, GRP.id_explain_plan_property\n";
+			// Flatten Sort Space Memory: Average / Peak
+			strSQL += "UNION ALL\n" +
+					"select 0, " + propertySortKey + ",\n" +
+					"  GRP.operator_name || x'01' || printf('%010d', GRP.id_explain_plan_property)"
+					+ " || x'01' || case when MEMCHILD.operator_name = 'Average Sort Space Used' then '0003' else '0004' end"
+					+ " || MEMCHILD.operator_name,\n" +
+					"  MEMCHILD.operator_value\n" +
+					"from explain_plan_properties as GRP\n" +
+					"inner join explain_plan_properties as MEM on GRP.id_explain_plan = MEM.id_explain_plan\n" +
+					"  and GRP.id_explain_plan_property = MEM.parent_id_explain_plan_property\n" +
+					"inner join explain_plan_properties as MEMCHILD on MEM.id_explain_plan = MEMCHILD.id_explain_plan\n" +
+					"  and MEM.id_explain_plan_property = MEMCHILD.parent_id_explain_plan_property\n" +
+					"where GRP.id_explain_plan = " + idExplainPlan + "\n" +
+					"and GRP.parent_id_explain_plan_property = " + intIDExplainPlanProperty + "\n" +
+					"and GRP.operator_name = " + sqlLiteral(groupName) + "\n" +
+					"and MEM.operator_name = 'Sort Space Memory'\n" +
+					"and MEMCHILD.operator_name in ('Average Sort Space Used', 'Peak Sort Space Used')\n";
+		}
 		if (expandWorkers) {
 			// Sort under Workers, then by each worker parent (PAR.id), Worker Number first within worker
 			strSQL += "UNION ALL\n" + 
@@ -6877,6 +7007,12 @@ order by id_explain_plan_property;
 						&& isExpressionListProperty(operatorName.substring(0, operatorName.indexOf('\u0001')))) {
 					// Expanded Output / Group Key / Sort Key / Presorted Key child → Value column
 					aryReturn[intNewRow][0] = null;
+					aryReturn[intNewRow][1] = operatorValue;
+				} else if (operatorName != null && operatorName.indexOf('\u0001') > 0
+						&& isSortGroupProperty(operatorName.substring(0, operatorName.indexOf('\u0001')))) {
+					// Strip: GroupName + SOH + 10-digit id + SOH + 4-digit order + field name
+					int secondSoh = operatorName.indexOf('\u0001', operatorName.indexOf('\u0001') + 1);
+					aryReturn[intNewRow][0] = "  " + operatorName.substring(secondSoh + 5);
 					aryReturn[intNewRow][1] = operatorValue;
 				} else if (operatorName != null && operatorName.startsWith("Workers\u0001")) {
 					// Strip sort prefix: Workers + SOH + 10-digit parent id + SOH + 4-digit order

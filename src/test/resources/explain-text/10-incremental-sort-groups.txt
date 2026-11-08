@@ -1,0 +1,16 @@
+Limit  (cost=0.50..866.92 rows=2 width=72) (actual time=1.193..1.194 rows=2.00 loops=1)
+  Output: oid, proname, pronamespace
+  Buffers: shared hit=9 read=13
+  ->  Incremental Sort  (cost=0.50..866.91 rows=4116 width=72) (actual time=1.191..1.192 rows=2.00 loops=1)
+        Output: oid, proname, pronamespace
+        Sort Key: x.proname, x.oid, x.pronamespace
+        Presorted Key: x.proname
+        Full-sort Groups: 1  Sort Method: quicksort  Average Memory: 27kB  Peak Memory: 27kB
+        Buffers: shared hit=9 read=13
+        ->  Index Scan using pg_proc_proname_args_nsp_index on pg_catalog.pg_proc x  (cost=0.28..707.66 rows=4116 width=72) (actual time=0.014..0.104 rows=33.00 loops=1)
+              Output: x.oid, x.proname, x.pronamespace
+              Filter: (x.proname !~~ '\_%'::text)
+              Rows Removed by Filter: 11
+              Buffers: shared hit=9 read=13
+Planning Time: 0.200 ms
+Execution Time: 1.250 ms
