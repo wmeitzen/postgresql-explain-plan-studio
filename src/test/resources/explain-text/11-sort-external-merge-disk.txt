@@ -1,0 +1,6 @@
+Sort  (cost=100.00..100.01 rows=1 width=4) (actual time=1.000..1.001 rows=1.00 loops=1)
+  Sort Key: x
+  Sort Method: external merge  Disk: 31120kB
+  ->  Result  (cost=0.00..0.01 rows=1 width=4) (actual time=0.001..0.001 rows=1.00 loops=1)
+Planning Time: 0.100 ms
+Execution Time: 1.200 ms

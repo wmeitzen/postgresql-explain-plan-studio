@@ -2703,7 +2703,8 @@ from explain_plan_operator_annotations
 				strSubplanName = jsnObject.getString("subplan_name");
 				if (strAlias == null)
 					strAlias = "";
-				if (strAlias != null && strRelationName != null && strAlias.matches(strRelationName) == true) {
+				// Literal compare — relation names like *VALUES* are not regexes (matches() would throw).
+				if (strAlias != null && strRelationName != null && strAlias.equalsIgnoreCase(strRelationName)) {
 					strAlias = "";
 				}
 				if (strAlias != "") { strAlias = "as " + strAlias; }
@@ -2963,19 +2964,21 @@ from explain_plan_operator_annotations
 					if (jsnObject.getString("sort_space_type") != null)
 						strSouth1Text = jsnObject.getString("sort_space_type") + " " + strSouth1Text;
 					strSouth2Text = jsnObject.getString("sort_space_used");
-					if (strSouth2Text == null) {
+					if (strSouth2Text == null || strSouth2Text.isEmpty()) {
 						strSouth2Text = "";
-					} else if (strSouth2Text != "") {
+					} else {
 						strSouth2Text = Utils.kilobytes(Double.parseDouble(strSouth2Text)); // it's in kb, not pages
 						strSouth2Text += " ";
-						if (jsnObject.getString("sort_space_type").equalsIgnoreCase("Memory") == true) {
+						if (jsnObject.getString("sort_space_type") != null
+								&& jsnObject.getString("sort_space_type").equalsIgnoreCase("Memory")) {
 							strSouth2Text += "RAM";
 						} else {
 							strSouth2Text += "space";
 						}
 						strSouth2Text += " used";
-						if (jsnObject.getString("sort_method") != null)
-							strSouth3Text = jsnObject.getString("sort_method");
+					}
+					if (jsnObject.getString("sort_method") != null) {
+						strSouth3Text = jsnObject.getString("sort_method");
 					}
 				} else if (strNodeType.equals("Subquery Scan") == true) {
 					strSouth2Text = strAlias;
@@ -4876,9 +4879,8 @@ order by id_explain_plan_property;
 			iconFileName = "ex_group.svg";
 		} else if (nodeType.equalsIgnoreCase("hash") == true) {
 			iconFileName = "ex_hash.svg";
-		} else if (nodeType.equalsIgnoreCase("hash join") == true && joinType.equalsIgnoreCase("anti") == true) {
-			iconFileName = "ex_hash_anti_join.svg";
-		} else if (nodeType.equalsIgnoreCase("hash join") == true && (joinType.equalsIgnoreCase("full") == true || joinType.equalsIgnoreCase("inner") == true)) {
+		} else if (nodeType.equalsIgnoreCase("hash join") == true && (joinType.equalsIgnoreCase("full") == true || joinType.equalsIgnoreCase("inner") == true || joinType.equalsIgnoreCase("anti") == true)) {
+			// Parallel Hash Anti Join / Hash Anti Join share Parallel Hash Join's icon
 			iconFileName = "ex_join.svg";
 		} else if (nodeType.equalsIgnoreCase("hash join") == true && (joinType.equalsIgnoreCase("left") == true || joinType.equalsIgnoreCase("right") == true || joinType.equalsIgnoreCase("semi") == true)) {
 			iconFileName = "ex_hash_semi_join.svg";

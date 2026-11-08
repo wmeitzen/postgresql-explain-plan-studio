@@ -48,8 +48,13 @@ public final class ExplainTextPlanConverter {
 			"^\\s*Sort Key:\\s*(.+)$", Pattern.CASE_INSENSITIVE);
 	private static final Pattern PRESORTED_KEY = Pattern.compile(
 			"^\\s*Presorted Key:\\s*(.+)$", Pattern.CASE_INSENSITIVE);
-	private static final Pattern SORT_METHOD = Pattern.compile(
-			"^\\s*Sort Method:\\s*(.+)$", Pattern.CASE_INSENSITIVE);
+	/**
+	 * Text packs space into the Sort Method line, e.g.
+	 * {@code Sort Method: external merge  Disk: 31120kB} or
+	 * {@code Sort Method: quicksort  Memory: 25kB}. JSON keeps Method / Space Type / Used separate.
+	 */
+	private static final Pattern SORT_METHOD_LINE = Pattern.compile(
+			"(?i)^\\s*Sort Method:\\s*(.+?)(?:\\s+(Memory|Disk):\\s*([\\d.]+)\\s*kB)?\\s*$");
 	private static final Pattern GROUP_KEY = Pattern.compile(
 			"^\\s*Group Key:\\s*(.+)$", Pattern.CASE_INSENSITIVE);
 	/**
@@ -751,7 +756,9 @@ public final class ExplainTextPlanConverter {
 		putExpressionIfMatch(node, body, FILTER, "Filter");
 		putExpressionIfMatch(node, body, INDEX_COND, "Index Cond");
 		putExpressionIfMatch(node, body, RECHECK_COND, "Recheck Cond");
-		putIfMatch(node, body, SORT_METHOD, "Sort Method");
+		if (putSortMethodLine(node, body)) {
+			return;
+		}
 		putIfMatch(node, body, CTE_SCAN_NAME, "CTE Name");
 		putBooleanIfMatch(node, body, INNER_UNIQUE, "Inner Unique");
 		putBooleanIfMatch(node, body, OUTER_UNIQUE, "Outer Unique");
@@ -882,6 +889,28 @@ public final class ExplainTextPlanConverter {
 		if (m.matches()) {
 			node.put(jsonKey, m.group(1).trim());
 		}
+	}
+
+	/** Split text {@code Sort Method: … Memory/Disk: NNkB} into JSON sibling fields. */
+	private static boolean putSortMethodLine(JsonObject node, String body) {
+		Matcher m = SORT_METHOD_LINE.matcher(body);
+		if (!m.matches()) {
+			return false;
+		}
+		String method = m.group(1) == null ? "" : m.group(1).trim();
+		if (!method.isEmpty()) {
+			node.put("Sort Method", method);
+		}
+		if (m.group(2) != null && m.group(3) != null) {
+			String spaceType = m.group(2);
+			if (spaceType.equalsIgnoreCase("Memory")) {
+				node.put("Sort Space Type", "Memory");
+			} else {
+				node.put("Sort Space Type", "Disk");
+			}
+			node.put("Sort Space Used", Double.valueOf(m.group(3)));
+		}
+		return true;
 	}
 
 	/** Store expression properties with Postgres type casts removed (including {@code ::"char"}). */

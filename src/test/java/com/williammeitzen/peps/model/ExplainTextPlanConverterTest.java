@@ -114,6 +114,15 @@ class ExplainTextPlanConverterTest {
 	}
 
 	@Test
+	void parsesSortMethodDiskIntoJsonSiblingFields() throws Exception {
+		JsonObject plan = planFromFixture("explain-text/11-sort-external-merge-disk.txt");
+		assertEquals("Sort", plan.get("Node Type"));
+		assertEquals("external merge", plan.get("Sort Method"));
+		assertEquals("Disk", plan.get("Sort Space Type"));
+		assertEquals(31120.0d, ((Number) plan.get("Sort Space Used")).doubleValue(), 0.0001);
+	}
+
+	@Test
 	void parsesIncrementalSortFullSortGroupsAndPresortedKey() throws Exception {
 		JsonObject plan = planFromFixture("explain-text/10-incremental-sort-groups.txt");
 		assertEquals("Limit", plan.get("Node Type"));
