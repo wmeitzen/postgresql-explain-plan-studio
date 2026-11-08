@@ -6,7 +6,7 @@
 
   <groupId>com.williammeitzen</groupId>
   <artifactId>postgresql-explain-plan-studio</artifactId>
-  <version>0.0.12</version>
+  <version>0.0.13</version>
   <name>PostgreSQL Explain Plan Studio</name>
   <description>Graphical PostgreSQL EXPLAIN plan studio.</description>
   <url>https://github.com/wmeitzen/postgresql-explain-plan-studio</url>
@@ -30,7 +30,7 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.release>17</maven.compiler.release>
     <main.class>com.williammeitzen.peps.PostgreSQLExplainPlanStudio</main.class>
-    <jpackage.appVersion>0.0.12</jpackage.appVersion>
+    <jpackage.appVersion>0.0.13</jpackage.appVersion>
     <jpackage.appName>PostgreSQLExplainPlanStudio</jpackage.appName>
     <jpackage.vendor>William Meitzen</jpackage.vendor>
     <jpackage.description>PostgreSQL Explain Plan Studio</jpackage.description>
