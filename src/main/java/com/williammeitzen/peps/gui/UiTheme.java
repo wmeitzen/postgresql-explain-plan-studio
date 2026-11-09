@@ -77,14 +77,14 @@ public final class UiTheme {
 
 		public static Scheme fromId(String id) {
 			if (id == null || id.isBlank()) {
-				return DEFAULT;
+				return DARK;
 			}
 			for (Scheme scheme : values()) {
 				if (scheme.id.equalsIgnoreCase(id.trim())) {
 					return scheme;
 				}
 			}
-			return DEFAULT;
+			return DARK;
 		}
 	}
 
@@ -100,19 +100,19 @@ public final class UiTheme {
 		} catch (Exception ignored) {
 			// Column may not exist yet during very early init
 		}
-		return Scheme.DEFAULT;
+		return Scheme.DARK;
 	}
 
 	public static void saveScheme(Scheme scheme) {
 		if (scheme == null) {
-			scheme = Scheme.DEFAULT;
+			scheme = Scheme.DARK;
 		}
 		Database.dml("update config set color_scheme = '" + scheme.id() + "';");
 	}
 
 	public static void apply(Scheme scheme) {
 		if (scheme == null) {
-			scheme = Scheme.DEFAULT;
+			scheme = Scheme.DARK;
 		}
 		// Developer UIManager.put() values survive LAF swaps — clear Dark leftovers first.
 		clearChromeOverrides();

@@ -10,7 +10,9 @@
      and copies the linux-x64 zip back
   4) Creates/uploads the GitHub release (private repos OK when `gh auth login` is done)
 
-  Default Ubuntu SSH target: administrator@192.168.163.154
+  Default Ubuntu SSH target: administrator@192.168.163.156 (Ubuntu 20.04 release VM).
+  Day-to-day RECOMPILENOW sync stays on the newer VM (e.g. 154); Linux jpackage
+  must build on 20.04 so the zip runs on Ubuntu 20.04+ desktop.
   Override with -UbuntuSsh, $env:PEPS_UBUNTU_SSH, or scripts/dev-release.local.ps1
   ($PepsUbuntuSsh / $PepsLastVersion). After each confirmed run, the chosen SSH
   target and release version are saved to scripts/dev-release.local.ps1 (gitignored).
@@ -23,7 +25,7 @@
   Release version like 0.0.9 (without a leading v). Prompted if omitted.
 
 .PARAMETER UbuntuSsh
-  SSH target for the Ubuntu VM (default: administrator@192.168.163.154)
+  SSH target for the Ubuntu 20.04 release VM (default: administrator@192.168.163.156)
 
 .PARAMETER UbuntuLocalRepo
   Path on the VM for the local build tree (default: ~/peps)
@@ -136,7 +138,7 @@ function Get-DefaultUbuntuSsh {
 	if (-not [string]::IsNullOrWhiteSpace($PepsUbuntuSsh)) {
 		return $PepsUbuntuSsh.Trim()
 	}
-	return "administrator@192.168.163.154"
+	return "administrator@192.168.163.156"
 }
 
 function Get-NextPatchVersion {
@@ -372,13 +374,27 @@ HOST_REPO='$HostRepo'
 LOCAL_REPO='$LocalRepo'
 ZIP_NAME='$ZipName'
 PATH_FILE='$remotePathFile'
+MAX_GLIBC='2.31'
 case "`$LOCAL_REPO" in
   "~") LOCAL_REPO="`$HOME" ;;
   "~/"*) LOCAL_REPO="`$HOME/`${LOCAL_REPO#~/}" ;;
 esac
+
+# Linux releases must build on Ubuntu 20.04 so the zip runs on 20.04+ (glibc floor).
+if [[ -r /etc/os-release ]]; then
+  # shellcheck disable=SC1091
+  . /etc/os-release
+fi
+if [[ "`${VERSION_ID:-}" != "20.04" ]]; then
+  echo "Refusing Linux jpackage on this host: need Ubuntu 20.04, got '`${PRETTY_NAME:-unknown}' (VERSION_ID=`${VERSION_ID:-?})." >&2
+  echo "Point -UbuntuSsh / scripts/dev-release.local.ps1 at the Ubuntu 20.04 release VM (not the newer sync VM)." >&2
+  exit 1
+fi
+
 if [[ ! -f "`$HOST_REPO/pom.xml" ]]; then
   echo "Host share missing pom.xml at `$HOST_REPO" >&2
-  echo "Check VMware shared folders / mount (/mnt/hgfs)." >&2
+  echo "Check VMware shared folders / mount (/mnt/hgfs). Remount if needed:" >&2
+  echo "  sudo mkdir -p /mnt/hgfs && sudo vmhgfs-fuse .host:/ /mnt/hgfs -o subtype=vmhgfs-fuse,allow_other" >&2
   exit 1
 fi
 mkdir -p "`$LOCAL_REPO"
@@ -393,6 +409,24 @@ chmod +x mvnw scripts/*.sh 2>/dev/null || true
 ./mvnw -P jpackage -DskipTests verify
 test -f "target/`$ZIP_NAME"
 ZIP_ABS="`$(pwd)/target/`$ZIP_NAME"
+
+# Fail if the launcher needs a newer glibc than Ubuntu 20.04 (e.g. wrong build host).
+LAUNCHER="target/jpackage/PostgreSQLExplainPlanStudio/bin/PostgreSQLExplainPlanStudio"
+if [[ ! -x "`$LAUNCHER" ]]; then
+  echo "Missing jpackage launcher: `$LAUNCHER" >&2
+  exit 1
+fi
+FLOOR=`$(objdump -T "`$LAUNCHER" 2>/dev/null | grep -oE 'GLIBC_[0-9.]+' | sed 's/GLIBC_//' | sort -uV | tail -1 || true)
+if [[ -z "`$FLOOR" ]]; then
+  echo "Could not determine glibc floor from `$LAUNCHER" >&2
+  exit 1
+fi
+echo "Measured launcher glibc floor: `$FLOOR (ceiling `$MAX_GLIBC for Ubuntu 20.04)"
+if [[ "`$(printf '%s\n%s\n' "`$MAX_GLIBC" "`$FLOOR" | sort -V | tail -1)" != "`$MAX_GLIBC" ]]; then
+  echo "Refusing zip: launcher needs GLIBC_`$FLOOR which is newer than `$MAX_GLIBC (Ubuntu 20.04)." >&2
+  exit 1
+fi
+
 printf '%s\n' "`$ZIP_ABS" > "`$PATH_FILE"
 echo "Built `$ZIP_ABS"
 "@

@@ -343,12 +343,16 @@ public class MainFrame extends JFrame {
 			    b.add(Box.createGlue());
 			    b.add(new JLabel("Java source code and product"));
 			    b.add(new JLabel("By William Meitzen"));
+			    // Soft sky on Dark; stronger blue on Light/Default for contrast.
+			    Color linkColor = UiTheme.isDark()
+			    		? new Color(0x93, 0xC5, 0xFD)
+			    		: new Color(0x25, 0x63, 0xEB);
 			    JLabel downloadLink = new JLabel("At " + strDownloadURL);
-			    downloadLink.setForeground(Color.BLUE.darker());
+			    downloadLink.setForeground(linkColor);
 			    downloadLink.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 			    b.add(downloadLink);
 			    JLabel supportLink = new JLabel("Support: " + strSupportURL);
-			    supportLink.setForeground(Color.BLUE.darker());
+			    supportLink.setForeground(linkColor);
 			    supportLink.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 			    b.add(supportLink);
 			    b.add(new JLabel("Application version: " + applicationVersion()));

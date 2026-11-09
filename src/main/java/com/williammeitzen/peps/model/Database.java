@@ -27,7 +27,7 @@ import com.williammeitzen.peps.gui.Utils;
 
 public final class Database {
 	
-	private static double SQLITE_DB_SCHEMA_VERSION = 4.08;
+	private static double SQLITE_DB_SCHEMA_VERSION = 4.09;
 	private static Connection objConnection = null;
 	private static Connection objPGConnection = null;
 	
@@ -517,7 +517,7 @@ public final class Database {
         		+ ", arrow_text_bottom_margin int not null default 2\n"
         		+ ", application_width int not null default 900\n"
         		+ ", application_height int not null default 600\n"
-        		+ ", color_scheme varchar(32) not null default 'default'\n"
+        		+ ", color_scheme varchar(32) not null default 'dark'\n"
         		+ ");\n";
         Database.dml(strSQL);
 
@@ -529,8 +529,14 @@ public final class Database {
 		}
 
 		// Existing DBs created before color_scheme: add the column if missing
-		ensureConfigColumn("color_scheme", "varchar(32) not null default 'default'");
+		ensureConfigColumn("color_scheme", "varchar(32) not null default 'dark'");
 		ensureConfigColumn("docking_layout", "text");
+		ensureConfigColumn("plan_source_mode", "varchar(32) not null default 'paste'");
+
+		// 4.09: factory color scheme is Dark (was Default). Migrate only the old factory value.
+		if (dblDBConfigVersion > 0.0 && dblDBConfigVersion < 4.09) {
+			Database.dml("update config set color_scheme = 'dark' where color_scheme = 'default';");
+		}
 		
 		// just in case the db schema minor version changed
         strSQL = "update config set db_alter_version = " + dbSchemaVersionNumber() + ";\n";

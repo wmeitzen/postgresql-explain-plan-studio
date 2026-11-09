@@ -59,6 +59,11 @@ public class PlanSourcePanel extends JPanel {
 	/** Values stored in explain_plans.auth_type */
 	public static final String AUTH_TYPE_PASSWORD = "password";
 	public static final String AUTH_TYPE_TRUST = "trust";
+
+	/** Plan Source UI: plan name + pasted plan only (no connection / EXPLAIN). */
+	public static final String SOURCE_MODE_PASTE = "paste";
+	/** Plan Source UI: full connection + EXPLAIN fields. */
+	public static final String SOURCE_MODE_CONNECT = "connect";
 	
 	//private JButton okBtn;
 	private FormListener formListener;
@@ -103,6 +108,16 @@ public class PlanSourcePanel extends JPanel {
 	private JLabel jsonPlanLabel;
 	private JScrollPane planSourceFromQuerySQLTextAreaScrollPane;
 	private JButton planSourceFromQueryButton;
+	private JLabel sourceModeLabel;
+	private JRadioButton sourceModePasteRadio;
+	private JRadioButton sourceModeConnectRadio;
+	private JLabel sectionHeaderServer;
+	private JLabel sectionHeaderAuthentication;
+	private JLabel sectionHeaderCommands;
+	private JPanel connectByPanel;
+	private JPanel passwordRow;
+	/** Components shown only in Connect & run EXPLAIN mode. */
+	private Component[] connectModeOnlyComponents;
 	private String planName;
 	private String planSourceButtonClicked;
 	private JTabbedPane objCurrentPlanTabs;
@@ -151,6 +166,24 @@ public class PlanSourcePanel extends JPanel {
 		planSourceFromQueryPlanNameLabel = new JLabel("Plan name:");
 		planSourceFromQueryPlanNameField = new JTextField(24);
 
+		sourceModeLabel = new JLabel("Show:");
+		sourceModePasteRadio = new JRadioButton("Plan text only");
+		sourceModeConnectRadio = new JRadioButton("Connection info and plan");
+		ButtonGroup sourceModeGroup = new ButtonGroup();
+		sourceModeGroup.add(sourceModePasteRadio);
+		sourceModeGroup.add(sourceModeConnectRadio);
+		sourceModePasteRadio.setSelected(true);
+		sourceModePasteRadio.addItemListener(e -> {
+			if (e.getStateChange() == ItemEvent.SELECTED) {
+				applySourceModeVisibility(true);
+			}
+		});
+		sourceModeConnectRadio.addItemListener(e -> {
+			if (e.getStateChange() == ItemEvent.SELECTED) {
+				applySourceModeVisibility(true);
+			}
+		});
+
 		connectByLabel = new JLabel("Connect by:");
 		connectByHostRadio = new JRadioButton("Host");
 		connectByUrlRadio = new JRadioButton("URL");
@@ -197,7 +230,7 @@ public class PlanSourcePanel extends JPanel {
 		planSourceFromQuerySQLTextArea.setText("\nexplain (analyze, buffers, format json, verbose)\n\nselect \n");
 		planSourceFromQuerySQLTextAreaScrollPane = new JScrollPane(planSourceFromQuerySQLTextArea);
 
-		jsonPlanLabel = new JLabel("JSON plan:");
+		jsonPlanLabel = new JLabel("Text plan or JSON plan:");
 		jsonPlanTextArea = new JTextArea(8, 40);
 		jsonPlanTextAreaScrollPane = new JScrollPane(jsonPlanTextArea);
 		jsonPlanDefaultBorder = jsonPlanTextAreaScrollPane.getBorder();
@@ -566,10 +599,20 @@ public class PlanSourcePanel extends JPanel {
 		panel.add(planSourceFromQueryPlanNameLabel, labelGbc(0, row));
 		panel.add(planSourceFromQueryPlanNameField, fieldGbc(1, row++, 3));
 
-		panel.add(createSectionHeader("Server"), sectionGbc(row++));
+		panel.add(sourceModeLabel, labelGbc(0, row));
+		JPanel sourceModePanel = new JPanel();
+		sourceModePanel.setLayout(new BoxLayout(sourceModePanel, BoxLayout.X_AXIS));
+		sourceModePanel.setOpaque(false);
+		sourceModePanel.add(sourceModePasteRadio);
+		sourceModePanel.add(Box.createHorizontalStrut(12));
+		sourceModePanel.add(sourceModeConnectRadio);
+		panel.add(sourceModePanel, fieldGbc(1, row++, 3));
+
+		sectionHeaderServer = createSectionHeader("Server");
+		panel.add(sectionHeaderServer, sectionGbc(row++));
 
 		panel.add(connectByLabel, labelGbc(0, row));
-		JPanel connectByPanel = new JPanel();
+		connectByPanel = new JPanel();
 		connectByPanel.setLayout(new BoxLayout(connectByPanel, BoxLayout.X_AXIS));
 		connectByPanel.setOpaque(false);
 		connectByPanel.add(connectByHostRadio);
@@ -588,7 +631,8 @@ public class PlanSourcePanel extends JPanel {
 		panel.add(planSourceFromQueryDatabaseLabel, labelGbc(0, row));
 		panel.add(planSourceFromQueryDatabaseField, fieldGbc(1, row++, 3));
 
-		panel.add(createSectionHeader("Authentication"), sectionGbc(row++));
+		sectionHeaderAuthentication = createSectionHeader("Authentication");
+		panel.add(sectionHeaderAuthentication, sectionGbc(row++));
 
 		panel.add(authTypeLabel, labelGbc(0, row));
 		panel.add(authTypeCombo, fieldGbc(1, row++, 3));
@@ -597,7 +641,7 @@ public class PlanSourcePanel extends JPanel {
 		panel.add(planSourceFromQueryUserField, fieldGbc(1, row++, 3));
 
 		panel.add(planSourceFromQueryPasswordLabel, labelGbc(0, row));
-		JPanel passwordRow = new JPanel();
+		passwordRow = new JPanel();
 		passwordRow.setLayout(new BoxLayout(passwordRow, BoxLayout.X_AXIS));
 		passwordRow.setOpaque(false);
 		passwordRow.add(planSourceFromQueryPasswordField);
@@ -605,7 +649,8 @@ public class PlanSourcePanel extends JPanel {
 		passwordRow.add(planSourceFromQueryRememberPasswordCheckbox);
 		panel.add(passwordRow, fieldGbc(1, row++, 3));
 
-		panel.add(createSectionHeader("Commands"), sectionGbc(row++));
+		sectionHeaderCommands = createSectionHeader("Commands");
+		panel.add(sectionHeaderCommands, sectionGbc(row++));
 
 		panel.add(planSourceFromQueryPreCommandLabel, labelGbc(0, row));
 		panel.add(planSourceFromQueryPreCommandField, fieldGbc(1, row++, 3));
@@ -632,6 +677,24 @@ public class PlanSourcePanel extends JPanel {
 
 		panel.add(showPlanGraphButton, fullWidthGbc(row++, new Insets(4, 8, 4, 8)));
 
+		connectModeOnlyComponents = new Component[] {
+				sectionHeaderServer,
+				connectByLabel, connectByPanel,
+				jdbcUrlLabel, jdbcUrlField,
+				planSourceFromQueryServerLabel, planSourceFromQueryServerField,
+				planSourceFromQueryPortLabel, planSourceFromQueryPortField,
+				planSourceFromQueryDatabaseLabel, planSourceFromQueryDatabaseField,
+				sectionHeaderAuthentication,
+				authTypeLabel, authTypeCombo,
+				planSourceFromQueryUserLabel, planSourceFromQueryUserField,
+				planSourceFromQueryPasswordLabel, passwordRow,
+				sectionHeaderCommands,
+				planSourceFromQueryPreCommandLabel, planSourceFromQueryPreCommandField,
+				planSourceFromQueryPostCommandLabel, planSourceFromQueryPostCommandField,
+				planSourceFromQuerySQLLabel, planSourceFromQuerySQLTextAreaScrollPane,
+				planSourceFromQueryButton
+		};
+
 		// Absorb extra horizontal space so fields stay left-aligned at hybrid widths.
 		GridBagConstraints hSpacer = new GridBagConstraints();
 		hSpacer.gridx = 4;
@@ -649,6 +712,59 @@ public class PlanSourcePanel extends JPanel {
 		panel.add(Box.createVerticalGlue(), vSpacer);
 
 		return panel;
+	}
+
+	/** True when Connection and EXPLAIN fields are visible. */
+	public boolean isConnectSourceMode() {
+		return sourceModeConnectRadio != null && sourceModeConnectRadio.isSelected();
+	}
+
+	private void applySourceModeVisibility(boolean persist) {
+		boolean connect = isConnectSourceMode();
+		if (connectModeOnlyComponents != null) {
+			for (Component c : connectModeOnlyComponents) {
+				if (c != null) {
+					c.setVisible(connect);
+				}
+			}
+		}
+		revalidate();
+		repaint();
+		if (persist) {
+			saveSourceModePreference(connect ? SOURCE_MODE_CONNECT : SOURCE_MODE_PASTE);
+		}
+	}
+
+	private void loadSourceModePreference() {
+		String mode = SOURCE_MODE_PASTE;
+		try {
+			org.json.simple.JsonObject row = Database.row("select plan_source_mode from config;");
+			if (row != null && row.get("plan_source_mode") != null) {
+				String saved = String.valueOf(row.get("plan_source_mode")).trim();
+				if (SOURCE_MODE_CONNECT.equalsIgnoreCase(saved)) {
+					mode = SOURCE_MODE_CONNECT;
+				}
+			}
+		} catch (Exception ignored) {
+			// Column may not exist yet during early init
+		}
+		if (SOURCE_MODE_CONNECT.equals(mode)) {
+			sourceModeConnectRadio.setSelected(true);
+		} else {
+			sourceModePasteRadio.setSelected(true);
+		}
+		applySourceModeVisibility(false);
+	}
+
+	private void saveSourceModePreference(String mode) {
+		if (mode == null || mode.isBlank()) {
+			mode = SOURCE_MODE_PASTE;
+		}
+		try {
+			Database.dml("update config set plan_source_mode = '" + mode.replace("'", "''") + "';");
+		} catch (Exception ignored) {
+			// Ignore if column missing; next startup ensureConfigColumn will add it.
+		}
 	}
 
 	private void updateConnectByMode() {
@@ -742,6 +858,7 @@ public class PlanSourcePanel extends JPanel {
 		js.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
 		applyWheelUnitIncrement(js);
 		add(js, BorderLayout.CENTER);
+		loadSourceModePreference();
 	}
 /*
 	public void setPlanName(String planName) {
@@ -870,14 +987,21 @@ public class PlanSourcePanel extends JPanel {
 		if (jsonPlanLabel != null) {
 			if (format == PlanFormat.TEXT) {
 				jsonPlanLabel.setText("Text plan:");
-			} else {
+			} else if (format == PlanFormat.JSON) {
 				jsonPlanLabel.setText("JSON plan:");
+			} else {
+				// EMPTY / UNKNOWN — content not yet identifiable
+				jsonPlanLabel.setText("Text plan or JSON plan:");
 			}
 		}
 		if (showPlanGraphButton != null) {
-			showPlanGraphButton.setText(format == PlanFormat.TEXT
-					? "Show Text Plan Diagram"
-					: "Show JSON Plan Diagram");
+			if (format == PlanFormat.TEXT) {
+				showPlanGraphButton.setText("Show Text Plan Diagram");
+			} else if (format == PlanFormat.JSON) {
+				showPlanGraphButton.setText("Show JSON Plan Diagram");
+			} else {
+				showPlanGraphButton.setText("Show Plan Diagram");
+			}
 		}
 	}
 

@@ -4,13 +4,23 @@ Graphical viewer for PostgreSQL `EXPLAIN` plans (migrated from the earlier PEG /
 
 ## Install the latest release (recommended)
 
-Most users should download a prebuilt Windows package from
+Most users should download a prebuilt package from
 [Releases](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases)
 (use the newest release).
+
+**Windows**
 
 1. Download `PostgreSQLExplainPlanStudio-*-windows-x64.zip`
 2. Unzip it
 3. Run `PostgreSQLExplainPlanStudio\PostgreSQLExplainPlanStudio.exe`
+
+**Ubuntu / Linux (x86_64 desktop)**
+
+1. Download `PostgreSQLExplainPlanStudio-*-linux-x64.zip`
+2. Unzip it
+3. Run `PostgreSQLExplainPlanStudio/bin/PostgreSQLExplainPlanStudio`
+
+Linux releases are built on **Ubuntu 20.04** so the same zip runs on **Ubuntu 20.04+ desktop** (and other glibc x86_64 desktops at least that new). Not for headless Server without a GUI stack, and not for Alpine/musl.
 
 The app creates/opens `postgresql-explain-plan-studio.sqlite` in the **current working directory**.
 
@@ -118,13 +128,13 @@ Requires JDK 17+ with `jpackage` on `PATH`.
 .\mvnw.cmd -P jpackage -DskipTests verify
 ```
 
-Or prompt for a version, build **Windows + Ubuntu** zips, tag, and upload to GitHub (private repo OK if `gh auth login` is done). Ubuntu build runs over SSH against the VMware share:
+Or prompt for a version, build **Windows + Linux** zips, tag, and upload to GitHub (private repo OK if `gh auth login` is done). The Linux jpackage step SSHs to the **Ubuntu 20.04** release VM (default `administrator@192.168.163.156`), syncs from `/mnt/hgfs/peps`, and refuses hosts that are not 20.04 / launchers needing glibc newer than 2.31. Day-to-day `RECOMPILENOW` sync can stay on a newer Ubuntu VM (e.g. 154).
 
 ```powershell
-# one-time: SSH key auth to the VM (BatchMode), and optionally:
-#   Set-Content scripts\dev-release.local.ps1 '$PepsUbuntuSsh = "administrator@192.168.x.x"'
+# optional local default (gitignored):
+#   scripts\dev-release.local.ps1  →  $PepsUbuntuSsh = "administrator@192.168.163.156"
 .\scripts\dev-release.ps1
-# optional: .\scripts\dev-release.ps1 -Version 0.0.9 -UbuntuSsh administrator@192.168.x.x
+# optional: .\scripts\dev-release.ps1 -Version 0.0.9 -UbuntuSsh administrator@192.168.163.156
 ```
 
 Outputs:
@@ -134,14 +144,14 @@ Outputs:
 
 **Ubuntu / Linux**
 
+Build the published `linux-x64` zip on **Ubuntu 20.04** (not a newer host) so it stays runnable on 20.04+:
+
 ```bash
 sudo apt update
-sudo apt install -y openjdk-17-jdk
-# confirm jpackage is available (ships with the JDK)
+sudo apt install -y openjdk-17-jdk rsync
 jpackage --version
 
-git clone https://github.com/wmeitzen/postgresql-explain-plan-studio.git
-cd postgresql-explain-plan-studio
+# from a sync of the repo (e.g. ~/peps after rsync from /mnt/hgfs/peps)
 ./mvnw -P jpackage -DskipTests verify
 ```
 
@@ -154,6 +164,13 @@ Run the app:
 
 ```bash
 ./target/jpackage/PostgreSQLExplainPlanStudio/bin/PostgreSQLExplainPlanStudio
+```
+
+Optional glibc check (should be ≤ 2.31):
+
+```bash
+objdump -T target/jpackage/PostgreSQLExplainPlanStudio/bin/PostgreSQLExplainPlanStudio \
+  | grep -oE 'GLIBC_[0-9.]+' | sort -Vu
 ```
 
 ## License

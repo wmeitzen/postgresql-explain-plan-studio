@@ -2,6 +2,7 @@ package com.williammeitzen.peps.gui;
 
 import java.awt.BorderLayout;
 import java.awt.Dimension;
+import java.awt.event.MouseWheelListener;
 
 import javax.swing.BorderFactory;
 import javax.swing.JPanel;
@@ -59,6 +60,26 @@ public class DiagramDockingPanel extends JPanel {
 		graphScroll.setPreferredSize(new Dimension(320, 480));
 		graphScroll.getVerticalScrollBar().setUnitIncrement(wheelUnitIncrement);
 		graphScroll.getHorizontalScrollBar().setUnitIncrement(wheelUnitIncrement);
+		// Ctrl+wheel (Cmd+wheel on macOS) zooms the diagram; plain wheel still scrolls.
+		MouseWheelListener ctrlZoom = e -> {
+			if (!e.isControlDown() && !e.isMetaDown()) {
+				return;
+			}
+			int notches = e.getWheelRotation();
+			if (notches == 0) {
+				return;
+			}
+			e.consume();
+			// Wheel down / toward user → zoom out (same ±10 steps as toolbar +/-).
+			int next = graphPanel.getZoomPercentage() + (-notches * 10);
+			graphPanel.setZoomPercentage(next);
+			graphPanel.refreshScrollableSizeAfterZoom(true);
+			if (toolbar != null) {
+				toolbar.syncZoomPercentage(graphPanel.getZoomPercentage());
+			}
+		};
+		graphScroll.addMouseWheelListener(ctrlZoom);
+		graphPanel.addMouseWheelListener(ctrlZoom);
 
 		OperatorDetailsPanel properties = new OperatorDetailsPanel(graphPanel);
 		properties.setPreferredSize(new Dimension(420, 480));

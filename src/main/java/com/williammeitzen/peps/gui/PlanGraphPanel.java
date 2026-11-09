@@ -4879,8 +4879,10 @@ order by id_explain_plan_property;
 			iconFileName = "ex_group.svg";
 		} else if (nodeType.equalsIgnoreCase("hash") == true) {
 			iconFileName = "ex_hash.svg";
-		} else if (nodeType.equalsIgnoreCase("hash join") == true && (joinType.equalsIgnoreCase("full") == true || joinType.equalsIgnoreCase("inner") == true || joinType.equalsIgnoreCase("anti") == true)) {
-			// Parallel Hash Anti Join / Hash Anti Join share Parallel Hash Join's icon
+		} else if (nodeType.equalsIgnoreCase("hash join") == true && (joinType.isBlank()
+				|| joinType.equalsIgnoreCase("full") || joinType.equalsIgnoreCase("inner")
+				|| joinType.equalsIgnoreCase("anti"))) {
+			// Parallel Hash Join often has no Join Type (defaults to Inner); Anti shares this icon
 			iconFileName = "ex_join.svg";
 		} else if (nodeType.equalsIgnoreCase("hash join") == true && (joinType.equalsIgnoreCase("left") == true || joinType.equalsIgnoreCase("right") == true || joinType.equalsIgnoreCase("semi") == true)) {
 			iconFileName = "ex_hash_semi_join.svg";
@@ -4902,7 +4904,8 @@ order by id_explain_plan_property;
 			iconFileName = "ex_merge_append.svg";
 		} else if (nodeType.equalsIgnoreCase("merge join") == true && (joinType.equalsIgnoreCase("anti") == true)) {
 			iconFileName = "ex_merge_anti_join.svg";
-		} else if (nodeType.equalsIgnoreCase("merge join") == true && (joinType.equalsIgnoreCase("full") == true || joinType.equalsIgnoreCase("inner") == true)) {
+		} else if (nodeType.equalsIgnoreCase("merge join") == true && (joinType.isBlank()
+				|| joinType.equalsIgnoreCase("full") || joinType.equalsIgnoreCase("inner"))) {
 			iconFileName = "ex_merge.svg";
 		} else if (nodeType.equalsIgnoreCase("merge join") == true && (joinType.equalsIgnoreCase("left") == true || joinType.equalsIgnoreCase("right") == true || joinType.equalsIgnoreCase("semi") == true)) {
 			iconFileName = "ex_merge_semi_join.svg";
@@ -4918,7 +4921,8 @@ order by id_explain_plan_property;
 			iconFileName = "ex_named_tuplestore_scan.svg";
 		} else if (nodeType.equalsIgnoreCase("nested loop") == true && joinType.equalsIgnoreCase("anti") == true) {
 			iconFileName = "ex_nested_loop_anti_join.svg";
-		} else if (nodeType.equalsIgnoreCase("nested loop") == true && (joinType.equalsIgnoreCase("full") == true || joinType.equalsIgnoreCase("inner") == true)) {
+		} else if (nodeType.equalsIgnoreCase("nested loop") == true && (joinType.isBlank()
+				|| joinType.equalsIgnoreCase("full") || joinType.equalsIgnoreCase("inner"))) {
 			iconFileName = "ex_nested.svg";
 		} else if (nodeType.equalsIgnoreCase("nested loop") == true && (joinType.equalsIgnoreCase("left") == true || joinType.equalsIgnoreCase("right") == true || joinType.equalsIgnoreCase("semi") == true)) {
 			iconFileName = "ex_nested_loop_semi_join.svg";
