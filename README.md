@@ -10,19 +10,29 @@ Most users should download a prebuilt package from
 
 **Windows**
 
-1. Download `PostgreSQLExplainPlanStudio-*-windows-x64.zip`
-2. Unzip it
-3. Run `PostgreSQLExplainPlanStudio\PostgreSQLExplainPlanStudio.exe`
+- **Installer (recommended):** download `PostgreSQLExplainPlanStudio-*.exe`, run the setup wizard (per-user install). Upgrades replace the app; your plans stay in the data directory below.
+- **Portable zip:** download `PostgreSQLExplainPlanStudio-*-windows-x64.zip`, unzip, run `PostgreSQLExplainPlanStudio\PostgreSQLExplainPlanStudio.exe`
 
 **Ubuntu / Linux (x86_64 desktop)**
 
 1. Download `PostgreSQLExplainPlanStudio-*-linux-x64.zip`
-2. Unzip it
+2. Unzip it (e.g. under `~/apps/`)
 3. Run `PostgreSQLExplainPlanStudio/bin/PostgreSQLExplainPlanStudio`
+
+To upgrade Linux: replace the unzipped app tree with the new zip. Leave the data directory alone.
 
 Linux releases are built on **Ubuntu 20.04** so the same zip runs on **Ubuntu 20.04+ desktop** (and other glibc x86_64 desktops at least that new). Not for headless Server without a GUI stack, and not for Alpine/musl.
 
-The app creates/opens `postgresql-explain-plan-studio.sqlite` in the **current working directory**.
+### User data directory (SQLite)
+
+Plans live in `postgresql-explain-plan-studio.sqlite` **outside** the install/unzip folder so upgrades do not overwrite them:
+
+| OS | Default location |
+|----|------------------|
+| Windows | `%APPDATA%\PostgreSQLExplainPlanStudio\` |
+| Linux / macOS | `~/.local/share/postgresql-explain-plan-studio/` (or `$XDG_DATA_HOME/postgresql-explain-plan-studio/`) |
+
+Override with env `PEPS_DATA_DIR` or `-Dpeps.data.dir=<path>`. If an older DB exists in the current working directory and the data dir has none yet, PEPS copies it once into the data dir on startup. Schema/feature upgrades run automatically in the app (`Database.init`), not in the installer.
 
 ### Windows SmartScreen
 
@@ -41,15 +51,20 @@ Unsigned downloads often show **Windows protected your PC**. Click **More info**
 .\mvnw.cmd -q compile exec:java
 ```
 
-The app creates/opens `postgresql-explain-plan-studio.sqlite` in the **current working directory**.
+SQLite is opened under the [user data directory](#user-data-directory-sqlite) (not the repo CWD), unless you set `PEPS_DATA_DIR`.
 
-To try with saved plans from the old PEG database, copy (do not commit):
+To try with saved plans from the old PEG database, copy (do not commit) into the data dir — or into CWD once and let PEPS migrate on first launch:
 
 ```powershell
+# Option A: place directly in the Windows data dir
+Copy-Item "\\maurice\Cee\docs\bitbucket\peg\peg.sqlite" "$env:APPDATA\PostgreSQLExplainPlanStudio\postgresql-explain-plan-studio.sqlite"
+
+# Option B: legacy CWD file (migrated once into the data dir on startup)
 Copy-Item "\\maurice\Cee\docs\bitbucket\peg\peg.sqlite" ".\postgresql-explain-plan-studio.sqlite"
+$env:PEPS_DATA_DIR = (Resolve-Path .).Path   # optional: keep DB in-repo while developing
 ```
 
-Then run from that directory and open a plan → **Show JSON Plan Diagram** / **Show Text Plan Diagram** (or select the Plan Diagram tab).
+Then run and open a plan → **Show JSON Plan Diagram** / **Show Text Plan Diagram** (or select the Plan Diagram tab).
 
 Plan Source accepts pasted **JSON** (`FORMAT JSON`) or classic **text** `EXPLAIN` output. The field label and Show/Execute button titles switch based on a content sniff. Text plans stay stored as raw text; PEPS converts them to JSON on the fly only for diagram generation and Compare Plans.
 
@@ -124,11 +139,13 @@ Requires JDK 17+ with `jpackage` on `PATH`.
 
 **Windows**
 
+For the setup `.exe` installer, also install [WiX Toolset](https://wixtoolset.org/) so `candle` / `light` are on `PATH`. Without WiX, the portable zip still builds; the `.exe` step warns and is skipped. Force-skip the installer with `-Djpackage.skip.exe=true`.
+
 ```powershell
 .\mvnw.cmd -P jpackage -DskipTests verify
 ```
 
-Or prompt for a version, build **Windows + Linux** zips, tag, and upload to GitHub (private repo OK if `gh auth login` is done). The Linux jpackage step SSHs to the **Ubuntu 20.04** release VM (default `administrator@192.168.163.156`), syncs from `/mnt/hgfs/peps`, and refuses hosts that are not 20.04 / launchers needing glibc newer than 2.31. Day-to-day `RECOMPILENOW` sync can stay on a newer Ubuntu VM (e.g. 154).
+Or prompt for a version, build **Windows + Linux** packages, tag, and upload to GitHub (private repo OK if `gh auth login` is done). The Linux jpackage step SSHs to the **Ubuntu 20.04** release VM (default `administrator@192.168.163.156`), syncs from `/mnt/hgfs/peps`, and refuses hosts that are not 20.04 / launchers needing glibc newer than 2.31. Day-to-day `RECOMPILENOW` sync can stay on a newer Ubuntu VM (e.g. 154).
 
 ```powershell
 # optional local default (gitignored):
@@ -139,8 +156,9 @@ Or prompt for a version, build **Windows + Linux** zips, tag, and upload to GitH
 
 Outputs:
 
-- `target/jpackage/PostgreSQLExplainPlanStudio/PostgreSQLExplainPlanStudio.exe`
+- `target/jpackage/PostgreSQLExplainPlanStudio/PostgreSQLExplainPlanStudio.exe` (portable app image)
 - `target/PostgreSQLExplainPlanStudio-<version>-windows-x64.zip`
+- `target/PostgreSQLExplainPlanStudio-<version>.exe` (WiX installer, when WiX is available)
 
 **Ubuntu / Linux**
 

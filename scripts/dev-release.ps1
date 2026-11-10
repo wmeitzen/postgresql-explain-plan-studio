@@ -1,11 +1,11 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-  Prompt for a release version, build Windows + Ubuntu jpackage zips, and publish a GitHub release.
+  Prompt for a release version, build Windows + Ubuntu jpackage packages, and publish a GitHub release.
 
 .DESCRIPTION
   1) Bumps version, commits/tags/pushes (unless -SkipGit)
-  2) Builds Windows zip on this machine
+  2) Builds Windows zip (+ .exe installer when WiX is available) on this machine
   3) SSHs to the Ubuntu VM, syncs from the VMware share into ~/peps, runs jpackage,
      and copies the linux-x64 zip back
   4) Creates/uploads the GitHub release (private repos OK when `gh auth login` is done)
@@ -484,8 +484,10 @@ if ($Version -notmatch '^\d+\.\d+\.\d+([.-][A-Za-z0-9.-]+)?$') {
 }
 $Tag = "v$Version"
 $WindowsZipName = "PostgreSQLExplainPlanStudio-$Version-windows-x64.zip"
+$WindowsExeName = "PostgreSQLExplainPlanStudio-$Version.exe"
 $LinuxZipName = "PostgreSQLExplainPlanStudio-$Version-linux-x64.zip"
 $WindowsZip = Join-Path $RepoRoot "target\$WindowsZipName"
+$WindowsExe = Join-Path $RepoRoot "target\$WindowsExeName"
 $LinuxZip = Join-Path $RepoRoot "target\$LinuxZipName"
 
 Write-Status "Preparing release $Tag"
@@ -510,9 +512,9 @@ if (-not $SkipUbuntu -and -not $SkipBuild) {
 Write-Host ""
 Write-Host "This will:"
 Write-Host "  - $(if ($SkipGit) { 'Skip git commit/tag/push' } else { "Commit/tag/push $Tag" })"
-Write-Host "  - $(if ($SkipBuild) { 'Skip Windows build' } else { 'Build Windows jpackage zip' })"
+Write-Host "  - $(if ($SkipBuild) { 'Skip Windows build' } else { 'Build Windows jpackage zip (+ .exe installer if WiX is available)' })"
 Write-Host "  - $(if ($SkipBuild -or $SkipUbuntu) { 'Skip Ubuntu build' } else { "Build Ubuntu jpackage on $UbuntuSsh" })"
-Write-Host "  - Upload available zips to GitHub release $Tag"
+Write-Host "  - Upload available zip/.exe assets to GitHub release $Tag"
 $confirm = Read-Host "Continue? [Y/n]"
 if ($confirm -match '^[Nn]') {
 	Write-Status "Aborted."
@@ -555,13 +557,16 @@ if (-not $SkipGit) {
 
 if (-not $SkipBuild) {
 	$mvnw = Join-Path $RepoRoot "mvnw.cmd"
-	Write-Status "Building Windows jpackage zip…"
+	Write-Status "Building Windows jpackage zip (+ .exe if WiX present)…"
 	& $mvnw -P jpackage -DskipTests verify
 	if ($LASTEXITCODE -ne 0) {
 		throw "Windows mvnw jpackage failed with exit $LASTEXITCODE"
 	}
 	if (-not (Test-Path $WindowsZip)) {
 		throw "Missing Windows zip: $WindowsZip"
+	}
+	if (-not (Test-Path $WindowsExe)) {
+		Write-Warning "Windows installer missing: $WindowsExeName (install WiX Toolset for jpackage --type exe, or ignore if zip-only is enough)"
 	}
 
 	if (-not $SkipUbuntu) {
@@ -572,12 +577,16 @@ if (-not $SkipBuild) {
 
 $assets = @()
 if (Test-Path $WindowsZip) { $assets += $WindowsZip }
+if (Test-Path $WindowsExe) { $assets += $WindowsExe }
 if (Test-Path $LinuxZip) { $assets += $LinuxZip }
 if ($assets.Count -eq 0) {
-	throw "No release zips found in target\ for version $Version"
+	throw "No release assets found in target\ for version $Version"
 }
 if (-not (Test-Path $WindowsZip)) {
 	Write-Warning "Windows zip missing: $WindowsZipName"
+}
+if (-not (Test-Path $WindowsExe)) {
+	Write-Warning "Windows installer missing: $WindowsExeName"
 }
 if (-not (Test-Path $LinuxZip) -and -not $SkipUbuntu) {
 	throw "Linux zip missing after Ubuntu build: $LinuxZip"
@@ -587,18 +596,32 @@ Write-Host "Assets to publish:"
 $assets | ForEach-Object { Write-Host "  $_" }
 
 $title = "v$Version"
+$exeNotes = if (Test-Path $WindowsExe) {
+	@"
+- Installer: ``$WindowsExeName`` (per-user setup; upgrades keep your plans)
+- Portable: ``$WindowsZipName`` — unzip and run ``PostgreSQLExplainPlanStudio\PostgreSQLExplainPlanStudio.exe``
+"@
+} else {
+	@"
+- Portable: ``$WindowsZipName`` — unzip and run ``PostgreSQLExplainPlanStudio\PostgreSQLExplainPlanStudio.exe``
+"@
+}
 $notes = @"
 ## PostgreSQL Explain Plan Studio v$Version
 
 Bundled Java runtime included.
 
+User data (SQLite plans) lives outside the app install tree:
+- Windows: ``%APPDATA%\PostgreSQLExplainPlanStudio\``
+- Linux: ``~/.local/share/postgresql-explain-plan-studio/``
+
 ### Windows
-- Asset: ``$WindowsZipName``
-- Unzip and run ``PostgreSQLExplainPlanStudio\PostgreSQLExplainPlanStudio.exe``
+$exeNotes
 
 ### Ubuntu / Linux
 - Asset: ``$LinuxZipName``
 - Unzip and run ``PostgreSQLExplainPlanStudio/bin/PostgreSQLExplainPlanStudio``
+- Upgrades: replace the app folder; leave the data directory above alone
 "@
 
 $prevEa = $ErrorActionPreference

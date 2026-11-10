@@ -2,6 +2,7 @@ package com.williammeitzen.peps.model;
 
 //import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -434,7 +435,8 @@ public final class Database {
 			e.printStackTrace();
 		}
 		
-		String url = "jdbc:sqlite:postgresql-explain-plan-studio.sqlite";
+		String url = AppPaths.sqliteJdbcUrl();
+		Path sqlitePath = AppPaths.sqliteDatabaseFile();
 		try {
 			objConnection = DriverManager.getConnection(url);
 			// Runtime defaults can still be ~1MB; raise so large EXPLAIN JSON is allowed.
@@ -457,9 +459,10 @@ public final class Database {
 			//System.out.println("getErrorCode(): " + e.getErrorCode());
 			System.out.println("PostgreSQL Explain Plan Studio | SQLite error:");
 			System.out.println(e.getMessage());
-			System.out.println("The application is unable to create or open SQLite database in the current directory:");
-			System.out.println(System.getProperty("user.dir"));
-			System.out.println("It might not have write permissions to the directory.");
+			System.out.println("The application is unable to create or open SQLite database:");
+			System.out.println(sqlitePath.toAbsolutePath());
+			System.out.println("It might not have write permissions to the data directory.");
+			System.out.println("Override with PEPS_DATA_DIR or -Dpeps.data.dir=<path>.");
 			System.out.println("The application cannot function without a SQLite database file.  Exiting.");
 			System.exit(-1);
 		}

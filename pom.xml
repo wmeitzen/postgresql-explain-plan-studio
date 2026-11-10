@@ -35,6 +35,8 @@
     <jpackage.vendor>William Meitzen</jpackage.vendor>
     <jpackage.description>PostgreSQL Explain Plan Studio</jpackage.description>
     <jpackage.zipClassifier>windows-x64</jpackage.zipClassifier>
+    <!-- Windows .exe installer (WiX); skipped on non-Windows. Override with -Djpackage.skip.exe=true -->
+    <jpackage.skip.exe>true</jpackage.skip.exe>
     <batik.version>1.17</batik.version>
   </properties>
 
@@ -159,6 +161,7 @@
       </activation>
       <properties>
         <jpackage.zipClassifier>windows-x64</jpackage.zipClassifier>
+        <jpackage.skip.exe>false</jpackage.skip.exe>
       </properties>
     </profile>
     <profile>
@@ -185,9 +188,10 @@
     </profile>
 
     <!--
-      Bundled-runtime package via jpackage (app-image + zip).
+      Bundled-runtime package via jpackage (app-image + zip; Windows also .exe installer).
       Usage: mvnw -P jpackage -DskipTests verify
       Zip classifier follows the OS (windows-x64, linux-x64, osx).
+      Windows .exe requires WiX Toolset on PATH; skip with -Djpackage.skip.exe=true.
     -->
     <profile>
       <id>jpackage</id>
@@ -262,6 +266,42 @@
                     <argument>${project.build.finalName}.jar</argument>
                     <argument>--main-class</argument>
                     <argument>${main.class}</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+              <execution>
+                <id>jpackage-windows-exe</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <!-- true on non-Windows; os-windows profile sets false. Override with -Djpackage.skip.exe=true -->
+                  <skip>${jpackage.skip.exe}</skip>
+                  <executable>jpackage</executable>
+                  <arguments>
+                    <argument>--type</argument>
+                    <argument>exe</argument>
+                    <argument>--name</argument>
+                    <argument>${jpackage.appName}</argument>
+                    <argument>--app-version</argument>
+                    <argument>${jpackage.appVersion}</argument>
+                    <argument>--vendor</argument>
+                    <argument>${jpackage.vendor}</argument>
+                    <argument>--description</argument>
+                    <argument>${jpackage.description}</argument>
+                    <argument>--dest</argument>
+                    <argument>${project.build.directory}</argument>
+                    <argument>--input</argument>
+                    <argument>${project.build.directory}/jpackage-input</argument>
+                    <argument>--main-jar</argument>
+                    <argument>${project.build.finalName}.jar</argument>
+                    <argument>--main-class</argument>
+                    <argument>${main.class}</argument>
+                    <argument>--win-menu</argument>
+                    <argument>--win-shortcut</argument>
+                    <argument>--win-dir-chooser</argument>
+                    <argument>--win-per-user-install</argument>
                   </arguments>
                 </configuration>
               </execution>
