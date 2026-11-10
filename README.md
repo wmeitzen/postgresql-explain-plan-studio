@@ -5,7 +5,7 @@ Graphical viewer for PostgreSQL `EXPLAIN` plans.
 ## Download
 
 - Windows installer: [PostgreSQLExplainPlanStudio-0.0.16-windows-installer.exe](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.16-windows-installer.exe)
-- Windows portable zip: [PostgreSQLExplainPlanStudio-0.0.16-windows-x64.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.16-windows-x64.zip)
+- Windows zip: [PostgreSQLExplainPlanStudio-0.0.16-windows-x64.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.16-windows-x64.zip)
 - Linux zip: [PostgreSQLExplainPlanStudio-0.0.16-linux-x64.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.16-linux-x64.zip)
 
 All [releases](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases).
@@ -23,9 +23,9 @@ All [releases](https://github.com/wmeitzen/postgresql-explain-plan-studio/releas
 .\mvnw.cmd -q compile exec:java
 ```
 
-### Dev watch + run (recommended while coding)
+### A Few Recommendations About Development
 
-Rebuilds the shaded jar when the repo-root `RECOMPILENOW` semaphore file appears (Cursor creates it after a change batch). On Windows the watcher builds but leaves the flag so the Ubuntu VM can see it; `dev-sync-watch.sh` (systemd) syncs, builds in `~/peps`, then deletes `RECOMPILENOW`. Uses a lock file so launch waits if a build is in progress. Does **not** auto-restart a running PEPS window. jpackage remains the release path (below).
+I develop on Windows, and continuously cascade changes to a linux VM.
 
 **Windows** — two terminals from the repo root:
 
@@ -40,7 +40,7 @@ Rebuilds the shaded jar when the repo-root `RECOMPILENOW` semaphore file appears
 # New-Item -ItemType File -Path RECOMPILENOW -Force
 ```
 
-**Ubuntu / Linux (VMware guest)** — edit on Windows, build on a **local disk copy** (`~/peps`). Shared-folder watches under `/mnt/hgfs` are unreliable, so use sync+build:
+**Ubuntu / Linux**
 
 ```bash
 sudo apt install -y openjdk-17-jdk rsync
