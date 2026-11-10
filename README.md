@@ -2,41 +2,13 @@
 
 Graphical viewer for PostgreSQL `EXPLAIN` plans (migrated from the earlier PEG / PostgreSQL Explain Graph Swing app).
 
-## Install the latest release (recommended)
+## Download
 
-Most users should download a prebuilt package from
-[Releases](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases)
-(use the newest release).
+- [Windows installer](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.16-windows-installer.exe)
+- [Windows portable zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.16-windows-x64.zip)
+- [Linux zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.16-linux-x64.zip)
 
-**Windows**
-
-- **Installer (recommended):** download `PostgreSQLExplainPlanStudio-*-windows-installer.exe`, run the setup wizard (installs under `C:\Program Files\PostgreSQL Explain Plan Studio\`; UAC elevation required). Upgrades replace the app; your plans stay in the data directory below.
-- **Portable zip:** download `PostgreSQLExplainPlanStudio-*-windows-x64.zip`, unzip, run `PostgreSQLExplainPlanStudio\PostgreSQLExplainPlanStudio.exe`
-
-**Ubuntu / Linux (x86_64 desktop)**
-
-1. Download `PostgreSQLExplainPlanStudio-*-linux-x64.zip`
-2. Unzip it (e.g. under `~/apps/`)
-3. Run `PostgreSQLExplainPlanStudio/bin/PostgreSQLExplainPlanStudio`
-
-To upgrade Linux: replace the unzipped app tree with the new zip. Leave the data directory alone.
-
-Linux releases are built on **Ubuntu 20.04** so the same zip runs on **Ubuntu 20.04+ desktop** (and other glibc x86_64 desktops at least that new). Not for headless Server without a GUI stack, and not for Alpine/musl.
-
-### User data directory (SQLite)
-
-Plans live in `postgresql-explain-plan-studio.sqlite` **outside** the install/unzip folder so upgrades do not overwrite them:
-
-| OS | Default location |
-|----|------------------|
-| Windows | `%APPDATA%\PostgreSQLExplainPlanStudio\` |
-| Linux / macOS | `~/.local/share/postgresql-explain-plan-studio/` (or `$XDG_DATA_HOME/postgresql-explain-plan-studio/`) |
-
-Override with env `PEPS_DATA_DIR` or `-Dpeps.data.dir=<path>`. If an older DB exists in the current working directory and the data dir has none yet, PEPS copies it once into the data dir on startup. Schema/feature upgrades run automatically in the app (`Database.init`), not in the installer.
-
-### Windows SmartScreen
-
-Unsigned downloads often show **Windows protected your PC**. Click **More info** → **Run anyway**, or right‑click the exe/zip → **Properties** → **Unblock** when present.
+All [releases](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases).
 
 ## Build from source
 
@@ -51,7 +23,7 @@ Unsigned downloads often show **Windows protected your PC**. Click **More info**
 .\mvnw.cmd -q compile exec:java
 ```
 
-SQLite is opened under the [user data directory](#user-data-directory-sqlite) (not the repo CWD), unless you set `PEPS_DATA_DIR`.
+SQLite is opened under `%APPDATA%\PostgreSQLExplainPlanStudio\` (Windows) or `~/.local/share/postgresql-explain-plan-studio/` (Linux/macOS), unless you set `PEPS_DATA_DIR`.
 
 To try with saved plans from the old PEG database, copy (do not commit) into the data dir — or into CWD once and let PEPS migrate on first launch:
 
