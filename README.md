@@ -1,12 +1,12 @@
 # PostgreSQL Explain Plan Studio
 
-Graphical viewer for PostgreSQL `EXPLAIN` plans (migrated from the earlier PEG / PostgreSQL Explain Graph Swing app).
+Graphical viewer for PostgreSQL `EXPLAIN` plans.
 
 ## Download
 
-- [Windows installer](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.16-windows-installer.exe)
-- [Windows portable zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.16-windows-x64.zip)
-- [Linux zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.16-linux-x64.zip)
+- Windows installer: [PostgreSQLExplainPlanStudio-0.0.16-windows-installer.exe](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.16-windows-installer.exe)
+- Windows portable zip: [PostgreSQLExplainPlanStudio-0.0.16-windows-x64.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.16-windows-x64.zip)
+- Linux zip: [PostgreSQLExplainPlanStudio-0.0.16-linux-x64.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.16-linux-x64.zip)
 
 All [releases](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases).
 
@@ -22,25 +22,6 @@ All [releases](https://github.com/wmeitzen/postgresql-explain-plan-studio/releas
 ```powershell
 .\mvnw.cmd -q compile exec:java
 ```
-
-SQLite is opened under `%APPDATA%\PostgreSQLExplainPlanStudio\` (Windows) or `~/.local/share/postgresql-explain-plan-studio/` (Linux/macOS), unless you set `PEPS_DATA_DIR`.
-
-To try with saved plans from the old PEG database, copy (do not commit) into the data dir — or into CWD once and let PEPS migrate on first launch:
-
-```powershell
-# Option A: place directly in the Windows data dir
-Copy-Item "\\maurice\Cee\docs\bitbucket\peg\peg.sqlite" "$env:APPDATA\PostgreSQLExplainPlanStudio\postgresql-explain-plan-studio.sqlite"
-
-# Option B: legacy CWD file (migrated once into the data dir on startup)
-Copy-Item "\\maurice\Cee\docs\bitbucket\peg\peg.sqlite" ".\postgresql-explain-plan-studio.sqlite"
-$env:PEPS_DATA_DIR = (Resolve-Path .).Path   # optional: keep DB in-repo while developing
-```
-
-Then run and open a plan → **Show JSON Plan Diagram** / **Show Text Plan Diagram** (or select the Plan Diagram tab).
-
-Plan Source accepts pasted **JSON** (`FORMAT JSON`) or classic **text** `EXPLAIN` output. The field label and Show/Execute button titles switch based on a content sniff. Text plans stay stored as raw text; PEPS converts them to JSON on the fly only for diagram generation and Compare Plans.
-
-**Shape parity:** text EXPLAIN is normalized to the same operator-tree shape as `FORMAT JSON` (Node Type, Join Type, Parallel Aware, Aggregate Strategy, ModifyTable Operation, nesting). Text may omit extra JSON-only properties; the diagram icons and layout should still match. Offline converter tests always run; live Postgres shape checks (`ExplainFormatShapeParityTest`, `SqlitePlanFormatParityHarnessTest`) skip when the DB from SQLite connection fields is unreachable.
 
 ### Dev watch + run (recommended while coding)
 
