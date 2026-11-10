@@ -10,7 +10,7 @@ Most users should download a prebuilt package from
 
 **Windows**
 
-- **Installer (recommended):** download `PostgreSQLExplainPlanStudio-*.exe`, run the setup wizard (per-user install). Upgrades replace the app; your plans stay in the data directory below.
+- **Installer (recommended):** download `PostgreSQLExplainPlanStudio-*-windows-installer.exe`, run the setup wizard (installs under `C:\Program Files\PostgreSQL Explain Plan Studio\`; UAC elevation required). Upgrades replace the app; your plans stay in the data directory below.
 - **Portable zip:** download `PostgreSQLExplainPlanStudio-*-windows-x64.zip`, unzip, run `PostgreSQLExplainPlanStudio\PostgreSQLExplainPlanStudio.exe`
 
 **Ubuntu / Linux (x86_64 desktop)**
@@ -158,7 +158,7 @@ Outputs:
 
 - `target/jpackage/PostgreSQLExplainPlanStudio/PostgreSQLExplainPlanStudio.exe` (portable app image)
 - `target/PostgreSQLExplainPlanStudio-<version>-windows-x64.zip`
-- `target/PostgreSQLExplainPlanStudio-<version>.exe` (WiX installer, when WiX is available)
+- `target/PostgreSQLExplainPlanStudio-<version>-windows-installer.exe` (WiX installer, when WiX is available)
 
 **Ubuntu / Linux**
 

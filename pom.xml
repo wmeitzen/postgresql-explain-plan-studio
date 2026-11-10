@@ -32,8 +32,11 @@
     <main.class>com.williammeitzen.peps.PostgreSQLExplainPlanStudio</main.class>
     <jpackage.appVersion>0.0.15</jpackage.appVersion>
     <jpackage.appName>PostgreSQLExplainPlanStudio</jpackage.appName>
+    <!-- Display name for Windows WiX installer title ("… Setup") and Program Files folder -->
+    <jpackage.installerDisplayName>PostgreSQL Explain Plan Studio</jpackage.installerDisplayName>
     <jpackage.vendor>William Meitzen</jpackage.vendor>
     <jpackage.description>PostgreSQL Explain Plan Studio</jpackage.description>
+    <jpackage.icon>${project.basedir}/packaging/windows/peps.ico</jpackage.icon>
     <jpackage.zipClassifier>windows-x64</jpackage.zipClassifier>
     <!-- Windows .exe installer (WiX); skipped on non-Windows. Override with -Djpackage.skip.exe=true -->
     <jpackage.skip.exe>true</jpackage.skip.exe>
@@ -258,6 +261,8 @@
                     <argument>${jpackage.vendor}</argument>
                     <argument>--description</argument>
                     <argument>${jpackage.description}</argument>
+                    <argument>--icon</argument>
+                    <argument>${jpackage.icon}</argument>
                     <argument>--dest</argument>
                     <argument>${project.build.directory}/jpackage</argument>
                     <argument>--input</argument>
@@ -282,14 +287,17 @@
                   <arguments>
                     <argument>--type</argument>
                     <argument>exe</argument>
+                    <!-- Spaced name → title "PostgreSQL Explain Plan Studio Setup" and Program Files\… -->
                     <argument>--name</argument>
-                    <argument>${jpackage.appName}</argument>
+                    <argument>${jpackage.installerDisplayName}</argument>
                     <argument>--app-version</argument>
                     <argument>${jpackage.appVersion}</argument>
                     <argument>--vendor</argument>
                     <argument>${jpackage.vendor}</argument>
                     <argument>--description</argument>
                     <argument>${jpackage.description}</argument>
+                    <argument>--icon</argument>
+                    <argument>${jpackage.icon}</argument>
                     <argument>--dest</argument>
                     <argument>${project.build.directory}</argument>
                     <argument>--input</argument>
@@ -299,9 +307,26 @@
                     <argument>--main-class</argument>
                     <argument>${main.class}</argument>
                     <argument>--win-menu</argument>
+                    <argument>--win-menu-group</argument>
+                    <argument>${jpackage.installerDisplayName}</argument>
                     <argument>--win-shortcut</argument>
                     <argument>--win-dir-chooser</argument>
-                    <argument>--win-per-user-install</argument>
+                    <!-- Per-machine install to Program Files (requires elevation). -->
+                  </arguments>
+                </configuration>
+              </execution>
+              <execution>
+                <id>jpackage-rename-windows-exe</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <skip>${jpackage.skip.exe}</skip>
+                  <executable>cmd.exe</executable>
+                  <arguments>
+                    <argument>/c</argument>
+                    <argument>if exist "${project.build.directory}\${jpackage.installerDisplayName}-${jpackage.appVersion}.exe" move /Y "${project.build.directory}\${jpackage.installerDisplayName}-${jpackage.appVersion}.exe" "${project.build.directory}\${jpackage.appName}-${jpackage.appVersion}-windows-installer.exe"</argument>
                   </arguments>
                 </configuration>
               </execution>
