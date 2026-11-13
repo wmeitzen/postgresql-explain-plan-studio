@@ -15,11 +15,14 @@ import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.LinearGradientPaint;
+import java.awt.Paint;
 import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.Shape;
 import java.awt.Window;
+import java.awt.font.TextAttribute;
+import java.text.AttributedString;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseListener;
 import java.awt.event.MouseMotionListener;
@@ -5384,17 +5387,29 @@ order by id_explain_plan_property;
 		if (next != null && next.isEmpty()) {
 			next = null;
 		}
-		if ((findHighlightQuery == null && next == null)
-				|| (findHighlightQuery != null && findHighlightQuery.equals(next))) {
-			return;
-		}
+		boolean unchanged = (findHighlightQuery == null && next == null)
+				|| (findHighlightQuery != null && findHighlightQuery.equals(next));
 		findHighlightQuery = next;
-		repaint();
+		// Always repaint when a query is active so Linux/X11 does not keep a stale frame
+		// after Find updates selection without changing the search string.
+		if (!unchanged || next != null) {
+			repaint();
+		}
+	}
+
+	/** Clear Paint/Composite left by SVG or gradients so label fills work on Linux. */
+	private void resetDiagramTextGraphicsState(Graphics2D g) {
+		g.setComposite(AlphaComposite.SrcOver);
+		g.setPaint(operatorLabelColor());
+		g.setStroke(new BasicStroke(1f));
+		g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
 	}
 
 	/**
 	 * Draw {@code text} at ({@code textX}, {@code baseline}), painting a yellow
 	 * background behind each case-insensitive occurrence of the Find query.
+	 * Uses {@link TextAttribute#BACKGROUND} (more reliable than fillRect on Linux/X11
+	 * after Batik SVG painting) and also fills the match bounds explicitly.
 	 */
 	private void drawStringWithFindHighlights(Graphics2D g, String text, int textX, int baseline, Color defaultFg) {
 		if (text == null || text.isEmpty()) {
@@ -5402,43 +5417,67 @@ order by id_explain_plan_property;
 		}
 		String query = findHighlightQuery;
 		if (query == null || query.isEmpty()) {
-			g.setColor(defaultFg);
+			g.setPaint(defaultFg);
 			g.drawString(text, textX, baseline);
 			return;
 		}
-		FontMetrics fm = g.getFontMetrics();
-		String lowerText = text.toLowerCase(java.util.Locale.ROOT);
-		String lowerQuery = query.toLowerCase(java.util.Locale.ROOT);
-		int queryLen = lowerQuery.length();
-		int ascent = fm.getAscent();
-		int descent = Math.max(0, fm.getDescent());
-		int x = textX;
-		int i = 0;
-		while (i < text.length()) {
-			int match = lowerText.indexOf(lowerQuery, i);
-			if (match < 0) {
-				g.setColor(defaultFg);
-				g.drawString(text.substring(i), x, baseline);
-				break;
-			}
-			if (match > i) {
-				String gap = text.substring(i, match);
-				g.setColor(defaultFg);
-				g.drawString(gap, x, baseline);
-				x += fm.stringWidth(gap);
-			}
-			int end = Math.min(text.length(), match + queryLen);
-			String hit = text.substring(match, end);
-			int hitW = fm.stringWidth(hit);
-			g.setColor(FIND_MATCH_BACKGROUND);
-			g.fillRect(x, baseline - ascent, hitW, ascent + descent);
-			g.setColor(FIND_MATCH_FOREGROUND);
-			g.drawString(hit, x, baseline);
-			x += hitW;
-			i = end;
+		Paint priorPaint = g.getPaint();
+		Composite priorComposite = g.getComposite();
+		try {
+			g.setComposite(AlphaComposite.SrcOver);
+			FontMetrics fm = g.getFontMetrics();
+			String lowerText = text.toLowerCase(java.util.Locale.ROOT);
+			String lowerQuery = query.toLowerCase(java.util.Locale.ROOT);
+			int queryLen = lowerQuery.length();
 			if (queryLen == 0) {
-				break;
+				g.setPaint(defaultFg);
+				g.drawString(text, textX, baseline);
+				return;
 			}
+
+			AttributedString attributed = new AttributedString(text);
+			attributed.addAttribute(TextAttribute.FONT, g.getFont());
+			attributed.addAttribute(TextAttribute.FOREGROUND, defaultFg);
+			boolean anyMatch = false;
+			int searchFrom = 0;
+			while (searchFrom < text.length()) {
+				int match = lowerText.indexOf(lowerQuery, searchFrom);
+				if (match < 0) {
+					break;
+				}
+				int end = Math.min(text.length(), match + queryLen);
+				if (end > match) {
+					attributed.addAttribute(TextAttribute.BACKGROUND, FIND_MATCH_BACKGROUND, match, end);
+					attributed.addAttribute(TextAttribute.FOREGROUND, FIND_MATCH_FOREGROUND, match, end);
+					anyMatch = true;
+				}
+				searchFrom = Math.max(end, match + 1);
+			}
+
+			// Explicit fill behind matches — some Linux pipelines skip TextAttribute.BACKGROUND.
+			if (anyMatch) {
+				int ascent = fm.getAscent();
+				int descent = Math.max(1, fm.getDescent());
+				searchFrom = 0;
+				while (searchFrom < text.length()) {
+					int match = lowerText.indexOf(lowerQuery, searchFrom);
+					if (match < 0) {
+						break;
+					}
+					int end = Math.min(text.length(), match + queryLen);
+					int prefixW = match == 0 ? 0 : fm.stringWidth(text.substring(0, match));
+					int hitW = fm.stringWidth(text.substring(match, end));
+					g.setPaint(FIND_MATCH_BACKGROUND);
+					g.fillRect(textX + prefixW, baseline - ascent, Math.max(1, hitW), ascent + descent);
+					searchFrom = Math.max(end, match + 1);
+				}
+			}
+
+			g.setPaint(defaultFg);
+			g.drawString(attributed.getIterator(), textX, baseline);
+		} finally {
+			g.setComposite(priorComposite);
+			g.setPaint(priorPaint);
 		}
 	}
 
@@ -5623,6 +5662,9 @@ order by id_explain_plan_property;
 		}
 
 		// draw north and south text
+		// Batik SVG / prior drawing can leave a non-Color Paint or odd Composite on
+		// Linux; reset so Find substring backgrounds actually show.
+		resetDiagramTextGraphicsState(g);
 		strSQL = "select\n";
 		strSQL += "id_explain_plan_property\n";
 		strSQL += ", box_left + (box_right - box_left) / 2 as x_center\n";
@@ -6022,6 +6064,8 @@ order by id_explain_plan_property;
 					arrow_line_thickness = Math.min(arrow_line_thickness, Math.max(1, withZoom(2)));
 					arrow_text = "Never executed";
 				}
+				// Gradients leave a Paint that can suppress later Color fills on Linux.
+				resetDiagramTextGraphicsState(g);
 				Composite priorMute = beginNeverExecutedMute(g, neverExecuted);
 				try {
 					drawArrowAndText(g, id_explain_plan_property, arrow_line_thickness, column_boundary_left
