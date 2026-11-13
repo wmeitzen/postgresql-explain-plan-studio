@@ -248,7 +248,20 @@ public class DiagramDockingPanel extends JPanel {
 	 */
 	public void repairAfterThemeChange() {
 		redeployDefaultLayout();
+		syncThemeColors();
 		fireViewMenuSync();
+	}
+
+	/** Keep Graph / Zoom / Properties / Sliders docking titles on the active scheme. */
+	public void syncThemeColors() {
+		UiTheme.applyDockableColors(graphDockable.getColors());
+		UiTheme.applyDockableColors(propertiesDockable.getColors());
+		UiTheme.applyDockableColors(slidersDockable.getColors());
+		if (zoomDockable != null) {
+			UiTheme.applyDockableColors(zoomDockable.getColors());
+		}
+		revalidate();
+		repaint();
 	}
 
 	private CDockableAdapter visibilitySyncListener(boolean propertiesNotSliders) {

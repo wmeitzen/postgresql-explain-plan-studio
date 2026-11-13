@@ -326,7 +326,7 @@
                   <executable>cmd.exe</executable>
                   <arguments>
                     <argument>/c</argument>
-                    <argument>if exist "${project.build.directory}\${jpackage.installerDisplayName}-${jpackage.appVersion}.exe" move /Y "${project.build.directory}\${jpackage.installerDisplayName}-${jpackage.appVersion}.exe" "${project.build.directory}\${jpackage.appName}-${jpackage.appVersion}-windows-installer.exe"</argument>
+                    <argument>if exist "${project.build.directory}\${jpackage.installerDisplayName}-${jpackage.appVersion}.exe" move /Y "${project.build.directory}\${jpackage.installerDisplayName}-${jpackage.appVersion}.exe" "${project.build.directory}\${jpackage.appName}-${jpackage.appVersion}-windows-x64-installer.exe"</argument>
                   </arguments>
                 </configuration>
               </execution>

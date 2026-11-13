@@ -23,6 +23,7 @@ import javax.swing.JList;
 import javax.swing.JPanel;
 import javax.swing.JSlider;
 import javax.swing.SwingConstants;
+import javax.swing.UIManager;
 import javax.swing.border.EmptyBorder;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
@@ -644,6 +645,53 @@ public class PlanDiagramToolbar extends JPanel {
 		default:
 			return value.name();
 		}
+	}
+
+	/** Keep diagram toolbar fill readable after View → color-scheme changes. */
+	public void syncThemeSurfaces() {
+		setOpaque(true);
+		setBackground(UiTheme.uiColor(UiTheme.surfaceColor()));
+		for (Component child : getComponents()) {
+			if (child instanceof JLabel || child instanceof JCheckBox) {
+				child.setForeground(UIManager.getColor("Label.foreground"));
+			}
+		}
+		if (zoomSliderSidePanel != null) {
+			zoomSliderSidePanel.setOpaque(true);
+			zoomSliderSidePanel.setBackground(UiTheme.uiColor(UiTheme.surfaceColor()));
+			for (Component child : zoomSliderSidePanel.getComponents()) {
+				if (child instanceof JLabel) {
+					Color tick = UIManager.getColor("Slider.tickColor");
+					if (tick == null) {
+						tick = UIManager.getColor("Label.foreground");
+					}
+					if (tick != null) {
+						child.setForeground(tick);
+					}
+				}
+				if (child instanceof JSlider) {
+					child.setBackground(UiTheme.uiColor(UiTheme.surfaceColor()));
+					Color tick = UIManager.getColor("Slider.foreground");
+					if (tick != null) {
+						child.setForeground(tick);
+					}
+					// Tick labels are often plain JLabels in the slider's label table.
+					java.util.Dictionary<?, ?> labels = ((JSlider) child).getLabelTable();
+					if (labels != null) {
+						Color labelFg = UIManager.getColor("Label.foreground");
+						java.util.Enumeration<?> labelValues = labels.elements();
+						while (labelValues.hasMoreElements()) {
+							Object label = labelValues.nextElement();
+							if (label instanceof JLabel && labelFg != null) {
+								((JLabel) label).setForeground(labelFg);
+							}
+						}
+					}
+				}
+			}
+		}
+		revalidate();
+		repaint();
 	}
 
 	private final class EnumComboRenderer<E> extends DefaultListCellRenderer {

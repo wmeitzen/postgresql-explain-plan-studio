@@ -18,6 +18,7 @@ import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 import javax.swing.JViewport;
 import javax.swing.SwingUtilities;
+import javax.swing.UIManager;
 import javax.swing.BorderFactory;
 import javax.swing.border.EmptyBorder;
 import javax.swing.event.ChangeEvent;
@@ -135,10 +136,12 @@ public class OperatorDetailsPanel extends JPanel {
 
 	/** Match panel/notes surfaces to Light vs Dark (replaces hard-coded light slate). */
 	public void applyThemeSurface() {
-		Color surface = UiTheme.elevatedSurfaceColor();
+		Color surface = UiTheme.uiColor(UiTheme.elevatedSurfaceColor());
 		Color border = UiTheme.subtleBorderColor();
+		Color panel = UiTheme.uiColor(UiTheme.surfaceColor());
+		Color fg = UIManager.getColor("Label.foreground");
 		setOpaque(true);
-		setBackground(UiTheme.surfaceColor());
+		setBackground(panel);
 		setBorder(BorderFactory.createCompoundBorder(
 				BorderFactory.createEmptyBorder(6, 6, 6, 6),
 				BorderFactory.createCompoundBorder(
@@ -146,12 +149,25 @@ public class OperatorDetailsPanel extends JPanel {
 						new EmptyBorder(4, 4, 4, 4))));
 		expandAllBar.setBackground(surface);
 		notesHeading.setBackground(surface);
+		if (fg != null) {
+			notesHeading.setForeground(fg);
+		}
 		notesArea.setBackground(surface);
+		if (fg != null) {
+			notesArea.setForeground(fg);
+		}
 		notesBlock.setBackground(surface);
 		propertiesBlock.setBackground(surface);
 		tableWithHeader.setBackground(surface);
 		columnView.setBackground(surface);
 		scroll.getViewport().setBackground(surface);
+		if (propertiesPanel != null) {
+			propertiesPanel.setBackground(surface);
+			if (fg != null) {
+				propertiesPanel.setForeground(fg);
+			}
+			propertiesPanel.setGridColor(UiTheme.subtleBorderColor());
+		}
 	}
 
 	@Override

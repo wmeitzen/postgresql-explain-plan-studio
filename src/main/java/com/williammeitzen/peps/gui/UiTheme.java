@@ -2,14 +2,19 @@ package com.williammeitzen.peps.gui;
 
 import java.awt.Color;
 import java.awt.Component;
+import java.awt.Container;
 import java.awt.Window;
 
+import javax.swing.JComponent;
 import javax.swing.JFrame;
 import javax.swing.JMenu;
 import javax.swing.JMenuBar;
+import javax.swing.JMenuItem;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import javax.swing.UnsupportedLookAndFeelException;
+import javax.swing.plaf.ColorUIResource;
+import javax.swing.plaf.UIResource;
 
 import org.json.simple.JsonObject;
 
@@ -18,6 +23,8 @@ import com.formdev.flatlaf.FlatLaf;
 import com.formdev.flatlaf.FlatLightLaf;
 import com.formdev.flatlaf.util.SystemInfo;
 import com.williammeitzen.peps.model.Database;
+
+import bibliothek.gui.dock.common.ColorMap;
 
 /**
  * Application color scheme (View menu): Default = system LAF, Light/Dark = FlatLaf.
@@ -35,24 +42,46 @@ public final class UiTheme {
 	/** Near-black menu text — readable on light menu bars / Windows light title chrome. */
 	private static final Color LIGHT_MENU_FG = new Color(0x11, 0x18, 0x27);
 
-	/** UIManager keys we override for Dark; must be cleared when leaving Dark. */
+	/**
+	 * UIManager keys we override for Dark/Light chrome. Cleared before every scheme apply.
+	 * Colors must be {@link ColorUIResource} so Look-and-Feel swaps can replace them; plain
+	 * {@link Color} values stick on components and cause black-on-dark / white-on-light washouts.
+	 */
 	private static final String[] CHROME_OVERRIDE_KEYS = {
 			"Panel.background", "Viewport.background", "ScrollPane.background",
 			"SplitPane.background", "SplitPaneDivider.background",
 			"MenuBar.background", "MenuBar.foreground", "Menu.background", "Menu.foreground",
-			"MenuItem.foreground", "CheckBoxMenuItem.foreground", "RadioButtonMenuItem.foreground",
-			"PopupMenu.background", "ToolBar.background",
-			"List.background", "Table.background", "TableHeader.background",
-			"TextField.background", "FormattedTextField.background", "PasswordField.background",
-			"TextArea.background", "TextPane.background", "EditorPane.background",
-			"ComboBox.background", "Spinner.background",
-			"CheckBox.background", "RadioButton.background", "Label.background",
-			"TabbedPane.background", "TabbedPane.selectedBackground", "TabbedPane.hoverColor",
-			"TabbedPane.focusColor", "TabbedPane.tabSeparatorColor", "TabbedPane.contentAreaColor",
+			"MenuItem.background", "MenuItem.foreground",
+			"CheckBoxMenuItem.background", "CheckBoxMenuItem.foreground",
+			"RadioButtonMenuItem.background", "RadioButtonMenuItem.foreground",
+			"PopupMenu.background", "PopupMenu.foreground", "ToolBar.background",
+			"List.background", "List.foreground", "Table.background", "Table.foreground",
+			"TableHeader.background", "TableHeader.foreground",
+			"TextField.background", "TextField.foreground",
+			"FormattedTextField.background", "FormattedTextField.foreground",
+			"PasswordField.background", "PasswordField.foreground",
+			"TextArea.background", "TextArea.foreground",
+			"TextPane.background", "TextPane.foreground",
+			"EditorPane.background", "EditorPane.foreground",
+			"ComboBox.background", "ComboBox.foreground", "Spinner.background",
+			"CheckBox.background", "CheckBox.foreground",
+			"RadioButton.background", "RadioButton.foreground",
+			"Button.background", "Button.foreground",
+			"Label.background", "Label.foreground",
+			"TitledBorder.titleColor",
+			"TabbedPane.background", "TabbedPane.foreground", "TabbedPane.selectedBackground",
+			"TabbedPane.selectedForeground", "TabbedPane.inactiveForeground", "TabbedPane.hoverForeground",
+			"TabbedPane.hoverColor", "TabbedPane.focusColor", "TabbedPane.tabSeparatorColor",
+			"TabbedPane.contentAreaColor",
 			"TabbedPane.showTabSeparators", "TabbedPane.tabSeparatorsFullHeight",
 			"TabbedPane.tabType", "TabbedPane.hasFullBorder", "TabbedPane.cardTabArc",
-			"TitlePane.menuBarEmbedded", "TitlePane.foreground", "TitlePane.background"
+			"TitlePane.menuBarEmbedded", "TitlePane.foreground", "TitlePane.background",
+			"Slider.tickColor", "Slider.foreground", "ToolTip.background", "ToolTip.foreground"
 	};
+
+	private static ColorUIResource ui(Color color) {
+		return new ColorUIResource(color);
+	}
 
 	public enum Scheme {
 		DEFAULT("default", "Default"),
@@ -161,18 +190,27 @@ public final class UiTheme {
 	 * Force dark File/View/Help labels on a light menu bar (UIManager + later {@link #styleMenuBar}).
 	 */
 	private static void applyLightMenuContrast() {
+		ColorUIResource menuBg = ui(new Color(0xF3, 0xF3, 0xF3));
+		ColorUIResource menuFg = ui(LIGHT_MENU_FG);
 		UIManager.put("TitlePane.menuBarEmbedded", Boolean.FALSE);
-		UIManager.put("MenuBar.background", new Color(0xF3, 0xF3, 0xF3));
-		UIManager.put("MenuBar.foreground", LIGHT_MENU_FG);
-		UIManager.put("Menu.foreground", LIGHT_MENU_FG);
-		UIManager.put("MenuItem.foreground", LIGHT_MENU_FG);
-		UIManager.put("CheckBoxMenuItem.foreground", LIGHT_MENU_FG);
-		UIManager.put("RadioButtonMenuItem.foreground", LIGHT_MENU_FG);
+		UIManager.put("MenuBar.background", menuBg);
+		UIManager.put("MenuBar.foreground", menuFg);
+		UIManager.put("Menu.background", menuBg);
+		UIManager.put("Menu.foreground", menuFg);
+		UIManager.put("MenuItem.background", menuBg);
+		UIManager.put("MenuItem.foreground", menuFg);
+		UIManager.put("CheckBoxMenuItem.background", menuBg);
+		UIManager.put("CheckBoxMenuItem.foreground", menuFg);
+		UIManager.put("RadioButtonMenuItem.background", menuBg);
+		UIManager.put("RadioButtonMenuItem.foreground", menuFg);
+		UIManager.put("PopupMenu.background", menuBg);
+		UIManager.put("PopupMenu.foreground", menuFg);
 	}
 
 	/**
-	 * Paint File/View/Help with explicit fg/bg so FlatLaf / Windows chrome cannot wash them out.
-	 * Call after the menu bar is created and again after every theme refresh.
+	 * Paint File/View/Help and their items with explicit fg/bg so FlatLaf / Windows
+	 * chrome cannot wash them out. Call after the menu bar is created and again after
+	 * every theme refresh.
 	 */
 	public static void styleMenuBar(JMenuBar menuBar) {
 		if (menuBar == null) {
@@ -186,14 +224,29 @@ public final class UiTheme {
 		menuBar.setForeground(fg);
 		for (Component child : menuBar.getComponents()) {
 			if (child instanceof JMenu) {
-				JMenu menu = (JMenu) child;
-				menu.setOpaque(true);
-				menu.setBackground(bg);
-				menu.setForeground(fg);
+				styleMenuTree((JMenu) child, fg, bg);
 			}
 		}
 		menuBar.revalidate();
 		menuBar.repaint();
+	}
+
+	private static void styleMenuTree(JMenu menu, Color fg, Color bg) {
+		menu.setOpaque(true);
+		menu.setBackground(bg);
+		menu.setForeground(fg);
+		for (int i = 0; i < menu.getItemCount(); i++) {
+			JMenuItem item = menu.getItem(i);
+			if (item == null) {
+				continue;
+			}
+			item.setOpaque(true);
+			item.setBackground(bg);
+			item.setForeground(fg);
+			if (item instanceof JMenu) {
+				styleMenuTree((JMenu) item, fg, bg);
+			}
+		}
 	}
 
 	/** Style every displayable frame's menu bar after a LAF swap. */
@@ -225,48 +278,82 @@ public final class UiTheme {
 	 * read as tabs. Also unify panel/menu/list backgrounds so chrome is one charcoal.
 	 */
 	private static void applyDarkChromeOverrides() {
-		UIManager.put("Panel.background", DARK_PANEL);
-		UIManager.put("Viewport.background", DARK_PANEL);
-		UIManager.put("ScrollPane.background", DARK_PANEL);
-		UIManager.put("SplitPane.background", DARK_BG);
-		UIManager.put("SplitPaneDivider.background", DARK_ELEVATED);
-		UIManager.put("TitlePane.menuBarEmbedded", Boolean.FALSE);
-		UIManager.put("MenuBar.background", DARK_BG);
-		UIManager.put("MenuBar.foreground", DARK_MENU_FG);
-		UIManager.put("Menu.background", DARK_BG);
-		UIManager.put("Menu.foreground", DARK_MENU_FG);
-		UIManager.put("MenuItem.foreground", DARK_MENU_FG);
-		UIManager.put("CheckBoxMenuItem.foreground", DARK_MENU_FG);
-		UIManager.put("RadioButtonMenuItem.foreground", DARK_MENU_FG);
-		UIManager.put("TitlePane.foreground", DARK_MENU_FG);
-		UIManager.put("PopupMenu.background", DARK_PANEL);
-		UIManager.put("ToolBar.background", DARK_PANEL);
-		UIManager.put("List.background", DARK_PANEL);
-		UIManager.put("Table.background", DARK_PANEL);
-		UIManager.put("TableHeader.background", DARK_ELEVATED);
-		UIManager.put("TextField.background", DARK_ELEVATED);
-		UIManager.put("FormattedTextField.background", DARK_ELEVATED);
-		UIManager.put("PasswordField.background", DARK_ELEVATED);
-		UIManager.put("TextArea.background", DARK_ELEVATED);
-		UIManager.put("TextPane.background", DARK_ELEVATED);
-		UIManager.put("EditorPane.background", DARK_ELEVATED);
-		UIManager.put("ComboBox.background", DARK_ELEVATED);
-		UIManager.put("Spinner.background", DARK_ELEVATED);
-		UIManager.put("CheckBox.background", DARK_PANEL);
-		UIManager.put("RadioButton.background", DARK_PANEL);
-		UIManager.put("Label.background", DARK_PANEL);
+		ColorUIResource bg = ui(DARK_BG);
+		ColorUIResource panel = ui(DARK_PANEL);
+		ColorUIResource elevated = ui(DARK_ELEVATED);
+		ColorUIResource hover = ui(DARK_HOVER);
+		ColorUIResource separator = ui(DARK_SEPARATOR);
+		ColorUIResource tabSelected = ui(DARK_TAB_SELECTED);
+		ColorUIResource fg = ui(DARK_MENU_FG);
 
-		UIManager.put("TabbedPane.background", DARK_BG);
-		UIManager.put("TabbedPane.selectedBackground", DARK_TAB_SELECTED);
-		UIManager.put("TabbedPane.hoverColor", DARK_HOVER);
-		UIManager.put("TabbedPane.focusColor", DARK_TAB_SELECTED);
-		UIManager.put("TabbedPane.tabSeparatorColor", DARK_SEPARATOR);
-		UIManager.put("TabbedPane.contentAreaColor", DARK_SEPARATOR);
+		UIManager.put("Panel.background", panel);
+		UIManager.put("Viewport.background", panel);
+		UIManager.put("ScrollPane.background", panel);
+		UIManager.put("SplitPane.background", bg);
+		UIManager.put("SplitPaneDivider.background", elevated);
+		UIManager.put("TitlePane.menuBarEmbedded", Boolean.FALSE);
+		UIManager.put("MenuBar.background", bg);
+		UIManager.put("MenuBar.foreground", fg);
+		UIManager.put("Menu.background", bg);
+		UIManager.put("Menu.foreground", fg);
+		UIManager.put("MenuItem.background", bg);
+		UIManager.put("MenuItem.foreground", fg);
+		UIManager.put("CheckBoxMenuItem.background", bg);
+		UIManager.put("CheckBoxMenuItem.foreground", fg);
+		UIManager.put("RadioButtonMenuItem.background", bg);
+		UIManager.put("RadioButtonMenuItem.foreground", fg);
+		UIManager.put("TitlePane.foreground", fg);
+		UIManager.put("TitlePane.background", bg);
+		UIManager.put("PopupMenu.background", panel);
+		UIManager.put("PopupMenu.foreground", fg);
+		UIManager.put("ToolBar.background", panel);
+		UIManager.put("List.background", panel);
+		UIManager.put("List.foreground", fg);
+		UIManager.put("Table.background", panel);
+		UIManager.put("Table.foreground", fg);
+		UIManager.put("TableHeader.background", elevated);
+		UIManager.put("TableHeader.foreground", fg);
+		UIManager.put("TextField.background", elevated);
+		UIManager.put("TextField.foreground", fg);
+		UIManager.put("FormattedTextField.background", elevated);
+		UIManager.put("FormattedTextField.foreground", fg);
+		UIManager.put("PasswordField.background", elevated);
+		UIManager.put("PasswordField.foreground", fg);
+		UIManager.put("TextArea.background", elevated);
+		UIManager.put("TextArea.foreground", fg);
+		UIManager.put("TextPane.background", elevated);
+		UIManager.put("TextPane.foreground", fg);
+		UIManager.put("EditorPane.background", elevated);
+		UIManager.put("EditorPane.foreground", fg);
+		UIManager.put("ComboBox.background", elevated);
+		UIManager.put("ComboBox.foreground", fg);
+		UIManager.put("Spinner.background", elevated);
+		UIManager.put("CheckBox.background", panel);
+		UIManager.put("CheckBox.foreground", fg);
+		UIManager.put("RadioButton.background", panel);
+		UIManager.put("RadioButton.foreground", fg);
+		UIManager.put("Button.foreground", fg);
+		UIManager.put("Label.background", panel);
+		UIManager.put("Label.foreground", fg);
+		UIManager.put("TitledBorder.titleColor", fg);
+
+		UIManager.put("TabbedPane.background", bg);
+		UIManager.put("TabbedPane.foreground", fg);
+		UIManager.put("TabbedPane.selectedBackground", tabSelected);
+		UIManager.put("TabbedPane.selectedForeground", fg);
+		UIManager.put("TabbedPane.inactiveForeground", fg);
+		UIManager.put("TabbedPane.hoverForeground", fg);
+		UIManager.put("TabbedPane.hoverColor", hover);
+		UIManager.put("TabbedPane.focusColor", tabSelected);
+		UIManager.put("TabbedPane.tabSeparatorColor", separator);
+		UIManager.put("TabbedPane.contentAreaColor", separator);
 		UIManager.put("TabbedPane.showTabSeparators", Boolean.TRUE);
 		UIManager.put("TabbedPane.tabSeparatorsFullHeight", Boolean.TRUE);
 		UIManager.put("TabbedPane.tabType", "card");
 		UIManager.put("TabbedPane.hasFullBorder", Boolean.TRUE);
 		UIManager.put("TabbedPane.cardTabArc", 8);
+		UIManager.put("Slider.foreground", fg);
+		UIManager.put("Slider.tickColor", fg);
 	}
 
 	public static void applyAndRefresh(Scheme scheme, Window window) {
@@ -276,19 +363,78 @@ public final class UiTheme {
 			if (!w.isDisplayable()) {
 				continue;
 			}
+			// Plain Color setBackground/setForeground values survive LAF swaps; clear them
+			// so updateComponentTreeUI can reinstall ColorUIResource defaults.
+			unlockStuckColors(w);
 			SwingUtilities.updateComponentTreeUI(w);
 			w.invalidate();
 			w.validate();
 			w.repaint();
 		}
 		styleAllMenuBars();
-		// Custom-painted diagram/slider chrome needs an explicit repaint after LAF swap
-		if (window != null) {
+		if (DockingLayout.getInstance() != null) {
+			DockingLayout.getInstance().syncThemeColors();
+		}
+		// Custom-painted diagram/slider/docking chrome needs an explicit sync after LAF swap
+		for (Window w : Window.getWindows()) {
+			if (w.isDisplayable()) {
+				repaintCustomSurfaces(w);
+			}
+		}
+		if (window != null && window.isDisplayable()) {
 			repaintCustomSurfaces(window);
 		}
 	}
 
-	private static void repaintCustomSurfaces(java.awt.Component root) {
+	/**
+	 * Swing only replaces colors that are null or {@link UIResource}. Explicit
+	 * {@link Color} values (from older theme code or setBackground) stick and cause
+	 * black-on-charcoal / white-on-white after scheme changes.
+	 */
+	static void unlockStuckColors(Component root) {
+		if (root instanceof JComponent) {
+			JComponent jc = (JComponent) root;
+			Color bg = jc.getBackground();
+			if (bg != null && !(bg instanceof UIResource)) {
+				jc.setBackground(null);
+			}
+			Color fg = jc.getForeground();
+			if (fg != null && !(fg instanceof UIResource)) {
+				jc.setForeground(null);
+			}
+		}
+		if (root instanceof Container) {
+			for (Component child : ((Container) root).getComponents()) {
+				unlockStuckColors(child);
+			}
+		}
+	}
+
+	/** Match Docking Frames title/tab chrome to the active PEPS scheme. */
+	public static void applyDockableColors(ColorMap colors) {
+		if (colors == null) {
+			return;
+		}
+		boolean dark = isDark();
+		Color titleBg = dark ? DARK_BG : new Color(0xE8, 0xEE, 0xF4);
+		Color titleFg = dark ? DARK_MENU_FG : LIGHT_MENU_FG;
+		Color titleBgFocus = dark ? DARK_TAB_SELECTED : new Color(0xD0, 0xDC, 0xEA);
+		Color tabBg = dark ? DARK_BG : new Color(0xF3, 0xF3, 0xF3);
+		Color tabFg = titleFg;
+		Color tabBgSelected = dark ? DARK_TAB_SELECTED : Color.WHITE;
+		colors.setColor(ColorMap.COLOR_KEY_TITLE_BACKGROUND, titleBg);
+		colors.setColor(ColorMap.COLOR_KEY_TITLE_FOREGROUND, titleFg);
+		colors.setColor(ColorMap.COLOR_KEY_TITLE_BACKGROUND_FOCUSED, titleBgFocus);
+		colors.setColor(ColorMap.COLOR_KEY_TITLE_FOREGROUND_FOCUSED, titleFg);
+		colors.setColor(ColorMap.COLOR_KEY_TAB_BACKGROUND, tabBg);
+		colors.setColor(ColorMap.COLOR_KEY_TAB_FOREGROUND, tabFg);
+		colors.setColor(ColorMap.COLOR_KEY_TAB_BACKGROUND_SELECTED, tabBgSelected);
+		colors.setColor(ColorMap.COLOR_KEY_TAB_FOREGROUND_SELECTED, titleFg);
+		colors.setColor(ColorMap.COLOR_KEY_TAB_BACKGROUND_FOCUSED, titleBgFocus);
+		colors.setColor(ColorMap.COLOR_KEY_TAB_FOREGROUND_FOCUSED, titleFg);
+	}
+
+	private static void repaintCustomSurfaces(Component root) {
 		if (root instanceof SliderPanel) {
 			((SliderPanel) root).reinstallSpanAwareSliderUI();
 			root.revalidate();
@@ -302,10 +448,16 @@ public final class UiTheme {
 			root.revalidate();
 			root.repaint();
 		} else if (root instanceof FormPanel) {
-			((FormPanel) root).refreshPlanToolbarIcons();
+			FormPanel form = (FormPanel) root;
+			form.refreshPlanToolbarIcons();
+			form.syncThemeSurfaces();
+		} else if (root instanceof PlanDiagramToolbar) {
+			((PlanDiagramToolbar) root).syncThemeSurfaces();
+		} else if (root instanceof DiagramDockingPanel) {
+			((DiagramDockingPanel) root).syncThemeColors();
 		}
-		if (root instanceof java.awt.Container) {
-			for (java.awt.Component child : ((java.awt.Container) root).getComponents()) {
+		if (root instanceof Container) {
+			for (Component child : ((Container) root).getComponents()) {
 				repaintCustomSurfaces(child);
 			}
 		}
@@ -313,6 +465,15 @@ public final class UiTheme {
 
 	public static boolean isDark() {
 		return FlatLaf.isLafDark();
+	}
+
+	/** Charcoal used for Dark panels — tests assert this does not linger after Light/Default. */
+	public static Color darkPanelColor() {
+		return DARK_PANEL;
+	}
+
+	public static Color darkBackgroundColor() {
+		return DARK_BG;
 	}
 
 	/** Preferred panel/canvas fill for custom surfaces. */
@@ -337,5 +498,10 @@ public final class UiTheme {
 		}
 		Color border = UIManager.getColor("Component.borderColor");
 		return border != null ? border : new Color(0xE2, 0xE8, 0xF0);
+	}
+
+	/** UIResource wrapper for setBackground/setForeground so later scheme swaps can replace it. */
+	public static ColorUIResource uiColor(Color color) {
+		return ui(color);
 	}
 }

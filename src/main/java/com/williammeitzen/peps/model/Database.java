@@ -28,7 +28,7 @@ import com.williammeitzen.peps.gui.Utils;
 
 public final class Database {
 	
-	private static double SQLITE_DB_SCHEMA_VERSION = 4.09;
+	private static double SQLITE_DB_SCHEMA_VERSION = 4.11;
 	private static Connection objConnection = null;
 	private static Connection objPGConnection = null;
 	
@@ -535,6 +535,10 @@ public final class Database {
 		ensureConfigColumn("color_scheme", "varchar(32) not null default 'dark'");
 		ensureConfigColumn("docking_layout", "text");
 		ensureConfigColumn("plan_source_mode", "varchar(32) not null default 'paste'");
+		ensureConfigColumn("selected_plan_name", "text");
+		ensureConfigColumn("selected_plan_id", "integer");
+		ensureConfigColumn("plans_sort_name_order", "varchar(16) not null default 'asc'");
+		ensureConfigColumn("plans_sort_grouping", "varchar(32) not null default 'folders_first'");
 
 		// 4.09: factory color scheme is Dark (was Default). Migrate only the old factory value.
 		if (dblDBConfigVersion > 0.0 && dblDBConfigVersion < 4.09) {
@@ -1052,11 +1056,23 @@ south_1_fontmetrics_width = null;
     		+ ");";
         Database.dml(strSQL);
 		
+		// Nested folders for the Plans tree
+		strSQL = "create table if not exists plan_folders (\n"
+				+ "id_folder integer primary key\n"
+				+ ", folder_name varchar(256) not null\n"
+				+ ", parent_id_folder integer\n"
+				+ ", sort_order integer not null default 0\n"
+				+ ");\n";
+		Database.dml(strSQL);
+		Database.dml("create unique index if not exists idx_plan_folders_parent_name\n"
+				+ "on plan_folders (ifnull(parent_id_folder, -1), folder_name);");
+
         // create table for the list of plans
         // updating major db schema version drops / recreates this table
         strSQL = "create table if not exists explain_plans (";
         strSQL += "id_explain_plan int unique not null\n";
-        strSQL += ", plan_name varchar(256) unique not null\n";
+        strSQL += ", plan_name varchar(256) not null\n";
+        strSQL += ", folder_id integer\n";
         strSQL += ", plan_text varchar(8192)\n";
         strSQL += ", server varchar(256)\n";
         strSQL += ", port integer\n";
@@ -1074,6 +1090,10 @@ south_1_fontmetrics_width = null;
         strSQL += ");";
         Database.dml(strSQL);
 		ensureExplainPlansColumn("auth_type", "varchar(64) not null default 'password'");
+		ensureExplainPlansColumn("folder_id", "integer");
+		migrateExplainPlansUniqueToFolderScope(dblDBConfigVersion);
+		Database.dml("create unique index if not exists idx_explain_plans_folder_name\n"
+				+ "on explain_plans (ifnull(folder_id, -1), plan_name);");
 
 		// if major or minor db version number change, drop / recreate table
 		if (intDBConfigVersionMajor != intDBSchemaVersionNumberMajor || strDBConfigVersionMinor.equals(strDBSchemaVersionNumberMinor) == false) {
@@ -1519,6 +1539,170 @@ south_1_fontmetrics_width = null;
 			return null;
 		}
 		return value;
+	}
+
+	/** Remember which Plans-list entry was highlighted (restored on next launch). */
+	public static void saveSelectedPlanName(String planName) {
+		if (objConnection == null) {
+			return;
+		}
+		String sql = "update config set selected_plan_name = ?";
+		try (PreparedStatement ps = objConnection.prepareStatement(sql)) {
+			if (planName == null || planName.isBlank()) {
+				ps.setNull(1, Types.VARCHAR);
+			} else {
+				ps.setString(1, planName);
+			}
+			ps.executeUpdate();
+		} catch (SQLException ex) {
+			System.out.println("function Database.saveSelectedPlanName()");
+			ex.printStackTrace();
+		}
+	}
+
+	/** Last highlighted plan name, or null if none / missing. */
+	public static String loadSelectedPlanName() {
+		JsonObject row = row("select selected_plan_name from config;");
+		if (row == null || row.get("selected_plan_name") == null) {
+			return null;
+		}
+		String value = String.valueOf(row.get("selected_plan_name"));
+		if (value.isBlank() || "null".equalsIgnoreCase(value)) {
+			return null;
+		}
+		return value;
+	}
+
+	/** Remember which plan id was highlighted (preferred over name once folders exist). */
+	public static void saveSelectedPlanId(Integer planId) {
+		if (objConnection == null) {
+			return;
+		}
+		String sql = "update config set selected_plan_id = ?";
+		try (PreparedStatement ps = objConnection.prepareStatement(sql)) {
+			if (planId == null) {
+				ps.setNull(1, Types.INTEGER);
+			} else {
+				ps.setInt(1, planId.intValue());
+			}
+			ps.executeUpdate();
+		} catch (SQLException ex) {
+			System.out.println("function Database.saveSelectedPlanId()");
+			ex.printStackTrace();
+		}
+	}
+
+	/** Last highlighted plan id, or null if none / missing. */
+	public static Integer loadSelectedPlanId() {
+		JsonObject row = row("select selected_plan_id from config;");
+		if (row == null || row.get("selected_plan_id") == null) {
+			return null;
+		}
+		Object value = row.get("selected_plan_id");
+		if (value instanceof Number) {
+			return ((Number) value).intValue();
+		}
+		String text = String.valueOf(value);
+		if (text.isBlank() || "null".equalsIgnoreCase(text)) {
+			return null;
+		}
+		try {
+			return Integer.valueOf(text);
+		} catch (NumberFormatException ex) {
+			return null;
+		}
+	}
+
+	/** Plans tree name order: {@code asc} or {@code desc}. */
+	public static String loadPlansSortNameOrder() {
+		return loadConfigString("plans_sort_name_order", "asc");
+	}
+
+	/** Plans tree grouping: {@code folders_first}, {@code plans_first}, or {@code mixed}. */
+	public static String loadPlansSortGrouping() {
+		return loadConfigString("plans_sort_grouping", "folders_first");
+	}
+
+	public static void savePlansSortPreferences(String nameOrder, String grouping) {
+		if (objConnection == null) {
+			return;
+		}
+		String sql = "update config set plans_sort_name_order = ?, plans_sort_grouping = ?";
+		try (PreparedStatement ps = objConnection.prepareStatement(sql)) {
+			ps.setString(1, nameOrder == null || nameOrder.isBlank() ? "asc" : nameOrder);
+			ps.setString(2, grouping == null || grouping.isBlank() ? "folders_first" : grouping);
+			ps.executeUpdate();
+		} catch (SQLException ex) {
+			System.out.println("function Database.savePlansSortPreferences()");
+			ex.printStackTrace();
+		}
+	}
+
+	private static String loadConfigString(String column, String defaultValue) {
+		JsonObject row = row("select " + column + " from config;");
+		if (row == null || row.get(column) == null) {
+			return defaultValue;
+		}
+		String value = String.valueOf(row.get(column));
+		if (value.isBlank() || "null".equalsIgnoreCase(value)) {
+			return defaultValue;
+		}
+		return value;
+	}
+
+	/**
+	 * Older schemas had a global UNIQUE on plan_name. Rebuild once so names are unique per folder.
+	 */
+	private static void migrateExplainPlansUniqueToFolderScope(double dblDBConfigVersion) {
+		if (dblDBConfigVersion >= 4.11) {
+			return;
+		}
+		JsonObject sqlRow = row("select sql from sqlite_master where type='table' and name='explain_plans';");
+		if (sqlRow == null || sqlRow.get("sql") == null) {
+			return;
+		}
+		String createSql = String.valueOf(sqlRow.get("sql")).toLowerCase();
+		// Already folder-scoped (no table-level unique on plan_name alone).
+		if (createSql.contains("plan_name varchar(256) not null")
+				&& !createSql.contains("plan_name varchar(256) unique")) {
+			return;
+		}
+		if (!createSql.contains("unique") || !createSql.contains("plan_name")) {
+			return;
+		}
+
+		dml("begin transaction;");
+		dml("create table explain_plans_new (\n"
+				+ "id_explain_plan int unique not null\n"
+				+ ", plan_name varchar(256) not null\n"
+				+ ", folder_id integer\n"
+				+ ", plan_text varchar(8192)\n"
+				+ ", server varchar(256)\n"
+				+ ", port integer\n"
+				+ ", database varchar(256)\n"
+				+ ", username varchar(256)\n"
+				+ ", password varchar(256)\n"
+				+ ", pre_explain_command varchar(256)\n"
+				+ ", explain_sql_command varchar(8192)\n"
+				+ ", post_explain_command varchar(256)\n"
+				+ ", remember_password int not null default 0\n"
+				+ ", auth_type varchar(64) not null default 'password'\n"
+				+ ", write_version_environment_to_json int not null default 1\n"
+				+ ", write_query_to_json int not null default 1\n"
+				+ ", write_pg_environment_settings_to_json int not null default 1\n"
+				+ ");");
+		dml("insert into explain_plans_new (\n"
+				+ "id_explain_plan, plan_name, folder_id, plan_text, server, port, database,\n"
+				+ "username, password, pre_explain_command, explain_sql_command, post_explain_command,\n"
+				+ "remember_password, auth_type, write_version_environment_to_json, write_query_to_json,\n"
+				+ "write_pg_environment_settings_to_json)\n"
+				+ "select id_explain_plan, plan_name, folder_id, plan_text, server, port, database,\n"
+				+ "username, password, pre_explain_command, explain_sql_command, post_explain_command,\n"
+				+ "remember_password, auth_type, write_version_environment_to_json, write_query_to_json,\n"
+				+ "write_pg_environment_settings_to_json from explain_plans;");
+		dml("drop table explain_plans;");
+		dml("alter table explain_plans_new rename to explain_plans;");
+		dml("commit transaction;");
 	}
 
 	/** Add a config column if an older database is missing it. */

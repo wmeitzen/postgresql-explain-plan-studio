@@ -7,6 +7,7 @@ Graphical viewer for PostgreSQL `EXPLAIN` plans.
 - Windows installer: [PostgreSQLExplainPlanStudio-0.0.16-windows-installer.exe](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.16-windows-installer.exe)
 - Windows zip: [PostgreSQLExplainPlanStudio-0.0.16-windows-x64.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.16-windows-x64.zip)
 - Linux zip: [PostgreSQLExplainPlanStudio-0.0.16-linux-x64.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.16-linux-x64.zip)
+- macOS (JAR): build with `.\scripts\pack-mac-jar.ps1` → `target/PostgreSQLExplainPlanStudio-<version>-mac-jar.zip` (install JDK 17+, then `chmod +x peps.sh && ./peps.sh`)
 
 All [releases](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases).
 
@@ -111,7 +112,7 @@ Outputs:
 
 - `target/jpackage/PostgreSQLExplainPlanStudio/PostgreSQLExplainPlanStudio.exe` (portable app image)
 - `target/PostgreSQLExplainPlanStudio-<version>-windows-x64.zip`
-- `target/PostgreSQLExplainPlanStudio-<version>-windows-installer.exe` (WiX installer, when WiX is available)
+- `target/PostgreSQLExplainPlanStudio-<version>-windows-x64-installer.exe` (WiX installer, when WiX is available)
 
 **Ubuntu / Linux**
 
@@ -143,6 +144,23 @@ Optional glibc check (should be ≤ 2.31):
 objdump -T target/jpackage/PostgreSQLExplainPlanStudio/bin/PostgreSQLExplainPlanStudio \
   | grep -oE 'GLIBC_[0-9.]+' | sort -Vu
 ```
+
+**macOS (easiest: JAR, no native arch choice)**
+
+Do **not** pick Intel / Apple Silicon / universal for this path. Ship the shaded JAR plus `peps.sh`; one zip runs on both CPU types when a JDK is installed. Build the zip on Windows (no Mac required):
+
+```powershell
+.\scripts\pack-mac-jar.ps1
+```
+
+On the Mac: install Temurin (or another) JDK 17+, unzip `target/PostgreSQLExplainPlanStudio-<version>-mac-jar.zip`, then:
+
+```bash
+chmod +x peps.sh
+./peps.sh
+```
+
+A self-contained `.app` via `jpackage` (and any Intel / arm64 / universal native bundle, signing, or notarization) is deferred until you need a double-clickable Mac app without a system JDK.
 
 ## License
 

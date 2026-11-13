@@ -75,6 +75,11 @@ public class PlanSourcePanel extends JPanel {
 	//private JRadioButton planSourceFromPEGRadio;
 	private int idExplainPlan;
 	private JButton showPlanGraphButton;
+	private JLabel planFolderLabel;
+	private JComboBox<FormPanel.FolderChoice> planFolderCombo;
+	private JButton planFolderSaveBtn;
+	private Integer savedPlanFolderId;
+	private boolean syncingPlanFolderCombo;
 	private JLabel planSourceFromQueryPlanNameLabel;
 	private JTextField planSourceFromQueryPlanNameField;
 	private JLabel planSourceFromQueryServerLabel;
@@ -163,6 +168,14 @@ public class PlanSourcePanel extends JPanel {
 		
 		this.objCurrentPlanTabs = objCurrentPlanTabs;
 		
+		planFolderLabel = new JLabel("Folder:");
+		planFolderCombo = new JComboBox<>();
+		planFolderSaveBtn = new JButton("Save");
+		planFolderSaveBtn.setEnabled(false);
+		planFolderSaveBtn.setToolTipText("Move this plan into the selected folder");
+		planFolderCombo.addActionListener(e -> updatePlanFolderSaveEnabled());
+		planFolderSaveBtn.addActionListener(e -> savePlanFolderSelection());
+
 		planSourceFromQueryPlanNameLabel = new JLabel("Plan name:");
 		planSourceFromQueryPlanNameField = new JTextField(24);
 
@@ -288,11 +301,17 @@ public class PlanSourcePanel extends JPanel {
 		planSourceFromQueryPlanNameField.addFocusListener(new FocusAdapter() {
 			String strOldPlanName;
 			int oldPlanNameIndex;
+			Integer oldPlanId;
 			
 			public void focusGained(FocusEvent e) {
 				strOldPlanName = getPlanSourceFromQueryPlanNameField();
 				FormPanel formPanel = findFormPanel();
 				oldPlanNameIndex = formPanel != null ? formPanel.getSelectedIndex() : -1;
+				// this panel's plan (same id as its PlanGraphPanel.getIdExplainPlan()); fall back to the selected plan
+				oldPlanId = formPanel != null ? formPanel.findPlanIdForSource(PlanSourcePanel.this) : null;
+				if (oldPlanId == null && formPanel != null) {
+					oldPlanId = formPanel.getSelectedPlanId();
+				}
 			}
 			
 			public void focusLost(FocusEvent e) {
@@ -321,72 +340,56 @@ public class PlanSourcePanel extends JPanel {
 				// set the new name unless there's a name collision
 				strNewPlanName = strFieldTextEntered;
 				
-				// see if the preferred name collides with an existing name
-				strSQL = "select count(*) as plan_name_exists from explain_plans where plan_name = '" + strFieldTextEntered.replace("'",  "''") + "'";
+				// plan names are unique within a folder only: find this plan's folder
+				Integer renamePlanId = oldPlanId;
+				Object planFolderIdValue = null;
+				if (renamePlanId != null) {
+					org.json.simple.JsonObject folderRow = Database.row("select folder_id from explain_plans where id_explain_plan = " + renamePlanId.intValue());
+					planFolderIdValue = folderRow == null ? null : folderRow.get("folder_id");
+				}
+				String strFolderScopeSQL = "ifnull(folder_id, -1) = "
+						+ (planFolderIdValue instanceof Number ? String.valueOf(((Number) planFolderIdValue).intValue()) : "-1");
+
+				// see if the preferred name collides with an existing name in the same folder
+				strSQL = "select count(*) as plan_name_exists from explain_plans where plan_name = '" + strFieldTextEntered.replace("'",  "''") + "'\n"
+						+ "and " + strFolderScopeSQL;
+				if (renamePlanId != null) {
+					strSQL += "\nand id_explain_plan <> " + renamePlanId.intValue();
+				}
 				if (bolShowSQL == true) { System.out.println(strSQL); }
 				//String strNewPlanName = Database.row(strSQL).getString("plan_name_exists");
-				boolean bolPlanNameExists = (Database.row(strSQL).getInteger("plan_name_exists") == 1);
+				boolean bolPlanNameExists = (Database.row(strSQL).getInteger("plan_name_exists") > 0);
 				
 				if (bolPlanNameExists == true) {
-					
-					// generate a new plan name if necessary
-					strSQL = "with cteOriginalPlanName as (\n" + 
-							"	select '" + strFieldTextEntered.replace("'",  "''") + "' as plan_name\n" + 
-							")\n" + 
-							", cteOriginalPlaNameNumberPrefix as (\n" + 
-							"	select\n" + 
-							"		1 as order_by_attempt\n" + 
-							"		,plan_name\n" + 
-							"		,null as instr\n" + 
-							"		,plan_name as plan_name_without_copy\n" + 
-							"		, null as current_copy_number\n" + 
-							"	from cteOriginalPlanName where plan_name not like '%(%'\n" + 
-							"	union\n" + 
-							"	select\n" + 
-							"		2 as order_by_attempt\n" + 
-							"		,plan_name\n" + 
-							"		,instr(plan_name, ' (copy') as instr\n" + 
-							"		,substr(plan_name, 1, instr(plan_name, ' (copy') - 1) as plan_name_without_copy\n" + 
-							"		,cast(replace(substr(plan_name, instr(plan_name, '(copy ') + length('(copy ')), ')', '') as int) as current_copy_number\n" + 
-							"	from cteOriginalPlanName where plan_name like '%(%'	\n" + 
-							")\n" + 
-							", cteAllPlansNumberPrefix as (\n" + 
-							"	select\n" + 
-							"		id_explain_plan\n" + 
-							"		,1 as order_by_attempt\n" + 
-							"		,plan_name\n" + 
-							"		,null as instr\n" + 
-							"		,plan_name as plan_name_without_copy\n" + 
-							"		, null as current_copy_number\n" + 
-							"	from explain_plans where plan_name not like '%(%'\n" + 
-							"	union\n" + 
-							"	select\n" + 
-							"		id_explain_plan\n" + 
-							"		,2 as order_by_attempt\n" + 
-							"		,plan_name\n" + 
-							"		,instr(plan_name, ' (copy') as instr\n" + 
-							"		,substr(plan_name, 1, instr(plan_name, ' (copy') - 1) as plan_name_without_copy\n" + 
-							"		,cast(replace(substr(plan_name, instr(plan_name, '(copy ') + length('(copy ')), ')', '') as int) as current_copy_number\n" + 
-							"	from explain_plans where plan_name like '%(%'\n" + 
-							")\n" + 
-							", cteJoin as (\n" + 
-							"	select O.plan_name_without_copy || ' (copy ' || max(coalesce(A.current_copy_number, 1) + 1) || ')' as new_plan_name\n" + 
-							"	from cteOriginalPlaNameNumberPrefix as O\n" + 
-							"	inner join cteAllPlansNumberPrefix as A on O.plan_name_without_copy = A.plan_name_without_copy\n" + 
-							"	group by O.plan_name_without_copy\n" + 
-							")\n" + 
-							"select * from cteJoin\n" + 
-							"";
+					// "Name (N)" — same numbering used by Duplicate
+					strSQL = "select plan_name from explain_plans where " + strFolderScopeSQL;
+					if (renamePlanId != null) {
+						strSQL += " and id_explain_plan <> " + renamePlanId.intValue();
+					}
 					if (bolShowSQL == true) { System.out.println(strSQL); }
-					strNewPlanName = Database.row(strSQL).getString("new_plan_name");
+					java.util.List<String> existingNames = new java.util.ArrayList<>();
+					org.json.simple.JsonArray nameRows = Database.rows(strSQL);
+					if (nameRows != null) {
+						for (int i = 0; i < nameRows.size(); i++) {
+							Object value = ((org.json.simple.JsonObject) nameRows.get(i)).get("plan_name");
+							if (value != null) {
+								existingNames.add(String.valueOf(value));
+							}
+						}
+					}
+					strNewPlanName = FormPanel.nextCopyName(strFieldTextEntered, existingNames);
 				}
 				
 				//strPlanName = strPlanName.replace("'",  "''");
 				//strNewPlanName = strNewPlanName.replace("'",  "''");
 				
 				strSQL = "update explain_plans set\n"
-					+ "plan_name = '" + strNewPlanName.replace("'",  "''") + "'\n"
-					+ "where plan_name = '" + strOldPlanName.replace("'",  "''") + "'";
+					+ "plan_name = '" + strNewPlanName.replace("'",  "''") + "'\n";
+				if (renamePlanId != null) {
+					strSQL += "where id_explain_plan = " + renamePlanId.intValue();
+				} else {
+					strSQL += "where plan_name = '" + strOldPlanName.replace("'",  "''") + "' and " + strFolderScopeSQL;
+				}
 				if (bolShowSQL == true) { System.out.println(strSQL); }
 				Database.dml(strSQL);
 				
@@ -395,8 +398,13 @@ public class PlanSourcePanel extends JPanel {
 				// call FormPanel.setSelectedPlanName(strNewPlanName);
 				FormPanel formPanel = findFormPanel();
 				if (formPanel != null) {
-					formPanel.updatePlanMapper(strOldPlanName, strNewPlanName);
-					formPanel.setSelectedPlanName(oldPlanNameIndex, strNewPlanName);
+					if (renamePlanId != null) {
+						// update tree node + plansMapper entry for this plan id
+						formPanel.applyPlanRename(renamePlanId.intValue(), strNewPlanName);
+					} else {
+						formPanel.updatePlanMapper(strOldPlanName, strNewPlanName);
+						formPanel.setSelectedPlanName(oldPlanNameIndex, strNewPlanName);
+					}
 				}
 				objCurrentPlanTabs.setTitleAt(0, strNewPlanName + " - Plan Source");
 				objCurrentPlanTabs.setTitleAt(2, strNewPlanName + " - Plan Diagram");
@@ -579,6 +587,8 @@ public class PlanSourcePanel extends JPanel {
 	}
 
 	private JPanel buildConnectionForm() {
+		sizeField(planFolderCombo, FIELD_WIDTH - 88);
+		sizeField(planFolderSaveBtn, 80);
 		sizeField(planSourceFromQueryPlanNameField, FIELD_WIDTH);
 		sizeField(jdbcUrlField, FIELD_WIDTH);
 		sizeField(planSourceFromQueryServerField, HOST_WIDTH);
@@ -596,6 +606,16 @@ public class PlanSourcePanel extends JPanel {
 		int row = 0;
 
 		panel.add(createSectionHeader("Plan"), sectionGbc(row++));
+
+		panel.add(planFolderLabel, labelGbc(0, row));
+		JPanel folderRow = new JPanel();
+		folderRow.setLayout(new BoxLayout(folderRow, BoxLayout.X_AXIS));
+		folderRow.setOpaque(false);
+		folderRow.add(planFolderCombo);
+		folderRow.add(Box.createHorizontalStrut(8));
+		folderRow.add(planFolderSaveBtn);
+		panel.add(folderRow, fieldGbc(1, row++, 3));
+
 		panel.add(planSourceFromQueryPlanNameLabel, labelGbc(0, row));
 		panel.add(planSourceFromQueryPlanNameField, fieldGbc(1, row++, 3));
 
@@ -889,6 +909,103 @@ public class PlanSourcePanel extends JPanel {
 
 	public String getPlanSourceFromQueryPlanNameField() {
 		return planSourceFromQueryPlanNameField.getText();
+	}
+
+	/**
+	 * Rebuild the Folder dropdown from the Plans tree and select this plan's current folder.
+	 * Save stays disabled until the user picks a different folder.
+	 */
+	public void refreshFolderChooser() {
+		if (planFolderCombo == null) {
+			return;
+		}
+		FormPanel formPanel = findFormPanel();
+		Integer planId = formPanel == null ? null : formPanel.findPlanIdForSource(this);
+		if (formPanel == null || planId == null) {
+			syncingPlanFolderCombo = true;
+			try {
+				planFolderCombo.removeAllItems();
+				planFolderCombo.addItem(new FormPanel.FolderChoice(null, "(root)"));
+				planFolderCombo.setSelectedIndex(0);
+				savedPlanFolderId = null;
+			} finally {
+				syncingPlanFolderCombo = false;
+			}
+			planFolderSaveBtn.setEnabled(false);
+			return;
+		}
+
+		savedPlanFolderId = formPanel.getPlanFolderId(planId.intValue());
+		java.util.List<FormPanel.FolderChoice> choices = formPanel.listFolderChoices();
+		syncingPlanFolderCombo = true;
+		try {
+			planFolderCombo.removeAllItems();
+			FormPanel.FolderChoice selected = null;
+			for (FormPanel.FolderChoice choice : choices) {
+				planFolderCombo.addItem(choice);
+				if (Objects.equals(choice.getFolderId(), savedPlanFolderId)) {
+					selected = choice;
+				}
+			}
+			if (selected != null) {
+				planFolderCombo.setSelectedItem(selected);
+			} else if (planFolderCombo.getItemCount() > 0) {
+				planFolderCombo.setSelectedIndex(0);
+				savedPlanFolderId = null;
+			}
+		} finally {
+			syncingPlanFolderCombo = false;
+		}
+		updatePlanFolderSaveEnabled();
+	}
+
+	private void updatePlanFolderSaveEnabled() {
+		if (planFolderSaveBtn == null || syncingPlanFolderCombo) {
+			return;
+		}
+		FormPanel.FolderChoice choice = (FormPanel.FolderChoice) planFolderCombo.getSelectedItem();
+		Integer selectedId = choice == null ? null : choice.getFolderId();
+		planFolderSaveBtn.setEnabled(!Objects.equals(selectedId, savedPlanFolderId));
+	}
+
+	private void savePlanFolderSelection() {
+		FormPanel formPanel = findFormPanel();
+		if (formPanel == null) {
+			return;
+		}
+		Integer planId = formPanel.findPlanIdForSource(this);
+		if (planId == null) {
+			planId = formPanel.getSelectedPlanId();
+		}
+		if (planId == null) {
+			return;
+		}
+		FormPanel.FolderChoice choice = (FormPanel.FolderChoice) planFolderCombo.getSelectedItem();
+		Integer newFolderId = choice == null ? null : choice.getFolderId();
+		if (Objects.equals(newFolderId, savedPlanFolderId)) {
+			planFolderSaveBtn.setEnabled(false);
+			return;
+		}
+
+		String finalName = formPanel.movePlanToFolder(planId.intValue(), newFolderId);
+		if (finalName == null) {
+			return;
+		}
+		savedPlanFolderId = newFolderId;
+		planFolderSaveBtn.setEnabled(false);
+
+		if (!finalName.equals(getPlanSourceFromQueryPlanNameField())) {
+			setPlanSourceFromQueryPlanNameField(finalName);
+			planSourceFromQueryPlanNameField.setText(finalName);
+			if (objCurrentPlanTabs != null && objCurrentPlanTabs.getTabCount() > 0) {
+				objCurrentPlanTabs.setTitleAt(0, finalName + " - Plan Source");
+				if (objCurrentPlanTabs.getTabCount() > 2) {
+					objCurrentPlanTabs.setTitleAt(2, finalName + " - Plan Diagram");
+				}
+			}
+		}
+		// Keep dropdown labels/selection in sync if folders were renamed elsewhere.
+		refreshFolderChooser();
 	}
 
 	public void setPlanSourceFromQueryServerField(String strServer) {

@@ -86,6 +86,17 @@ public class DockingLayout {
 		return control.getContentArea();
 	}
 
+	/** Keep Plans / Documents docking titles aligned with the active PEPS color scheme. */
+	public void syncThemeColors() {
+		UiTheme.applyDockableColors(plansDockable.getColors());
+		UiTheme.applyDockableColors(documentsDockable.getColors());
+		Component content = control.getContentArea();
+		if (content != null) {
+			content.revalidate();
+			content.repaint();
+		}
+	}
+
 	public void installViewMenuItems(JMenu viewMenu) {
 		viewMenu.addSeparator();
 		plansMenuItem = new JCheckBoxMenuItem("Plans");

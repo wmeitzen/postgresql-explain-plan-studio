@@ -484,7 +484,7 @@ if ($Version -notmatch '^\d+\.\d+\.\d+([.-][A-Za-z0-9.-]+)?$') {
 }
 $Tag = "v$Version"
 $WindowsZipName = "PostgreSQLExplainPlanStudio-$Version-windows-x64.zip"
-$WindowsExeName = "PostgreSQLExplainPlanStudio-$Version-windows-installer.exe"
+$WindowsExeName = "PostgreSQLExplainPlanStudio-$Version-windows-x64-installer.exe"
 $LinuxZipName = "PostgreSQLExplainPlanStudio-$Version-linux-x64.zip"
 $WindowsZip = Join-Path $RepoRoot "target\$WindowsZipName"
 $WindowsExe = Join-Path $RepoRoot "target\$WindowsExeName"

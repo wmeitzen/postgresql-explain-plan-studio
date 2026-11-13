@@ -119,6 +119,9 @@ public class MainFrame extends JFrame {
  				Integer intWidth = dimApplicationSize.width;
  				Integer intHeight = dimApplicationSize.height;
  				Database.dml("update config set application_width = " + intWidth + ", application_height = " + intHeight);
+ 				if (formPanel != null) {
+ 					formPanel.saveSelectedPlanForExit();
+ 				}
  				if (dockingLayout != null) {
  					dockingLayout.saveLayout();
  				}

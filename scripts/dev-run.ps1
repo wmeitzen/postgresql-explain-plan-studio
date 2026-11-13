@@ -1,7 +1,12 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-  Launch PEPS from the shaded jar, waiting if a dev-watch build is in progress.
+  Launch PEPS from a *copy* of the shaded jar, waiting if a dev-watch build is in progress.
+
+.DESCRIPTION
+  Maven shade rewrites target\postgresql-explain-plan-studio-*.jar in place. If PEPS is
+  already running from that jar, Batik SVG loads fail with ZipException (icons go black)
+  and class loading can break. We copy to target\run\peps-dev.jar and launch that instead.
 #>
 $ErrorActionPreference = "Stop"
 
@@ -9,6 +14,8 @@ $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $RepoRoot
 
 $LockFile = Join-Path $RepoRoot "target\dev-build.lock"
+$RunDir = Join-Path $RepoRoot "target\run"
+$RunJar = Join-Path $RunDir "peps-dev.jar"
 $WaitTimeoutSec = 300
 $PollMs = 500
 
@@ -53,6 +60,10 @@ if ($null -eq $jar) {
 	exit 1
 }
 
-Write-Status "Starting $($jar | Split-Path -Leaf)"
-& java -jar $jar
+if (-not (Test-Path -LiteralPath $RunDir)) {
+	New-Item -ItemType Directory -Path $RunDir | Out-Null
+}
+Copy-Item -LiteralPath $jar -Destination $RunJar -Force
+Write-Status "Starting peps-dev.jar (copy of $($jar | Split-Path -Leaf); safe while RECOMPILENOW rebuilds)"
+& java -jar $RunJar
 exit $LASTEXITCODE

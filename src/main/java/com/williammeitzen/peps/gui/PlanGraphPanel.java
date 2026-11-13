@@ -174,7 +174,8 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 	/** Keep the diagram canvas on the active scheme surface (avoids a light panel under Dark). */
 	public void syncThemeSurface() {
 		setOpaque(true);
-		setBackground(UiTheme.surfaceColor());
+		// ColorUIResource so a later LAF/scheme swap can replace this fill.
+		setBackground(new javax.swing.plaf.ColorUIResource(UiTheme.surfaceColor()));
 	}
 
 	public void paint(Graphics g) {
@@ -347,55 +348,19 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 			
 			strPlanName = objComponent.getPlanSourceFromQueryPlanNameField();
 
-			// generate a new plan name
-			strSQL = "with cteOriginalPlanName as (\n" + 
-					"	select '" + strPlanName.replace("'", "''") + "' as plan_name\n" + 
-					")\n" + 
-					", cteOriginalPlaNameNumberPrefix as (\n" + 
-					"	select\n" + 
-					"		1 as order_by_attempt\n" + 
-					"		,plan_name\n" + 
-					"		,null as instr\n" + 
-					"		,plan_name as plan_name_without_copy\n" + 
-					"		, null as current_copy_number\n" + 
-					"	from cteOriginalPlanName where plan_name not like '%(%'\n" + 
-					"	union\n" + 
-					"	select\n" + 
-					"		2 as order_by_attempt\n" + 
-					"		,plan_name\n" + 
-					"		,instr(plan_name, ' (copy') as instr\n" + 
-					"		,substr(plan_name, 1, instr(plan_name, ' (copy') - 1) as plan_name_without_copy\n" + 
-					"		,cast(replace(substr(plan_name, instr(plan_name, '(copy ') + length('(copy ')), ')', '') as int) as current_copy_number\n" + 
-					"	from cteOriginalPlanName where plan_name like '%(%'	\n" + 
-					")\n" + 
-					", cteAllPlansNumberPrefix as (\n" + 
-					"	select\n" + 
-					"		id_explain_plan\n" + 
-					"		,1 as order_by_attempt\n" + 
-					"		,plan_name\n" + 
-					"		,null as instr\n" + 
-					"		,plan_name as plan_name_without_copy\n" + 
-					"		, null as current_copy_number\n" + 
-					"	from explain_plans where plan_name not like '%(%'\n" + 
-					"	union\n" + 
-					"	select\n" + 
-					"		id_explain_plan\n" + 
-					"		,2 as order_by_attempt\n" + 
-					"		,plan_name\n" + 
-					"		,instr(plan_name, ' (copy') as instr\n" + 
-					"		,substr(plan_name, 1, instr(plan_name, ' (copy') - 1) as plan_name_without_copy\n" + 
-					"		,cast(replace(substr(plan_name, instr(plan_name, '(copy ') + length('(copy ')), ')', '') as int) as current_copy_number\n" + 
-					"	from explain_plans where plan_name like '%(%'\n" + 
-					")\n" + 
-					", cteJoin as (\n" + 
-					"	select O.plan_name_without_copy || ' (copy ' || max(coalesce(A.current_copy_number, 1) + 1) || ')' as new_plan_name\n" + 
-					"	from cteOriginalPlaNameNumberPrefix as O\n" + 
-					"	inner join cteAllPlansNumberPrefix as A on O.plan_name_without_copy = A.plan_name_without_copy\n" + 
-					"	group by O.plan_name_without_copy\n" + 
-					")\n" + 
-					"select * from cteJoin\n" + 
-					"";
-			String newPlanName = Database.row(strSQL).getString("new_plan_name");
+			// Conflict name if plan_name already exists on another row: "Name (N)"
+			strSQL = "select plan_name from explain_plans where id_explain_plan <> " + idExplainPlan;
+			java.util.List<String> existingNames = new java.util.ArrayList<>();
+			JsonArray nameRows = Database.rows(strSQL);
+			if (nameRows != null) {
+				for (int i = 0; i < nameRows.size(); i++) {
+					Object value = ((JsonObject) nameRows.get(i)).get("plan_name");
+					if (value != null) {
+						existingNames.add(String.valueOf(value));
+					}
+				}
+			}
+			String newPlanName = FormPanel.nextCopyName(strPlanName, existingNames);
 			if (newPlanName == null)
 				newPlanName = "";
 			
@@ -888,6 +853,10 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 					strSQL += "insert into explain_plan_properties (id_explain_plan, parent_id_explain_plan_property, id_explain_plan_property, operator_name) values (" + intIDExplainPlan + ", " + parentOperatorCount + ", " + operatorCount + ", '" + strKeyName + "'); -- 7\n" + generateExplainPlanPropertiesData(objKeyValue, intIDExplainPlan, operatorCount);
 					if (bolShowSQL == true) { System.out.println(strSQL); }
 
+				} else if (objKeyValue == null) {
+					// JSON null (e.g. Values Scan "Relation Name": null) — store SQL NULL, not the word "null".
+					strSQL += "insert into explain_plan_properties (id_explain_plan, parent_id_explain_plan_property, id_explain_plan_property, operator_name, operator_value) values (" + intIDExplainPlan + ", " + parentOperatorCount + ", " + operatorCount + ", '" + strKeyName + "', null); -- 8n\n";
+					if (bolShowSQL == true) { System.out.println(strSQL); }
 				} else {
 					strKeyValue = objKeyValue.toString().replace("'", "''"); // escape single quotes
 					if (bolShowProperties == true) { System.out.print("-(" + parentOperatorCount + ", " + operatorCount + "): " + strKeyName + " "); }
@@ -2663,13 +2632,14 @@ from explain_plan_operator_annotations
 					strSouth1Text += " w/Recheck";
 				}
 				
-				strAlias = jsnObject.getString("alias");
-				strCommand = jsnObject.getString("command");
-				strCTEName = jsnObject.getString("cte_name");
-				strIndexName = jsnObject.getString("index_name");
-				strPeakMemoryUsage = jsnObject.getString("peak_memory_usage");
-				strRelationName = jsnObject.getString("relation_name");
-				strPartialMode = jsnObject.getString("partial_mode");
+				strAlias = blankIfNullish(jsnObject.getString("alias"));
+				strCommand = blankIfNullish(jsnObject.getString("command"));
+				strCTEName = blankIfNullish(jsnObject.getString("cte_name"));
+				strIndexName = blankIfNullish(jsnObject.getString("index_name"));
+				strPeakMemoryUsage = blankIfNullish(jsnObject.getString("peak_memory_usage"));
+				// Values Scan often has no Relation Name; never let Java null become the label "null".
+				strRelationName = blankIfNullish(jsnObject.getString("relation_name"));
+				strPartialMode = blankIfNullish(jsnObject.getString("partial_mode"));
 				dblRowsRemovedByFilter = null;
 				dblRowsRemovedByJoinFilter = null;
 				dblRowsRemovedByIndexRecheck = null;
@@ -3016,21 +2986,12 @@ from explain_plan_operator_annotations
 				strSouth4Text = removeDatatypes(strSouth4Text);
 				strSouth5Text = removeDatatypes(strSouth5Text);
 
-				if (strSouth1Text != null) {
-					strSouth1Text = strSouth1Text.replace("'", "''");
-				}
-				if (strSouth2Text != null) {
-					strSouth2Text = strSouth2Text.replace("'", "''");
-				}
-				if (strSouth3Text != null) {
-					strSouth3Text = strSouth3Text.replace("'", "''");
-				}
-				if (strSouth4Text != null) {
-					strSouth4Text = strSouth4Text.replace("'", "''");
-				}
-				if (strSouth5Text != null) {
-					strSouth5Text = strSouth5Text.replace("'", "''");
-				}
+				// "" not null — Java string concat turns null into the literal "null" in SQL.
+				strSouth1Text = blankIfNullish(strSouth1Text).replace("'", "''");
+				strSouth2Text = blankIfNullish(strSouth2Text).replace("'", "''");
+				strSouth3Text = blankIfNullish(strSouth3Text).replace("'", "''");
+				strSouth4Text = blankIfNullish(strSouth4Text).replace("'", "''");
+				strSouth5Text = blankIfNullish(strSouth5Text).replace("'", "''");
 		
 				// shift south text up where necessary
 				if (strSouth3Text == "" && strSouth4Text != "") {
@@ -3060,23 +3021,23 @@ from explain_plan_operator_annotations
 			}
 
 			strSQL += "update explain_plan_operator_annotations set\n";
-			strSQL += "south_1_text = null where south_1_text = ''\n";
+			strSQL += "south_1_text = null where south_1_text = '' or lower(south_1_text) = 'null'\n";
 			strSQL += "and id_explain_plan = " + intIDExplainPlan + "\n";
 			strSQL += ";\n";
 			strSQL += "update explain_plan_operator_annotations set\n";
-			strSQL += "south_2_text = null where south_2_text = ''\n";
+			strSQL += "south_2_text = null where south_2_text = '' or lower(south_2_text) = 'null'\n";
 			strSQL += "and id_explain_plan = " + intIDExplainPlan + "\n";
 			strSQL += ";\n";
 			strSQL += "update explain_plan_operator_annotations set\n";
-			strSQL += "south_3_text = null where south_3_text = ''\n";
+			strSQL += "south_3_text = null where south_3_text = '' or lower(south_3_text) = 'null'\n";
 			strSQL += "and id_explain_plan = " + intIDExplainPlan + "\n";
 			strSQL += ";\n";
 			strSQL += "update explain_plan_operator_annotations set\n";
-			strSQL += "south_4_text = null where south_4_text = ''\n";
+			strSQL += "south_4_text = null where south_4_text = '' or lower(south_4_text) = 'null'\n";
 			strSQL += "and id_explain_plan = " + intIDExplainPlan + "\n";
 			strSQL += ";\n";
 			strSQL += "update explain_plan_operator_annotations set\n";
-			strSQL += "south_5_text = null where south_5_text = ''\n";
+			strSQL += "south_5_text = null where south_5_text = '' or lower(south_5_text) = 'null'\n";
 			strSQL += "and id_explain_plan = " + intIDExplainPlan + "\n";
 			strSQL += ";\n";
 			
@@ -6783,6 +6744,18 @@ order by id_explain_plan_property;
 		return value == null ? "" : value;
 	}
 
+	/** Treat Java null and the accidental label "null" as blank diagram text. */
+	private static String blankIfNullish(String value) {
+		if (value == null) {
+			return "";
+		}
+		String trimmed = value.trim();
+		if (trimmed.isEmpty() || trimmed.equalsIgnoreCase("null")) {
+			return "";
+		}
+		return value;
+	}
+
 	public Object[][] getOperatorProperties(int intIDExplainPlanProperty, java.util.Set<String> expandedLists, boolean expandWorkers) {
 		
 		String strSQL;
@@ -7043,7 +7016,12 @@ order by id_explain_plan_property;
 		boolean bolShowSQL = false;
 		strSQL = "select id_explain_plan from explain_plans where plan_name = '" + planName.replace("'", "''") + "'";
 		if (bolShowSQL == true) { System.out.println(strSQL); }
-		idExplainPlan = (Integer) Database.row(strSQL).get("id_explain_plan");
+		JsonObject row = Database.row(strSQL);
+		idExplainPlan = row == null ? null : (Integer) row.get("id_explain_plan");
+	}
+
+	public void setIDExplainPlan(Integer planId) {
+		idExplainPlan = planId;
 	}
 
 	public Dimension getPreferredScrollableViewportSize() {
