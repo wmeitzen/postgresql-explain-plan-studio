@@ -14,8 +14,13 @@ import com.williammeitzen.peps.gui.FormPanel;
 import com.williammeitzen.peps.gui.PlanGraphPanel;
 
 import java.awt.Dimension;
+import java.awt.Image;
 import java.awt.Toolkit;
 import java.awt.GridBagConstraints;
+import java.util.ArrayList;
+import java.util.List;
+import javax.imageio.ImageIO;
+import java.net.URL;
 //import java.awt.FlowLayout;
 //import java.awt.Font;
 import java.awt.GridLayout;
@@ -91,6 +96,7 @@ public class MainFrame extends JFrame {
 		if (bolShowProperties == true) { System.out.println("MainFrame(): Database.init()"); }
 		Database.init();
 		UiTheme.apply(UiTheme.loadSavedScheme());
+		installApplicationIcons();
 
 		setLayout(new BorderLayout());
 		
@@ -422,6 +428,27 @@ public class MainFrame extends JFrame {
 			formPanel.repairDiagramDockingAfterThemeChange();
 		}
 		UiTheme.styleMenuBar(getJMenuBar());
+	}
+
+	/** Window / taskbar icon — Option D fan-in plan mark from {@code /images/app-icon.png}. */
+	private void installApplicationIcons() {
+		URL url = getClass().getResource("/images/app-icon.png");
+		if (url == null) {
+			return;
+		}
+		try {
+			Image base = ImageIO.read(url);
+			if (base == null) {
+				return;
+			}
+			List<Image> icons = new ArrayList<>();
+			for (int size : new int[] { 16, 32, 48, 64, 128, 256 }) {
+				icons.add(base.getScaledInstance(size, size, Image.SCALE_SMOOTH));
+			}
+			setIconImages(icons);
+		} catch (IOException ignored) {
+			// keep default window icon
+		}
 	}
 
 	private void repaintOnZoomChange(int zoomPct, boolean keepSelectedVisible) {

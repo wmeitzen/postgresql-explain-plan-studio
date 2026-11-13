@@ -17,4 +17,7 @@ if [[ -z "${jar}" || ! -f "${jar}" ]]; then
   exit 1
 fi
 
-exec java -jar "$jar" "$@"
+# -Xdock:name sets the Dock label; apple.awt.application.name is also set in main().
+exec java \
+  -Xdock:name="PostgreSQL Explain Plan Studio" \
+  -jar "$jar" "$@"

@@ -56,4 +56,8 @@ fi
 mkdir -p "$RUN_DIR"
 cp -f "$jar" "$RUN_JAR"
 log "Starting peps-dev.jar (copy of $(basename "$jar"); safe while RECOMPILENOW rebuilds)"
-exec java -jar "$RUN_JAR"
+JAVA_ARGS=()
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  JAVA_ARGS+=(-Xdock:name="PostgreSQL Explain Plan Studio")
+fi
+exec java "${JAVA_ARGS[@]}" -jar "$RUN_JAR"
