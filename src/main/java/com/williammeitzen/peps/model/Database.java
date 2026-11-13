@@ -28,7 +28,7 @@ import com.williammeitzen.peps.gui.Utils;
 
 public final class Database {
 	
-	private static double SQLITE_DB_SCHEMA_VERSION = 4.11;
+	private static double SQLITE_DB_SCHEMA_VERSION = 4.12;
 	private static Connection objConnection = null;
 	private static Connection objPGConnection = null;
 	
@@ -539,6 +539,7 @@ public final class Database {
 		ensureConfigColumn("selected_plan_id", "integer");
 		ensureConfigColumn("plans_sort_name_order", "varchar(16) not null default 'asc'");
 		ensureConfigColumn("plans_sort_grouping", "varchar(32) not null default 'folders_first'");
+		ensureConfigColumn("plans_sort_mode", "varchar(16) not null default 'by_name'");
 
 		// 4.09: factory color scheme is Dark (was Default). Migrate only the old factory value.
 		if (dblDBConfigVersion > 0.0 && dblDBConfigVersion < 4.09) {
@@ -1092,6 +1093,9 @@ south_1_fontmetrics_width = null;
 		ensureExplainPlansColumn("auth_type", "varchar(64) not null default 'password'");
 		ensureExplainPlansColumn("folder_id", "integer");
 		migrateExplainPlansUniqueToFolderScope(dblDBConfigVersion);
+		// After any table rebuild so sort_order is not dropped by the 4.11 migration.
+		ensureExplainPlansColumn("sort_order", "integer not null default 0");
+		backfillPlanTreeSortOrders(dblDBConfigVersion);
 		Database.dml("create unique index if not exists idx_explain_plans_folder_name\n"
 				+ "on explain_plans (ifnull(folder_id, -1), plan_name);");
 
@@ -1613,6 +1617,11 @@ south_1_fontmetrics_width = null;
 		}
 	}
 
+	/** Plans tree order mode: {@code by_name} or {@code manual}. */
+	public static String loadPlansSortMode() {
+		return loadConfigString("plans_sort_mode", "by_name");
+	}
+
 	/** Plans tree name order: {@code asc} or {@code desc}. */
 	public static String loadPlansSortNameOrder() {
 		return loadConfigString("plans_sort_name_order", "asc");
@@ -1623,18 +1632,100 @@ south_1_fontmetrics_width = null;
 		return loadConfigString("plans_sort_grouping", "folders_first");
 	}
 
-	public static void savePlansSortPreferences(String nameOrder, String grouping) {
+	public static void savePlansSortPreferences(String mode, String nameOrder, String grouping) {
 		if (objConnection == null) {
 			return;
 		}
-		String sql = "update config set plans_sort_name_order = ?, plans_sort_grouping = ?";
+		String sql = "update config set plans_sort_mode = ?, plans_sort_name_order = ?, plans_sort_grouping = ?";
 		try (PreparedStatement ps = objConnection.prepareStatement(sql)) {
-			ps.setString(1, nameOrder == null || nameOrder.isBlank() ? "asc" : nameOrder);
-			ps.setString(2, grouping == null || grouping.isBlank() ? "folders_first" : grouping);
+			ps.setString(1, mode == null || mode.isBlank() ? "by_name" : mode);
+			ps.setString(2, nameOrder == null || nameOrder.isBlank() ? "asc" : nameOrder);
+			ps.setString(3, grouping == null || grouping.isBlank() ? "folders_first" : grouping);
 			ps.executeUpdate();
 		} catch (SQLException ex) {
 			System.out.println("function Database.savePlansSortPreferences()");
 			ex.printStackTrace();
+		}
+	}
+
+	/**
+	 * One-time (schema &lt; 4.12): assign sort_order by name within each parent so Manual
+	 * mode has a stable starting order.
+	 */
+	private static void backfillPlanTreeSortOrders(double dblDBConfigVersion) {
+		if (dblDBConfigVersion >= 4.12) {
+			return;
+		}
+		JsonArray folderParents = rows(
+				"select distinct ifnull(parent_id_folder, -1) as parent_key from plan_folders;");
+		if (folderParents != null) {
+			for (int i = 0; i < folderParents.size(); i++) {
+				JsonObject row = (JsonObject) folderParents.get(i);
+				Integer parentKey = coerceInteger(row.get("parent_key"));
+				if (parentKey == null) {
+					continue;
+				}
+				String scope = parentKey.intValue() < 0
+						? "parent_id_folder is null"
+						: "parent_id_folder = " + parentKey.intValue();
+				JsonArray kids = rows("select id_folder from plan_folders where " + scope
+						+ " order by lower(folder_name), id_folder;");
+				if (kids == null) {
+					continue;
+				}
+				for (int j = 0; j < kids.size(); j++) {
+					JsonObject kid = (JsonObject) kids.get(j);
+					Integer id = coerceInteger(kid.get("id_folder"));
+					if (id != null) {
+						dml("update plan_folders set sort_order = " + j + " where id_folder = " + id + ";");
+					}
+				}
+			}
+		}
+		JsonArray planParents = rows(
+				"select distinct ifnull(folder_id, -1) as parent_key from explain_plans;");
+		if (planParents != null) {
+			for (int i = 0; i < planParents.size(); i++) {
+				JsonObject row = (JsonObject) planParents.get(i);
+				Integer parentKey = coerceInteger(row.get("parent_key"));
+				if (parentKey == null) {
+					continue;
+				}
+				String scope = parentKey.intValue() < 0
+						? "folder_id is null"
+						: "folder_id = " + parentKey.intValue();
+				JsonArray kids = rows("select id_explain_plan from explain_plans where " + scope
+						+ " order by lower(plan_name), id_explain_plan;");
+				if (kids == null) {
+					continue;
+				}
+				for (int j = 0; j < kids.size(); j++) {
+					JsonObject kid = (JsonObject) kids.get(j);
+					Integer id = coerceInteger(kid.get("id_explain_plan"));
+					if (id != null) {
+						dml("update explain_plans set sort_order = " + j
+								+ " where id_explain_plan = " + id + ";");
+					}
+				}
+			}
+		}
+	}
+
+	private static Integer coerceInteger(Object value) {
+		if (value == null) {
+			return null;
+		}
+		if (value instanceof Number) {
+			return Integer.valueOf(((Number) value).intValue());
+		}
+		String text = String.valueOf(value);
+		if (text.isBlank() || "null".equalsIgnoreCase(text)) {
+			return null;
+		}
+		try {
+			return Integer.valueOf(text.trim());
+		} catch (NumberFormatException ex) {
+			return null;
 		}
 	}
 

@@ -43,30 +43,37 @@ I develop on Windows, and continuously cascade changes to a linux VM.
 
 **Ubuntu / Linux**
 
+One command to remember (after the first sync has created `~/peps`):
+
 ```bash
-sudo apt install -y openjdk-17-jdk rsync
-# Shared folders must be enabled in VMware (Windows host path = this repo).
-# Confirm the share is visible:
-#   ls /mnt/hgfs
-#   vmware-hgfsclient
+sudo apt install -y openjdk-17-jdk rsync   # once
+# VMware Shared Folders on; share this repo (often named "peps")
+bash ~/peps/scripts/dev-watch.sh
+```
 
-# Terminal 1 — sync Windows → ~/peps and recompile whenever host sources change
-# (first run can be started from the share until ~/peps has the script)
-bash /mnt/hgfs/<share>/.../postgresql-explain-plan-studio/scripts/dev-sync-watch.sh
-# later, after the first sync:
-#   ~/peps/scripts/dev-sync-watch.sh
+That mounts HGFS if `/mnt/hgfs` is empty, refreshes from the Windows share when `~/peps` is stale, syncs Windows → `~/peps`, does an **initial compile**, then watches host changes / `RECOMPILENOW`. First boot only (no `~/peps` yet):
 
-# Terminal 2 — launch when you want to test
+```bash
+sudo mkdir -p /mnt/hgfs
+sudo vmhgfs-fuse .host:/ /mnt/hgfs -o subtype=vmhgfs-fuse,allow_other
+bash /mnt/hgfs/peps/scripts/dev-watch.sh
+```
+
+In a second terminal:
+
+```bash
 cd ~/peps
 ./scripts/dev-run.sh
 ```
 
-If auto-detect fails, set the host path explicitly:
+If auto-detect fails:
 
 ```bash
 export PEPS_HOST_REPO=/mnt/hgfs/peps
-~/peps/scripts/dev-sync-watch.sh
+bash /mnt/hgfs/peps/scripts/dev-watch.sh
 ```
+
+(`ubuntu-dev-up.sh` is a thin alias for the same script.)
 
 **Start sync+build when the VM boots / you log in** (one-time install):
 
@@ -85,7 +92,7 @@ systemctl --user status peps-dev-sync-watch.service
 journalctl --user -u peps-dev-sync-watch.service -f
 ```
 
-For a checkout that already lives only on the VM disk (no Windows share), use `./scripts/dev-watch.sh` instead — it polls for `RECOMPILENOW` and rebuilds the same way as the Windows watcher.
+For a checkout that already lives only on the VM disk (no Windows share), the same `./scripts/dev-watch.sh` runs in local-only mode: initial package, then `RECOMPILENOW` polls.
 
 ### Package with bundled runtime (jpackage)
 

@@ -8,8 +8,9 @@ Type=simple
 Environment=PEPS_HOST_REPO=/mnt/hgfs/peps
 Environment=PEPS_LOCAL_REPO=%h/peps
 # Always start from the share so the first boot works even if ~/peps is stale.
+# dev-watch.sh: HGFS check → sync to ~/peps → initial package → sync-watch loop.
 ExecStartPre=/bin/sleep 15
-ExecStart=/bin/bash /mnt/hgfs/peps/scripts/dev-sync-watch.sh
+ExecStart=/bin/bash /mnt/hgfs/peps/scripts/dev-watch.sh
 Restart=on-failure
 RestartSec=20
 

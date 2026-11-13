@@ -2742,7 +2742,7 @@ from explain_plan_operator_annotations
 				} else if (strNodeType.equals("Group") == true) {
 					strSouth2Text = rowsRemovedByFilterOrIndexRecheck(dblRowsRemovedByFilter, bolRowsRemovedByFilterIsExact, dblRowsRemovedByIndexRecheck, bolRowsRemovedByIndexRecheckIsExact);
 				} else if (strNodeType.equals("Hash") == true) {
-					if (strPeakMemoryUsage != null) {
+					if (strPeakMemoryUsage != null && !strPeakMemoryUsage.isBlank()) {
 						strSouth2Text = Utils.kilobytes(Double.parseDouble(strPeakMemoryUsage)) + " RAM";
 						if (jsnObject.getString("parallel_aware") != null && jsnObject.getString("parallel_aware").matches("true") == true)
 							strSouth2Text += " shared";

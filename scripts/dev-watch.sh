@@ -1,48 +1,93 @@
 #!/usr/bin/env bash
-# Rebuild the shaded jar when RECOMPILENOW appears (fast path; not jpackage).
+# PEPS dev watcher — one entry point for Ubuntu and for a local-only checkout.
 #
-# Cursor creates RECOMPILENOW on the Windows repo (VMware share). When this script
-# runs from a local disk copy (~/peps), it watches the *host share* for that flag,
-# rsyncs into ~/peps, builds, then deletes the host flag.
+# Ubuntu + Windows VMware share (usual day-to-day command):
+#   bash ~/peps/scripts/dev-watch.sh
 #
-# If you run it directly on /mnt/hgfs/..., it watches/builds there (slow) and leaves
-# the flag for a peer unless PEPS_DELETE_SEMAPHORE=1.
+# That single command:
+#   1) mounts HGFS if VMware shares are advertised but /mnt/hgfs is empty
+#   2) re-execs the share copy when ~/peps is stale
+#   3) syncs share → ~/peps
+#   4) initial Maven package (via dev-sync-watch.sh)
+#   5) watches host sources + RECOMPILENOW
 #
-# Launch the app with scripts/dev-run.sh.
+# First boot (no ~/peps yet): mount once, then run from the share:
+#   sudo mkdir -p /mnt/hgfs
+#   sudo vmhgfs-fuse .host:/ /mnt/hgfs -o subtype=vmhgfs-fuse,allow_other
+#   bash /mnt/hgfs/peps/scripts/dev-watch.sh
+#
+# Local-only checkout (no /mnt/hgfs share):
+#   ./scripts/dev-watch.sh
+#
+# Launch the app with scripts/dev-run.sh (from ~/peps on Ubuntu).
 set -uo pipefail
-
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$REPO_ROOT"
-
-LOCK_FILE="$REPO_ROOT/target/dev-build.lock"
-POLL_SEC="${PEPS_WATCH_POLL:-0.5}"
-HOST_REPO="${PEPS_HOST_REPO:-}"
-REQUEST_STOP=0
-CLEANED_UP=0
-LAST_BUILT_STAMP=""
 
 log() {
   printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*"
 }
 
-need_java() {
-  if ! command -v java >/dev/null 2>&1; then
-    echo "java not found on PATH. Install JDK 17+ and retry." >&2
-    exit 1
+die() {
+  echo "$*" >&2
+  exit 1
+}
+
+need_cmd() {
+  command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1
+Install with:  sudo apt install -y openjdk-17-jdk rsync"
+}
+
+# Empty /mnt/hgfs is common before fuse mount — do not treat that as "OK".
+hgfs_shares_visible() {
+  [[ -d /mnt/hgfs ]] || return 1
+  [[ -n "$(ls -A /mnt/hgfs 2>/dev/null || true)" ]]
+}
+
+vmware_shares_advertised() {
+  command -v vmware-hgfsclient >/dev/null 2>&1 || return 1
+  [[ -n "$(vmware-hgfsclient 2>/dev/null || true)" ]]
+}
+
+ensure_hgfs() {
+  if hgfs_shares_visible; then
+    return 0
   fi
+
+  if mountpoint -q /mnt/hgfs 2>/dev/null; then
+    die "HGFS is mounted at /mnt/hgfs but no shares are visible.
+Run: vmware-hgfsclient
+In VMware: enable Shared Folders and share the PEPS repo (often named \"peps\")."
+  fi
+
+  if ! command -v vmhgfs-fuse >/dev/null 2>&1; then
+    die "vmhgfs-fuse not found. Install open-vm-tools / open-vm-tools-desktop, then retry."
+  fi
+
+  log "HGFS share not visible at /mnt/hgfs — attempting mount…"
+  log "(sudo may prompt for your password)"
+  sudo mkdir -p /mnt/hgfs
+  if sudo vmhgfs-fuse .host:/ /mnt/hgfs -o subtype=vmhgfs-fuse,allow_other; then
+    if hgfs_shares_visible; then
+      log "Mounted VMware shared folders at /mnt/hgfs"
+      return 0
+    fi
+    die "Mounted /mnt/hgfs but it is still empty.
+Run: vmware-hgfsclient
+Enable Shared Folders in VMware (share name often \"peps\")."
+  fi
+
+  die "Could not mount /mnt/hgfs.
+In VMware: enable Shared Folders for this VM, share the PEPS repo (often named \"peps\").
+Then on Ubuntu:
+  sudo mkdir -p /mnt/hgfs
+  sudo vmhgfs-fuse .host:/ /mnt/hgfs -o subtype=vmhgfs-fuse,allow_other
+  ls /mnt/hgfs
+  vmware-hgfsclient"
 }
 
-on_shared_host() {
-  case "$REPO_ROOT" in
-    /mnt/hgfs/*) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
-find_host_repo() {
+find_host_repo_path() {
   local candidate
-  if [[ -n "${HOST_REPO}" ]]; then
-    printf '%s\n' "$HOST_REPO"
+  if [[ -n "${PEPS_HOST_REPO:-}" && -f "${PEPS_HOST_REPO}/pom.xml" ]]; then
+    printf '%s\n' "$PEPS_HOST_REPO"
     return 0
   fi
   while IFS= read -r candidate; do
@@ -60,6 +105,62 @@ find_host_repo() {
     fi
   done
   return 1
+}
+
+# ---------------------------------------------------------------------------
+# From ~/peps: mount HGFS first when VMware advertises shares but /mnt/hgfs
+# is empty, then re-exec the share script if this local copy is stale.
+# ---------------------------------------------------------------------------
+if [[ "${PEPS_SKIP_HGFS_BOOTSTRAP:-}" != 1 ]]; then
+  _here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  case "$_here" in
+    /mnt/hgfs/*) ;;
+    *)
+      if ! hgfs_shares_visible && vmware_shares_advertised; then
+        ensure_hgfs
+      fi
+      ;;
+  esac
+  unset _here
+fi
+
+if [[ "${PEPS_SKIP_HOST_REEXEC:-}" != 1 ]]; then
+  _here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  case "$_here" in
+    /mnt/hgfs/*) ;;
+    *)
+      _share_watch=""
+      if _host="$(find_host_repo_path 2>/dev/null)"; then
+        if [[ -f "$_host/scripts/dev-watch.sh" ]]; then
+          _share_watch="$_host/scripts/dev-watch.sh"
+        fi
+      fi
+      if [[ -n "$_share_watch" ]] \
+        && { [[ "$_share_watch" -nt "${BASH_SOURCE[0]}" ]] || ! cmp -s "$_share_watch" "${BASH_SOURCE[0]}" 2>/dev/null; }; then
+        log "Local watcher is stale — re-execing $_share_watch"
+        exec env PEPS_SKIP_HOST_REEXEC=1 PEPS_SKIP_HGFS_BOOTSTRAP=1 bash "$_share_watch" "$@"
+      fi
+      unset _host _share_watch
+      ;;
+  esac
+  unset _here
+fi
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+
+LOCAL_REPO="${PEPS_LOCAL_REPO:-$HOME/peps}"
+LOCK_FILE="$REPO_ROOT/target/dev-build.lock"
+POLL_SEC="${PEPS_WATCH_POLL:-0.5}"
+REQUEST_STOP=0
+CLEANED_UP=0
+LAST_BUILT_STAMP=""
+
+on_shared_host() {
+  case "$REPO_ROOT" in
+    /mnt/hgfs/*) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 sync_from_host() {
@@ -125,7 +226,6 @@ run_build_locked() {
   set -e
   flock -u 9
   exec 9>&-
-  # Remove the lock file so dev-run.sh does not wait forever (Windows watcher does the same).
   rm -f "$LOCK_FILE"
   if [[ "$exit_code" -eq 0 ]]; then
     log "Build OK"
@@ -135,24 +235,56 @@ run_build_locked() {
   return "$exit_code"
 }
 
-# Resolve optional Windows share when running from ~/peps (local disk).
+# ---------------------------------------------------------------------------
+# Ubuntu + Windows share: HGFS → sync to ~/peps → hand off to sync-watch
+# (initial compile happens inside sync-watch).
+# ---------------------------------------------------------------------------
 HOST_REPO=""
-if ! on_shared_host; then
-  if HOST_REPO="$(find_host_repo)"; then
-    host_real="$(readlink -f "$HOST_REPO" 2>/dev/null || printf '%s' "$HOST_REPO")"
-    local_real="$(readlink -f "$REPO_ROOT" 2>/dev/null || printf '%s' "$REPO_ROOT")"
-    if [[ "$host_real" == "$local_real" ]]; then
-      HOST_REPO=""
-    fi
-  else
-    HOST_REPO=""
+if on_shared_host || [[ -n "${PEPS_HOST_REPO:-}" ]] || find_host_repo_path >/dev/null 2>&1; then
+  need_cmd java
+  need_cmd rsync
+  need_cmd flock
+  ensure_hgfs
+  HOST_REPO="$(find_host_repo_path)" || die "Could not find the Windows PEPS repo under /mnt/hgfs.
+Share the repo in VMware (folder name often \"peps\"), then:
+  ls /mnt/hgfs
+  export PEPS_HOST_REPO=/mnt/hgfs/peps
+  bash /mnt/hgfs/peps/scripts/dev-watch.sh"
+
+  host_real="$(readlink -f "$HOST_REPO" 2>/dev/null || printf '%s' "$HOST_REPO")"
+  mkdir -p "$LOCAL_REPO"
+  local_real="$(readlink -f "$LOCAL_REPO" 2>/dev/null || printf '%s' "$LOCAL_REPO")"
+  if [[ "$host_real" == "$local_real" ]]; then
+    die "Host and local repos are the same path ($local_real).
+Keep PEPS_LOCAL_REPO on local disk (default ~/peps), not under /mnt/hgfs."
   fi
+
+  log "Host (Windows share): $HOST_REPO"
+  log "Local build tree:     $LOCAL_REPO"
+  log "Syncing host → local (before watch)…"
+  sync_from_host "$HOST_REPO" "$LOCAL_REPO"
+
+  WATCHER="$LOCAL_REPO/scripts/dev-sync-watch.sh"
+  if [[ ! -f "$WATCHER" ]]; then
+    die "Missing $WATCHER after sync — check the Windows share checkout."
+  fi
+
+  log "Handing off to sync watcher (initial compile + RECOMPILENOW / host-change watch)."
+  log "In another terminal:  cd $LOCAL_REPO && ./scripts/dev-run.sh"
+  export PEPS_HOST_REPO="$HOST_REPO"
+  export PEPS_LOCAL_REPO="$LOCAL_REPO"
+  export PEPS_SKIP_HOST_REEXEC=1
+  # Avoid EXIT trap printing "Watcher stopped" before the child takes over.
+  CLEANED_UP=1
+  exec bash "$WATCHER"
 fi
 
-need_java
+# ---------------------------------------------------------------------------
+# Local-only mode (no VMware share): package once, then watch RECOMPILENOW.
+# ---------------------------------------------------------------------------
+need_cmd java
 chmod +x "$REPO_ROOT/mvnw" 2>/dev/null || true
 
-# Clear a stale lock left by an older watcher (file present but flock not held).
 mkdir -p "$REPO_ROOT/target"
 if [[ -f "$LOCK_FILE" ]]; then
   exec 9>"$LOCK_FILE"
@@ -167,19 +299,15 @@ if [[ -f "$LOCK_FILE" ]]; then
   fi
 fi
 
-if [[ -n "$HOST_REPO" ]]; then
-  log "Local build tree: $REPO_ROOT"
-  log "Watching host RECOMPILENOW: $HOST_REPO/RECOMPILENOW (poll ${POLL_SEC}s)"
-  log "On flag: rsync host → local, package, delete host flag. Ctrl+C to stop."
-else
-  log "Watching for $REPO_ROOT/RECOMPILENOW (poll ${POLL_SEC}s). Ctrl+C to stop."
-fi
+log "Local-only mode (no HGFS share detected)."
+log "Initial build (before watching RECOMPILENOW)…"
+run_build_locked || true
+
+log "Watching for $REPO_ROOT/RECOMPILENOW (poll ${POLL_SEC}s). Ctrl+C to stop."
 
 while [[ "$REQUEST_STOP" -eq 0 ]]; do
   flag=""
-  if [[ -n "$HOST_REPO" && -f "$HOST_REPO/RECOMPILENOW" ]]; then
-    flag="$HOST_REPO/RECOMPILENOW"
-  elif [[ -f "$REPO_ROOT/RECOMPILENOW" ]]; then
+  if [[ -f "$REPO_ROOT/RECOMPILENOW" ]]; then
     flag="$REPO_ROOT/RECOMPILENOW"
   else
     LAST_BUILT_STAMP=""
@@ -193,31 +321,13 @@ while [[ "$REQUEST_STOP" -eq 0 ]]; do
     continue
   fi
 
-  if [[ -n "$HOST_REPO" && "$flag" == "$HOST_REPO/RECOMPILENOW" ]]; then
-    log "Host RECOMPILENOW seen — syncing…"
-    if ! command -v rsync >/dev/null 2>&1; then
-      log "rsync not found — cannot sync from $HOST_REPO"
-      LAST_BUILT_STAMP="$stamp"
-      interruptible_sleep "$POLL_SEC"
-      continue
-    fi
-    sync_from_host "$HOST_REPO" "$REPO_ROOT"
-  else
-    log "Local RECOMPILENOW seen — building…"
-  fi
-
+  log "Local RECOMPILENOW seen — building…"
   if [[ "$REQUEST_STOP" -eq 1 ]]; then
     break
   fi
 
   run_build_locked || true
   LAST_BUILT_STAMP="$stamp"
-
-  # Clear flags so the next Cursor create triggers again.
-  if [[ -n "$HOST_REPO" ]]; then
-    rm -f "$HOST_REPO/RECOMPILENOW"
-    log "Removed host RECOMPILENOW"
-  fi
   rm -f "$REPO_ROOT/RECOMPILENOW"
   LAST_BUILT_STAMP=""
 

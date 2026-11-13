@@ -60,20 +60,27 @@ public class Utils {
 	}
 
 	public static double nullDoubleToZero(Object objValue) {
-		if (objValue == null) {
-			return 0.0d;
-		} else {
-			//return Double.valueOf((String) objValue);
-			return Double.valueOf(String.valueOf(objValue));
-		}
+		Double parsed = nullObjectToNullDouble(objValue);
+		return parsed == null ? 0.0d : parsed.doubleValue();
 	}
 
 	public static Double nullObjectToNullDouble(Object objValue) {
 		if (objValue == null) {
 			return null;
-		} else {
-			//return Double.valueOf((String) objValue);
-			return Double.valueOf(String.valueOf(objValue));
+		}
+		if (objValue instanceof Number) {
+			double d = ((Number) objValue).doubleValue();
+			return Double.isFinite(d) ? d : null;
+		}
+		String text = String.valueOf(objValue).trim();
+		if (text.isEmpty() || text.equalsIgnoreCase("null")) {
+			return null;
+		}
+		try {
+			double d = Double.parseDouble(text);
+			return Double.isFinite(d) ? d : null;
+		} catch (NumberFormatException ex) {
+			return null;
 		}
 	}
 

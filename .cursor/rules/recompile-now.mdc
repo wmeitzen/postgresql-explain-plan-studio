@@ -15,7 +15,7 @@ Example (PowerShell): `Set-Content -Path RECOMPILENOW -Value ("triggered " + (Ge
 Example (bash): `printf 'triggered %s\n' "$(date -Iseconds)" > RECOMPILENOW`
 
 Watchers:
-- Windows `scripts/dev-watch.ps1` builds when it sees a new `RECOMPILENOW` but does **not** delete it (so Ubuntu can still see the shared file).
-- Ubuntu systemd `dev-sync-watch.sh` syncs from the HGFS share, builds in `~/peps`, then **deletes** host `RECOMPILENOW`.
+- Windows `scripts/dev-watch.ps1` packages once on start, then builds when it sees a new `RECOMPILENOW` but does **not** delete the file (so Ubuntu can still see the shared file).
+- On Ubuntu: `bash ~/peps/scripts/dev-watch.sh` (mounts HGFS if empty → sync to `~/peps` → initial package → `dev-sync-watch.sh`). First boot: `bash /mnt/hgfs/peps/scripts/dev-watch.sh` after mounting. Sync-watch **deletes** host `RECOMPILENOW` after each Ubuntu build. `ubuntu-dev-up.sh` is an alias for `dev-watch.sh`.
 
 Do **not** run `mvnw package` yourself for routine UI/code edits when the watch script is expected to handle rebuilds. Do **not** relaunch the app unless the user asks. Do **not** delete `RECOMPILENOW` yourself after creating it.

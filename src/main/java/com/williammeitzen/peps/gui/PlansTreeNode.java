@@ -15,21 +15,32 @@ public final class PlansTreeNode {
 	private Integer folderId;
 	private final Integer planId;
 	private String name;
+	/** Sibling order within the parent folder (Manual mode); lower first. */
+	private int sortOrder;
 
-	private PlansTreeNode(Kind kind, Integer folderId, Integer planId, String name) {
+	private PlansTreeNode(Kind kind, Integer folderId, Integer planId, String name, int sortOrder) {
 		this.kind = kind;
 		this.folderId = folderId;
 		this.planId = planId;
 		this.name = name == null ? "" : name;
+		this.sortOrder = sortOrder;
 	}
 
 	public static PlansTreeNode folder(int folderId, String name) {
-		return new PlansTreeNode(Kind.FOLDER, folderId, null, name);
+		return folder(folderId, name, 0);
+	}
+
+	public static PlansTreeNode folder(int folderId, String name, int sortOrder) {
+		return new PlansTreeNode(Kind.FOLDER, folderId, null, name, sortOrder);
 	}
 
 	/** {@code folderId} is the containing folder, or null for root. */
 	public static PlansTreeNode plan(int planId, Integer folderId, String name) {
-		return new PlansTreeNode(Kind.PLAN, folderId, planId, name);
+		return plan(planId, folderId, name, 0);
+	}
+
+	public static PlansTreeNode plan(int planId, Integer folderId, String name, int sortOrder) {
+		return new PlansTreeNode(Kind.PLAN, folderId, planId, name, sortOrder);
 	}
 
 	public boolean isFolder() {
@@ -66,6 +77,14 @@ public final class PlansTreeNode {
 
 	public void setName(String name) {
 		this.name = name == null ? "" : name;
+	}
+
+	public int getSortOrder() {
+		return sortOrder;
+	}
+
+	public void setSortOrder(int sortOrder) {
+		this.sortOrder = sortOrder;
 	}
 
 	@Override

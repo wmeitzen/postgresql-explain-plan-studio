@@ -31,8 +31,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ ! -f "$HOST_REPO/scripts/dev-sync-watch.sh" ]]; then
-  echo "Host script not found: $HOST_REPO/scripts/dev-sync-watch.sh" >&2
+if [[ ! -f "$HOST_REPO/scripts/dev-watch.sh" ]]; then
+  echo "Host script not found: $HOST_REPO/scripts/dev-watch.sh" >&2
   echo "Set --host or PEPS_HOST_REPO to your VMware share path." >&2
   exit 1
 fi
@@ -62,7 +62,7 @@ install_systemd() {
 install_cron() {
   local marker="# peps-dev-sync-watch"
   local log_file="$HOME/peps-sync-watch.log"
-  local line="@reboot sleep 20 && PEPS_HOST_REPO=${HOST_REPO} PEPS_LOCAL_REPO=${LOCAL_REPO} /bin/bash ${HOST_REPO}/scripts/dev-sync-watch.sh >>${log_file} 2>&1 ${marker}"
+  local line="@reboot sleep 20 && PEPS_HOST_REPO=${HOST_REPO} PEPS_LOCAL_REPO=${LOCAL_REPO} /bin/bash ${HOST_REPO}/scripts/dev-watch.sh >>${log_file} 2>&1 ${marker}"
   local tmp
   tmp="$(mktemp)"
   crontab -l 2>/dev/null | grep -v "$marker" >"$tmp" || true

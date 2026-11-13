@@ -2,6 +2,7 @@
 # Sync PEPS sources from the Windows/VMware shared folder into a local Ubuntu
 # work tree, then rebuild the shaded jar when host files change — or when the
 # host repo contains a RECOMPILENOW semaphore (created by Cursor after edits).
+# On start, syncs and packages once before waiting for changes / RECOMPILENOW.
 # This script deletes RECOMPILENOW on the host after the Ubuntu build so Windows
 # and Ubuntu are not racing over who clears the flag.
 #
@@ -175,10 +176,21 @@ fi
 log "Host (Windows share): $HOST_REPO"
 log "Local build tree:     $LOCAL_REPO"
 log "Also watching host RECOMPILENOW (cleared here after build)."
+
+# Always sync + compile once before waiting on changes / the semaphore.
+log "Initial sync from host, then build (before watching)…"
+sync_from_host "$HOST_REPO" "$LOCAL_REPO"
+run_build "$LOCAL_REPO" || true
+last_fp="$(fingerprint_sources "$HOST_REPO")"
+last_recompile_stamp=""
+if [[ -f "$HOST_REPO/RECOMPILENOW" ]]; then
+  last_recompile_stamp="$(stat -c '%Y %s' "$HOST_REPO/RECOMPILENOW" 2>/dev/null || true)"
+  rm -f "$HOST_REPO/RECOMPILENOW" "$LOCAL_REPO/RECOMPILENOW"
+  log "Cleared host RECOMPILENOW after initial build"
+fi
+
 log "Polling every ${POLL_SEC}s. Ctrl+C to stop."
 
-last_fp=""
-last_recompile_stamp=""
 while true; do
   recompile_now=0
   recompile_stamp=""
@@ -195,8 +207,6 @@ while true; do
   if [[ "$fp" != "$last_fp" || "$recompile_now" -eq 1 ]]; then
     if [[ "$recompile_now" -eq 1 ]]; then
       log "Host RECOMPILENOW seen — syncing…"
-    elif [[ -z "$last_fp" ]]; then
-      log "Initial sync from host…"
     else
       log "Host sources changed — syncing…"
     fi

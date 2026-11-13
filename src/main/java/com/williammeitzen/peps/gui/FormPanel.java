@@ -14,6 +14,7 @@ import java.awt.Graphics2D;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.Window;
@@ -56,8 +57,10 @@ import javax.swing.JComponent;
 import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JMenu;
+import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JPopupMenu;
 import javax.swing.JProgressBar;
 import javax.swing.JRadioButton;
 import javax.swing.JScrollPane;
@@ -68,6 +71,8 @@ import javax.swing.TransferHandler;
 import javax.swing.UIManager;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
+import javax.swing.event.PopupMenuEvent;
+import javax.swing.event.PopupMenuListener;
 import javax.swing.event.TreeSelectionEvent;
 import javax.swing.event.TreeSelectionListener;
 import javax.swing.plaf.basic.BasicTreeUI;
@@ -103,9 +108,13 @@ public class FormPanel extends JPanel {
 	private JButton settingsBtn;
 	private JPanel planToolbar;
 
-	/** Name sort direction for the Plans tree. */
+	/** When true, sibling order is drag-arranged (sort_order); when false, sorted by name. */
+	private boolean plansSortManual = false;
+	/** Path under the last Plans context-menu click (Manual Add inserts here). */
+	private TreePath contextMenuAnchorPath;
+	/** Name sort direction for the Plans tree (By name mode / Sort Now). */
 	private boolean plansSortNameAscending = true;
-	/** How folders and plans are grouped when sorting. */
+	/** How folders and plans are grouped when sorting by name. */
 	private PlansSortGrouping plansSortGrouping = PlansSortGrouping.FOLDERS_FIRST;
 
 	private enum PlansSortGrouping {
@@ -207,10 +216,10 @@ public class FormPanel extends JPanel {
 		Map<Integer, DefaultMutableTreeNode> folderNodes = loadPlanFoldersIntoTree();
 
 		// retrieve plans from db
-		strSQL = "select id_explain_plan, plan_name, folder_id, server, port, database, username, password, remember_password\n"
+		strSQL = "select id_explain_plan, plan_name, folder_id, sort_order, server, port, database, username, password, remember_password\n"
 				+ ", auth_type, pre_explain_command, explain_sql_command, post_explain_command, plan_text\n"
 				+ "from explain_plans\n"
-				+ "order by lower(plan_name);\n";
+				+ "order by sort_order, lower(plan_name), id_explain_plan;\n";
 		jsnRows = Database.rows(strSQL);
 		for (int intRow = 0; jsnRows != null && intRow < jsnRows.size(); intRow++) {
 			jsnRow = (JsonObject) jsnRows.get(intRow);
@@ -221,13 +230,14 @@ public class FormPanel extends JPanel {
 			}
 			String newPlanName = jsnRow.getString("plan_name");
 			Integer planFolderId = toInteger(jsnRow.get("folder_id"));
+			int planSortOrder = toIntOrZero(jsnRow.get("sort_order"));
 			DefaultMutableTreeNode parentNode = planFolderId == null ? null : folderNodes.get(planFolderId);
 			if (parentNode == null) {
 				planFolderId = null;
 				parentNode = planTreeRoot;
 			}
-			// Query order is by name, so appending keeps each folder sorted (folders first).
-			parentNode.add(new DefaultMutableTreeNode(PlansTreeNode.plan(newPlanId.intValue(), planFolderId, newPlanName)));
+			parentNode.add(new DefaultMutableTreeNode(
+					PlansTreeNode.plan(newPlanId.intValue(), planFolderId, newPlanName, planSortOrder)));
 			// Selection restored after all plans load (see restoreSelectedPlanAfterLoad).
 
 			PlanSourcePanel newPlanSourcePanel = new PlanSourcePanel(tabPane);
@@ -314,6 +324,7 @@ public class FormPanel extends JPanel {
 		planListScrollPane.setMinimumSize(new Dimension(120, 100));
 		planListScrollPane.setBorder(BorderFactory.createEmptyBorder());
 		planTree.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
+		installPlansTreeContextMenu();
 		
 		planTree.addTreeSelectionListener(new TreeSelectionListener() {
 			public void valueChanged(TreeSelectionEvent e) {
@@ -377,11 +388,8 @@ public class FormPanel extends JPanel {
 
 		List<PlansTreeNode> selectedPlans = getSelectedPlanNodes();
 		if (selectedPlans.isEmpty()) {
-			// Folder(s) only: no plan to show; Delete / Add Plan / Add Folder stay available.
-			tabPaneToLink.removeAll();
-			if (planDiagramToolbar != null) {
-				planDiagramToolbar.setAllDiagramOptionsEnabled(false);
-			}
+			// Folder(s) only: no Plan Source content; Compare uses plans under the folder(s).
+			showFolderOnlySelectionTabs();
 			return;
 		}
 
@@ -448,6 +456,66 @@ public class FormPanel extends JPanel {
 	}
 
 	/**
+	 * Folder selection: hide plan source UI, disable Plan Source and Plan Diagram,
+	 * keep Compare Plans for descendant plans (if any).
+	 */
+	private void showFolderOnlySelectionTabs() {
+		if (tabPaneToLink == null) {
+			return;
+		}
+		List<TreePath> planPaths = new ArrayList<>();
+		for (DefaultMutableTreeNode node : getSelectedTreeNodes()) {
+			PlansTreeNode d = data(node);
+			if (d != null && d.isFolder()) {
+				collectDescendantPlanPaths(node, planPaths);
+			}
+		}
+
+		tabPaneToLink.removeAll();
+
+		tabPaneToLink.addTab("Plan Source", new JPanel());
+		tabPaneToLink.setEnabledAt(0, false);
+
+		PlanStatisticsPanel statisticsPanel = new PlanStatisticsPanel();
+		JScrollPane statisticsPane = new JScrollPane(statisticsPanel,
+				JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_ALWAYS);
+		statisticsPane.setPreferredSize(new Dimension(320, 480));
+		tabPaneToLink.addTab(getPlanStatisticsTabName(), statisticsPane);
+
+		StringBuilder delimited = new StringBuilder();
+		for (int i = 0; i < planPaths.size(); i++) {
+			PlansTreeNode d = data(planPaths.get(i).getLastPathComponent());
+			if (d == null || !d.isPlan()) {
+				continue;
+			}
+			if (delimited.length() > 0) {
+				delimited.append(", ");
+			}
+			delimited.append("'").append(d.getName().replace("'", "''")).append("'");
+		}
+		PlanStatisticsPanel.setPlanNamesDelimited(delimited.length() == 0 ? "''" : delimited.toString());
+
+		tabPaneToLink.addChangeListener(new ChangeListener() {
+			int COMPARE_PLANS_TAB = 1;
+
+			public void stateChanged(ChangeEvent e) {
+				if (tabPaneToLink.getSelectedIndex() == COMPARE_PLANS_TAB) {
+					refreshComparePlansTab(statisticsPanel);
+				}
+			}
+		});
+
+		tabPaneToLink.addTab("Plan Diagram", new JPanel());
+		tabPaneToLink.setEnabledAt(2, false);
+
+		tabPaneToLink.setSelectedIndex(planPaths.isEmpty() ? 0 : 1);
+
+		if (planDiagramToolbar != null) {
+			planDiagramToolbar.setAllDiagramOptionsEnabled(false);
+		}
+	}
+
+	/**
 	 * Add Plan / Add Folder only with at most one tree item selected.
 	 * Delete needs any selection; Duplicate needs at least one plan.
 	 */
@@ -476,8 +544,10 @@ public class FormPanel extends JPanel {
 		if (getSelectedTreeNodes().size() > 1) {
 			return;
 		}
+		TreePath addAnchor = contextMenuAnchorPath;
 		DefaultMutableTreeNode targetFolder = resolveAddTargetFolderNode();
 		Integer folderId = folderIdOf(targetFolder);
+		Integer insertIndex = resolveManualInsertIndex(targetFolder, addAnchor);
 
 		PlanSourcePanel newPlanSourcePanel = new PlanSourcePanel(tabPaneToLink);
 		PlanGraphPanel newPlanGraphPanel = new PlanGraphPanel(tabPaneToLink);
@@ -494,8 +564,10 @@ public class FormPanel extends JPanel {
 		newPlanGraphPanel.setIDExplainPlan(newPlanId);
 		plansMapper.put(newPlanId, pEvent);
 
-		DefaultMutableTreeNode node = new DefaultMutableTreeNode(PlansTreeNode.plan(newPlanId.intValue(), folderId, newPlanName));
-		insertTreeNode(targetFolder, node);
+		int sortOrder = readPlanSortOrder(newPlanId.intValue());
+		DefaultMutableTreeNode node = new DefaultMutableTreeNode(
+				PlansTreeNode.plan(newPlanId.intValue(), folderId, newPlanName, sortOrder));
+		insertTreeNode(targetFolder, node, insertIndex);
 		// Selection listener builds the Plan Source / Compare / Diagram tabs.
 		selectTreeNode(node);
 	}
@@ -504,8 +576,10 @@ public class FormPanel extends JPanel {
 		if (getSelectedTreeNodes().size() > 1) {
 			return;
 		}
+		TreePath addAnchor = contextMenuAnchorPath;
 		DefaultMutableTreeNode targetFolder = resolveAddTargetFolderNode();
 		Integer parentId = folderIdOf(targetFolder);
+		Integer insertIndex = resolveManualInsertIndex(targetFolder, addAnchor);
 
 		Object input = JOptionPane.showInputDialog(this, "Folder name:", "Add Folder",
 				JOptionPane.PLAIN_MESSAGE, null, null, DEFAULT_FOLDER_NAME);
@@ -521,8 +595,10 @@ public class FormPanel extends JPanel {
 		if (newFolderId == null) {
 			return;
 		}
-		DefaultMutableTreeNode node = new DefaultMutableTreeNode(PlansTreeNode.folder(newFolderId.intValue(), folderName));
-		insertTreeNode(targetFolder, node);
+		int sortOrder = readFolderSortOrder(newFolderId.intValue());
+		DefaultMutableTreeNode node = new DefaultMutableTreeNode(
+				PlansTreeNode.folder(newFolderId.intValue(), folderName, sortOrder));
+		insertTreeNode(targetFolder, node, insertIndex);
 		selectTreeNode(node);
 	}
 
@@ -706,7 +782,8 @@ public class FormPanel extends JPanel {
 			}
 
 			DefaultMutableTreeNode newNode = new DefaultMutableTreeNode(
-					PlansTreeNode.plan(newExplainPlanID.intValue(), folderId, newPlanName));
+					PlansTreeNode.plan(newExplainPlanID.intValue(), folderId, newPlanName,
+							readPlanSortOrder(newExplainPlanID.intValue())));
 			insertTreeNode(parentNode, newNode);
 			lastNewNode = newNode;
 		}
@@ -844,6 +921,22 @@ public class FormPanel extends JPanel {
 		if (b == null) {
 			return -1;
 		}
+		if (plansSortManual) {
+			int orderCmp = Integer.compare(a.getSortOrder(), b.getSortOrder());
+			if (orderCmp != 0) {
+				return orderCmp;
+			}
+			if (a.isFolder() != b.isFolder()) {
+				return a.isFolder() ? -1 : 1;
+			}
+			int nameCmp = a.getName().compareToIgnoreCase(b.getName());
+			if (nameCmp != 0) {
+				return nameCmp;
+			}
+			Integer aId = a.isFolder() ? a.getFolderId() : a.getPlanId();
+			Integer bId = b.isFolder() ? b.getFolderId() : b.getPlanId();
+			return Integer.compare(aId == null ? 0 : aId.intValue(), bId == null ? 0 : bId.intValue());
+		}
 		if (plansSortGrouping != PlansSortGrouping.MIXED && a.isFolder() != b.isFolder()) {
 			if (plansSortGrouping == PlansSortGrouping.FOLDERS_FIRST) {
 				return a.isFolder() ? -1 : 1;
@@ -854,11 +947,43 @@ public class FormPanel extends JPanel {
 		return plansSortNameAscending ? nameCmp : -nameCmp;
 	}
 
-	/** Insert in sorted position (per Settings) and make the parent visible. */
+	/**
+	 * Manual + context-menu: index among {@code targetFolder}'s children for the new item.
+	 * Right-clicked plan → that sibling slot; right-clicked folder (add into it) → top (0).
+	 */
+	private Integer resolveManualInsertIndex(DefaultMutableTreeNode targetFolder, TreePath anchorPath) {
+		if (!plansSortManual || targetFolder == null || anchorPath == null) {
+			return null;
+		}
+		DefaultMutableTreeNode anchor = (DefaultMutableTreeNode) anchorPath.getLastPathComponent();
+		if (anchor == null) {
+			return null;
+		}
+		PlansTreeNode d = data(anchor);
+		if (d != null && d.isFolder() && anchor == targetFolder) {
+			return Integer.valueOf(0);
+		}
+		if (anchor.getParent() == targetFolder) {
+			int index = targetFolder.getIndex(anchor);
+			return index < 0 ? null : Integer.valueOf(index);
+		}
+		return null;
+	}
+
+	/** Insert per Settings (sorted by name, or appended for Manual) and expand the parent. */
 	private void insertTreeNode(DefaultMutableTreeNode parent, DefaultMutableTreeNode child) {
+		insertTreeNode(parent, child, null);
+	}
+
+	/**
+	 * @param forcedIndex Manual context-menu insert index, or null to append / name-sort
+	 */
+	private void insertTreeNode(DefaultMutableTreeNode parent, DefaultMutableTreeNode child, Integer forcedIndex) {
 		PlansTreeNode childData = data(child);
 		int index = parent.getChildCount();
-		if (childData != null) {
+		if (plansSortManual && forcedIndex != null) {
+			index = Math.max(0, Math.min(forcedIndex.intValue(), parent.getChildCount()));
+		} else if (!plansSortManual && childData != null) {
 			for (int i = 0; i < parent.getChildCount(); i++) {
 				PlansTreeNode existing = data(parent.getChildAt(i));
 				if (existing != null && compareTreeData(childData, existing) < 0) {
@@ -868,10 +993,14 @@ public class FormPanel extends JPanel {
 			}
 		}
 		planTreeModel.insertNodeInto(child, parent, index);
+		if (plansSortManual) {
+			persistChildrenSortOrders(parent);
+		}
 		planTree.expandPath(new TreePath(parent.getPath()));
 	}
 
 	private void loadPlansSortPreferences() {
+		plansSortManual = "manual".equalsIgnoreCase(Database.loadPlansSortMode());
 		String nameOrder = Database.loadPlansSortNameOrder();
 		plansSortNameAscending = !"desc".equalsIgnoreCase(nameOrder);
 		String grouping = Database.loadPlansSortGrouping();
@@ -886,6 +1015,7 @@ public class FormPanel extends JPanel {
 
 	private void savePlansSortPreferences() {
 		Database.savePlansSortPreferences(
+				plansSortManual ? "manual" : "by_name",
 				plansSortNameAscending ? "asc" : "desc",
 				plansSortGrouping == PlansSortGrouping.PLANS_FIRST ? "plans_first"
 						: plansSortGrouping == PlansSortGrouping.MIXED ? "mixed" : "folders_first");
@@ -911,7 +1041,7 @@ public class FormPanel extends JPanel {
 		}
 		suppressTreeSelectionEvents = true;
 		try {
-			sortTreeNodeChildren(planTreeRoot);
+			sortTreeNodeChildren(planTreeRoot, true);
 		} finally {
 			suppressTreeSelectionEvents = false;
 		}
@@ -936,9 +1066,33 @@ public class FormPanel extends JPanel {
 		}
 	}
 
-	private void sortTreeNodeChildren(DefaultMutableTreeNode parent) {
+	private void sortTreeNodeChildren(DefaultMutableTreeNode parent, boolean recursive) {
+		reorderChildrenInPlace(parent);
+		if (!recursive) {
+			return;
+		}
+		// Snapshot first — child count/order is stable after this level's reorder.
+		List<DefaultMutableTreeNode> children = new ArrayList<>();
+		for (int i = 0; i < parent.getChildCount(); i++) {
+			children.add((DefaultMutableTreeNode) parent.getChildAt(i));
+		}
+		for (DefaultMutableTreeNode child : children) {
+			PlansTreeNode d = data(child);
+			if (d != null && d.isFolder()) {
+				sortTreeNodeChildren(child, true);
+			}
+		}
+	}
+
+	/**
+	 * Reorder {@code parent}'s children without emptying it first. Emptying the invisible
+	 * root (or a folder) collapses it in JTree; with rootVisible=false that looks like
+	 * every plan disappeared until the next restart expands the root again.
+	 */
+	private void reorderChildrenInPlace(DefaultMutableTreeNode parent) {
 		int count = parent.getChildCount();
-		if (count == 0) {
+		if (count <= 1) {
+			ensurePlansTreeParentExpanded(parent);
 			return;
 		}
 		List<DefaultMutableTreeNode> children = new ArrayList<>(count);
@@ -946,20 +1100,116 @@ public class FormPanel extends JPanel {
 			children.add((DefaultMutableTreeNode) parent.getChildAt(i));
 		}
 		children.sort((left, right) -> compareTreeData(data(left), data(right)));
-		for (int i = count - 1; i >= 0; i--) {
-			planTreeModel.removeNodeFromParent((DefaultMutableTreeNode) parent.getChildAt(i));
+
+		TreePath parentPath = new TreePath(parent.getPath());
+		List<TreePath> expandedDescendants = new ArrayList<>();
+		Enumeration<TreePath> expanded = planTree.getExpandedDescendants(parentPath);
+		if (expanded != null) {
+			while (expanded.hasMoreElements()) {
+				expandedDescendants.add(expanded.nextElement());
+			}
 		}
+
 		for (int i = 0; i < children.size(); i++) {
 			DefaultMutableTreeNode child = children.get(i);
-			planTreeModel.insertNodeInto(child, parent, i);
-			sortTreeNodeChildren(child);
+			int from = parent.getIndex(child);
+			if (from != i) {
+				planTreeModel.removeNodeFromParent(child);
+				planTreeModel.insertNodeInto(child, parent, i);
+			}
 		}
+
+		ensurePlansTreeParentExpanded(parent);
+		for (TreePath path : expandedDescendants) {
+			planTree.expandPath(path);
+		}
+	}
+
+	/** Invisible root must stay expanded or the Plans tree appears empty. */
+	private void ensurePlansTreeParentExpanded(DefaultMutableTreeNode parent) {
+		if (planTree == null || parent == null) {
+			return;
+		}
+		planTree.expandPath(new TreePath(planTreeRoot));
+		if (parent != planTreeRoot) {
+			planTree.expandPath(new TreePath(parent.getPath()));
+		}
+	}
+
+	/** Write each child's index as sort_order in memory and in the database. */
+	private void persistChildrenSortOrders(DefaultMutableTreeNode parent) {
+		if (parent == null) {
+			return;
+		}
+		for (int i = 0; i < parent.getChildCount(); i++) {
+			PlansTreeNode d = data(parent.getChildAt(i));
+			if (d == null) {
+				continue;
+			}
+			d.setSortOrder(i);
+			if (d.isFolder() && d.getFolderId() != null) {
+				Database.dml("update plan_folders set sort_order = " + i
+						+ " where id_folder = " + d.getFolderId().intValue() + ";");
+			} else if (d.isPlan() && d.getPlanId() != null) {
+				Database.dml("update explain_plans set sort_order = " + i
+						+ " where id_explain_plan = " + d.getPlanId().intValue() + ";");
+			}
+		}
+	}
+
+	private void persistEntireTreeSortOrders(DefaultMutableTreeNode parent) {
+		persistChildrenSortOrders(parent);
+		for (int i = 0; i < parent.getChildCount(); i++) {
+			DefaultMutableTreeNode child = (DefaultMutableTreeNode) parent.getChildAt(i);
+			PlansTreeNode d = data(child);
+			if (d != null && d.isFolder()) {
+				persistEntireTreeSortOrders(child);
+			}
+		}
+	}
+
+	/**
+	 * One-shot name sort of a single folder's immediate children (Manual mode).
+	 * Updates persisted sort_order; does not change Settings mode.
+	 */
+	private void sortNowFolder(DefaultMutableTreeNode folderNode, boolean ascending) {
+		if (folderNode == null) {
+			return;
+		}
+		boolean savedManual = plansSortManual;
+		boolean savedAsc = plansSortNameAscending;
+		PlansSortGrouping savedGroup = plansSortGrouping;
+		plansSortManual = false;
+		plansSortNameAscending = ascending;
+		plansSortGrouping = PlansSortGrouping.FOLDERS_FIRST;
+		suppressTreeSelectionEvents = true;
+		try {
+			sortTreeNodeChildren(folderNode, false);
+			ensurePlansTreeParentExpanded(folderNode);
+		} finally {
+			plansSortManual = savedManual;
+			plansSortNameAscending = savedAsc;
+			plansSortGrouping = savedGroup;
+			suppressTreeSelectionEvents = false;
+		}
+		persistChildrenSortOrders(folderNode);
 	}
 
 	private void showPlansSettingsDialog() {
 		Window owner = SwingUtilities.getWindowAncestor(this);
 		JDialog dialog = new JDialog(owner, "Settings", Dialog.ModalityType.APPLICATION_MODAL);
 		dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
+
+		JRadioButton modeByName = new JRadioButton("By name");
+		JRadioButton modeManual = new JRadioButton("Manual");
+		ButtonGroup modeGroup = new ButtonGroup();
+		modeGroup.add(modeByName);
+		modeGroup.add(modeManual);
+		if (plansSortManual) {
+			modeManual.setSelected(true);
+		} else {
+			modeByName.setSelected(true);
+		}
 
 		JRadioButton nameAsc = new JRadioButton("A → Z");
 		JRadioButton nameDesc = new JRadioButton("Z → A");
@@ -996,6 +1246,17 @@ public class FormPanel extends JPanel {
 		body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
 		body.setBorder(BorderFactory.createEmptyBorder(14, 16, 8, 16));
 
+		JLabel modeLabel = new JLabel("Order");
+		modeLabel.setFont(modeLabel.getFont().deriveFont(Font.BOLD));
+		modeLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		body.add(modeLabel);
+		body.add(Box.createVerticalStrut(6));
+		modeByName.setAlignmentX(Component.LEFT_ALIGNMENT);
+		modeManual.setAlignmentX(Component.LEFT_ALIGNMENT);
+		body.add(modeByName);
+		body.add(modeManual);
+		body.add(Box.createVerticalStrut(14));
+
 		JLabel nameLabel = new JLabel("Name order");
 		nameLabel.setFont(nameLabel.getFont().deriveFont(Font.BOLD));
 		nameLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -1019,14 +1280,31 @@ public class FormPanel extends JPanel {
 		body.add(plansFirst);
 		body.add(mixed);
 
-		JLabel hint = new JLabel("<html>Applies to the whole Plans tree, including nested folders.</html>");
+		JLabel hint = new JLabel("<html>By name applies to the whole Plans tree.<br>"
+				+ "Manual: drag to rearrange. Right-click a folder for Sort Now.</html>");
 		hint.setBorder(BorderFactory.createEmptyBorder(12, 0, 0, 0));
 		hint.setAlignmentX(Component.LEFT_ALIGNMENT);
 		body.add(hint);
 
+		Runnable syncEnabled = () -> {
+			boolean byName = modeByName.isSelected();
+			nameLabel.setEnabled(byName);
+			nameAsc.setEnabled(byName);
+			nameDesc.setEnabled(byName);
+			groupLabel.setEnabled(byName);
+			foldersFirst.setEnabled(byName);
+			plansFirst.setEnabled(byName);
+			mixed.setEnabled(byName);
+		};
+		modeByName.addActionListener(e -> syncEnabled.run());
+		modeManual.addActionListener(e -> syncEnabled.run());
+		syncEnabled.run();
+
 		JButton applyBtn = new JButton("Apply");
 		JButton closeBtn = new JButton("Close");
 		applyBtn.addActionListener(e -> {
+			boolean wasManual = plansSortManual;
+			plansSortManual = modeManual.isSelected();
 			plansSortNameAscending = nameAsc.isSelected();
 			if (plansFirst.isSelected()) {
 				plansSortGrouping = PlansSortGrouping.PLANS_FIRST;
@@ -1036,7 +1314,15 @@ public class FormPanel extends JPanel {
 				plansSortGrouping = PlansSortGrouping.FOLDERS_FIRST;
 			}
 			savePlansSortPreferences();
-			sortEntirePlansTree(true);
+			if (plansSortManual) {
+				if (!wasManual) {
+					// Keep the current visual order as the new Manual order.
+					persistEntireTreeSortOrders(planTreeRoot);
+				}
+			} else {
+				sortEntirePlansTree(true);
+				persistEntireTreeSortOrders(planTreeRoot);
+			}
 		});
 		closeBtn.addActionListener(e -> dialog.dispose());
 
@@ -1119,9 +1405,9 @@ public class FormPanel extends JPanel {
 	private Map<Integer, DefaultMutableTreeNode> loadPlanFoldersIntoTree() {
 		Map<Integer, DefaultMutableTreeNode> nodes = new LinkedHashMap<>();
 		Map<Integer, Integer> parents = new HashMap<>();
-		JsonArray folderRows = Database.rows("select id_folder, folder_name, parent_id_folder\n"
+		JsonArray folderRows = Database.rows("select id_folder, folder_name, parent_id_folder, sort_order\n"
 				+ "from plan_folders\n"
-				+ "order by lower(folder_name), id_folder;");
+				+ "order by sort_order, lower(folder_name), id_folder;");
 		if (folderRows == null) {
 			return nodes;
 		}
@@ -1132,10 +1418,11 @@ public class FormPanel extends JPanel {
 				continue;
 			}
 			Object name = row.get("folder_name");
-			nodes.put(id, new DefaultMutableTreeNode(PlansTreeNode.folder(id.intValue(), name == null ? "" : String.valueOf(name))));
+			int sortOrder = toIntOrZero(row.get("sort_order"));
+			nodes.put(id, new DefaultMutableTreeNode(PlansTreeNode.folder(
+					id.intValue(), name == null ? "" : String.valueOf(name), sortOrder)));
 			parents.put(id, toInteger(row.get("parent_id_folder")));
 		}
-		// Query order is by name, so appending keeps siblings sorted.
 		for (Map.Entry<Integer, DefaultMutableTreeNode> entry : nodes.entrySet()) {
 			Integer id = entry.getKey();
 			Integer parentId = parents.get(id);
@@ -1172,6 +1459,35 @@ public class FormPanel extends JPanel {
 		} catch (NumberFormatException ex) {
 			return null;
 		}
+	}
+
+	private static int toIntOrZero(Object value) {
+		Integer n = toInteger(value);
+		return n == null ? 0 : n.intValue();
+	}
+
+	/** Next sort_order for a new child under {@code parentFolderId} (null = root). */
+	private int nextSortOrderInFolder(Integer parentFolderId, boolean forFolder) {
+		String sql;
+		if (forFolder) {
+			sql = "select coalesce(max(sort_order), -1) + 1 as next_order from plan_folders where "
+					+ folderScopeSql("parent_id_folder", parentFolderId) + ";";
+		} else {
+			sql = "select coalesce(max(sort_order), -1) + 1 as next_order from explain_plans where "
+					+ folderScopeSql("folder_id", parentFolderId) + ";";
+		}
+		JsonObject row = Database.row(sql);
+		return toIntOrZero(row == null ? null : row.get("next_order"));
+	}
+
+	private int readPlanSortOrder(int planId) {
+		JsonObject row = Database.row("select sort_order from explain_plans where id_explain_plan = " + planId + ";");
+		return toIntOrZero(row == null ? null : row.get("sort_order"));
+	}
+
+	private int readFolderSortOrder(int folderId) {
+		JsonObject row = Database.row("select sort_order from plan_folders where id_folder = " + folderId + ";");
+		return toIntOrZero(row == null ? null : row.get("sort_order"));
 	}
 
 	// ------------------------------------------------------------------
@@ -1884,6 +2200,298 @@ public class FormPanel extends JPanel {
 		});
 	}
 
+	/** Plans tree context menu: toolbar actions + Sort Now (Manual mode). */
+	private void installPlansTreeContextMenu() {
+		if (planTree == null) {
+			return;
+		}
+		JPopupMenu menu = new JPopupMenu();
+		JMenuItem addPlanItem = new JMenuItem("Add Plan");
+		JMenuItem addFolderItem = new JMenuItem("Add Folder");
+		JMenuItem deleteItem = new JMenuItem("Delete Selected");
+		JMenuItem duplicateItem = new JMenuItem("Duplicate Plan(s)");
+		JMenuItem compareItem = new JMenuItem("Compare Plans");
+		JMenuItem settingsItem = new JMenuItem("Settings");
+		JMenuItem sortAsc = new JMenuItem("Sort Now: A → Z");
+		JMenuItem sortDesc = new JMenuItem("Sort Now: Z → A");
+
+		addPlanItem.addActionListener(e -> addPlan());
+		addFolderItem.addActionListener(e -> addFolder());
+		deleteItem.addActionListener(e -> deleteSelectedItems());
+		duplicateItem.addActionListener(e -> duplicateSelectedPlans());
+		compareItem.addActionListener(e -> showComparePlansTab());
+		settingsItem.addActionListener(e -> showPlansSettingsDialog());
+
+		menu.add(addPlanItem);
+		menu.add(addFolderItem);
+		menu.add(deleteItem);
+		menu.add(duplicateItem);
+		menu.add(compareItem);
+		menu.addSeparator();
+		menu.add(settingsItem);
+		menu.addSeparator();
+		menu.add(sortAsc);
+		menu.add(sortDesc);
+
+		MouseAdapter popupListener = new MouseAdapter() {
+			@Override
+			public void mousePressed(MouseEvent e) {
+				// Drag-enabled JTree often defers left-click selection; right-click must
+				// highlight immediately so the menu matches the row under the pointer.
+				if (SwingUtilities.isRightMouseButton(e)) {
+					highlightPathForContextMenu(treePathAtPopup(e));
+				}
+				maybeShow(e);
+			}
+
+			@Override
+			public void mouseReleased(MouseEvent e) {
+				maybeShow(e);
+			}
+
+			private void maybeShow(MouseEvent e) {
+				if (!e.isPopupTrigger()) {
+					return;
+				}
+				TreePath pathUnderPointer = treePathAtPopup(e);
+				contextMenuAnchorPath = pathUnderPointer;
+				highlightPathForContextMenu(pathUnderPointer);
+				updateAddButtonsEnabled();
+
+				int selectionCount = getSelectedTreeNodes().size();
+				boolean allowAdd = selectionCount <= 1;
+				addPlanItem.setEnabled(allowAdd);
+				addFolderItem.setEnabled(allowAdd);
+				deleteItem.setEnabled(selectionCount > 0);
+				duplicateItem.setEnabled(!getSelectedPlanNodes().isEmpty());
+				compareItem.setEnabled(canComparePlansFromContext(pathUnderPointer));
+				settingsItem.setEnabled(true);
+
+				DefaultMutableTreeNode sortFolder = folderNodeForSortNow(pathUnderPointer);
+				boolean showSortNow = plansSortManual;
+				sortAsc.setVisible(showSortNow);
+				sortDesc.setVisible(showSortNow);
+				// Hide the separator above Sort Now when those items are hidden.
+				int sortSepIndex = menu.getComponentIndex(sortAsc) - 1;
+				if (sortSepIndex >= 0 && menu.getComponent(sortSepIndex) instanceof JPopupMenu.Separator) {
+					menu.getComponent(sortSepIndex).setVisible(showSortNow);
+				}
+				if (showSortNow) {
+					String folderLabel = sortNowFolderLabel(sortFolder);
+					sortAsc.setText("Sort Now: A → Z (" + folderLabel + ")");
+					sortDesc.setText("Sort Now: Z → A (" + folderLabel + ")");
+					for (ActionListener old : sortAsc.getActionListeners()) {
+						sortAsc.removeActionListener(old);
+					}
+					for (ActionListener old : sortDesc.getActionListeners()) {
+						sortDesc.removeActionListener(old);
+					}
+					sortAsc.addActionListener(ae -> sortNowFolder(sortFolder, true));
+					sortDesc.addActionListener(ae -> sortNowFolder(sortFolder, false));
+				}
+
+				menu.show(e.getComponent(), e.getX(), e.getY());
+			}
+		};
+		menu.addPopupMenuListener(new PopupMenuListener() {
+			@Override
+			public void popupMenuWillBecomeVisible(PopupMenuEvent e) {
+				// anchor set in maybeShow
+			}
+
+			@Override
+			public void popupMenuWillBecomeInvisible(PopupMenuEvent e) {
+				// After item actions run; clear so toolbar Add does not reuse the click.
+				SwingUtilities.invokeLater(() -> contextMenuAnchorPath = null);
+			}
+
+			@Override
+			public void popupMenuCanceled(PopupMenuEvent e) {
+				contextMenuAnchorPath = null;
+			}
+		});
+		planTree.addMouseListener(popupListener);
+		if (planListScrollPane != null) {
+			planListScrollPane.getViewport().addMouseListener(popupListener);
+			planListScrollPane.addMouseListener(popupListener);
+		}
+	}
+
+	/**
+	 * Select the plan/folder under a right-click (or clear when clicking empty space)
+	 * so toolbar/context actions apply to that row. If the row is already part of a
+	 * multi-selection, keep the selection (needed for Compare Plans).
+	 */
+	private void highlightPathForContextMenu(TreePath path) {
+		if (planTree == null) {
+			return;
+		}
+		if (path == null) {
+			planTree.clearSelection();
+		} else if (planTree.isPathSelected(path) && planTree.getSelectionCount() > 1) {
+			planTree.setLeadSelectionPath(path);
+			planTree.scrollPathToVisible(path);
+		} else {
+			planTree.setSelectionPath(path);
+			planTree.setLeadSelectionPath(path);
+			planTree.setAnchorSelectionPath(path);
+			planTree.scrollPathToVisible(path);
+		}
+		planTree.repaint();
+	}
+
+	/** True when Compare Plans can run from the current selection / right-click target. */
+	private boolean canComparePlansFromContext(TreePath pathUnderPointer) {
+		if (!getSelectedPlanNodes().isEmpty()) {
+			return true;
+		}
+		DefaultMutableTreeNode folder = folderNodeAtPath(pathUnderPointer);
+		if (folder != null) {
+			return countPlansUnder(folder) > 0;
+		}
+		for (DefaultMutableTreeNode node : getSelectedTreeNodes()) {
+			PlansTreeNode d = data(node);
+			if (d != null && d.isFolder() && countPlansUnder(node) > 0) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private DefaultMutableTreeNode folderNodeAtPath(TreePath path) {
+		if (path == null) {
+			return null;
+		}
+		Object last = path.getLastPathComponent();
+		if (!(last instanceof DefaultMutableTreeNode)) {
+			return null;
+		}
+		DefaultMutableTreeNode node = (DefaultMutableTreeNode) last;
+		PlansTreeNode d = data(node);
+		return d != null && d.isFolder() ? node : null;
+	}
+
+	/** Plans in {@code folder} and all nested folders. */
+	private int countPlansUnder(DefaultMutableTreeNode folder) {
+		List<TreePath> paths = new ArrayList<>();
+		collectDescendantPlanPaths(folder, paths);
+		return paths.size();
+	}
+
+	private void collectDescendantPlanPaths(DefaultMutableTreeNode node, List<TreePath> out) {
+		if (node == null) {
+			return;
+		}
+		PlansTreeNode d = data(node);
+		if (d != null && d.isPlan()) {
+			out.add(new TreePath(node.getPath()));
+			return;
+		}
+		for (int i = 0; i < node.getChildCount(); i++) {
+			collectDescendantPlanPaths((DefaultMutableTreeNode) node.getChildAt(i), out);
+		}
+	}
+
+	/**
+	 * If the context target / selection is a folder, select every plan in that folder
+	 * and its subfolders so Compare Plans can run.
+	 */
+	private void selectPlansForCompareFromContext() {
+		List<DefaultMutableTreeNode> folders = new ArrayList<>();
+		DefaultMutableTreeNode anchorFolder = folderNodeAtPath(contextMenuAnchorPath);
+		if (anchorFolder != null) {
+			folders.add(anchorFolder);
+		} else {
+			for (DefaultMutableTreeNode node : getSelectedTreeNodes()) {
+				PlansTreeNode d = data(node);
+				if (d != null && d.isFolder()) {
+					folders.add(node);
+				}
+			}
+		}
+		if (folders.isEmpty()) {
+			return;
+		}
+		List<TreePath> planPaths = new ArrayList<>();
+		for (DefaultMutableTreeNode folder : folders) {
+			collectDescendantPlanPaths(folder, planPaths);
+		}
+		if (planPaths.isEmpty()) {
+			return;
+		}
+		planTree.setSelectionPaths(planPaths.toArray(new TreePath[0]));
+		planTree.scrollPathToVisible(planPaths.get(0));
+	}
+
+	/** Switch to the Compare Plans tab (refreshes via the tab change listener). */
+	private void showComparePlansTab() {
+		if (tabPaneToLink == null) {
+			return;
+		}
+		selectPlansForCompareFromContext();
+		if (getSelectedPlanNodes().isEmpty()) {
+			return;
+		}
+		if (tabPaneToLink.getTabCount() <= 1) {
+			// Selection listener builds tabs; ensure Compare Plans exists.
+			onPlanTreeSelectionChanged();
+		}
+		if (tabPaneToLink.getTabCount() > 1) {
+			tabPaneToLink.setSelectedIndex(1);
+		}
+	}
+
+	/** Tree path under a popup click (tree or scroll-pane coordinates). */
+	private TreePath treePathAtPopup(MouseEvent e) {
+		if (planTree == null) {
+			return null;
+		}
+		Point treePoint = SwingUtilities.convertPoint(e.getComponent(), e.getPoint(), planTree);
+		TreePath exact = planTree.getPathForLocation(treePoint.x, treePoint.y);
+		if (exact != null) {
+			return exact;
+		}
+		// Clicks on indent/guides miss getPathForLocation — still hit the row by Y.
+		int row = planTree.getClosestRowForLocation(treePoint.x, treePoint.y);
+		if (row < 0) {
+			return null;
+		}
+		Rectangle bounds = planTree.getRowBounds(row);
+		if (bounds == null || treePoint.y < bounds.y || treePoint.y >= bounds.y + bounds.height) {
+			return null;
+		}
+		return planTree.getPathForRow(row);
+	}
+
+	/** Display name for Sort Now menu items (root → {@code Root folder}). */
+	private String sortNowFolderLabel(DefaultMutableTreeNode folderNode) {
+		if (folderNode == null || folderNode == planTreeRoot) {
+			return "Root folder";
+		}
+		PlansTreeNode d = data(folderNode);
+		if (d == null || d.getName() == null || d.getName().isBlank()) {
+			return "Root folder";
+		}
+		return d.getName();
+	}
+
+	/** Folder whose immediate children Sort Now should rearrange. */
+	private DefaultMutableTreeNode folderNodeForSortNow(TreePath path) {
+		if (path == null) {
+			return planTreeRoot;
+		}
+		DefaultMutableTreeNode node = (DefaultMutableTreeNode) path.getLastPathComponent();
+		PlansTreeNode d = data(node);
+		if (d == null) {
+			return planTreeRoot;
+		}
+		if (d.isFolder()) {
+			return node;
+		}
+		TreeNode parent = node.getParent();
+		return parent instanceof DefaultMutableTreeNode ? (DefaultMutableTreeNode) parent : planTreeRoot;
+	}
+
 	/** Destination folder for a drop (null = root), or null marker via Optional-like: use boolean. */
 	private Integer resolveDropTargetFolderId(JTree.DropLocation loc) {
 		if (loc == null) {
@@ -1942,37 +2550,94 @@ public class FormPanel extends JPanel {
 		return true;
 	}
 
-	private boolean importPlansTreePayload(PlansTreeDragPayload payload, Integer targetFolderId) {
+	private boolean importPlansTreePayload(PlansTreeDragPayload payload, Integer targetFolderId, int childIndex) {
 		if (!canDropPayloadOnFolder(payload, targetFolderId)) {
 			return false;
 		}
-		List<DefaultMutableTreeNode> moved = new ArrayList<>();
+		DefaultMutableTreeNode targetParent = targetFolderId == null ? planTreeRoot
+				: findFolderNode(targetFolderId.intValue());
+		if (targetParent == null) {
+			return false;
+		}
+
+		List<DefaultMutableTreeNode> nodes = new ArrayList<>();
 		for (Integer folderId : payload.folderIds) {
 			DefaultMutableTreeNode node = findFolderNode(folderId.intValue());
-			Integer currentParent = node == null ? null : folderIdOf((DefaultMutableTreeNode) node.getParent());
-			if (Objects.equals(currentParent, targetFolderId)) {
-				continue;
-			}
-			moveFolderToParent(folderId.intValue(), targetFolderId, false);
-			node = findFolderNode(folderId.intValue());
 			if (node != null) {
-				moved.add(node);
+				nodes.add(node);
 			}
 		}
 		for (Integer planId : payload.planIds) {
 			DefaultMutableTreeNode node = findPlanNode(planId.intValue());
+			if (node != null) {
+				nodes.add(node);
+			}
+		}
+		if (nodes.isEmpty()) {
+			return false;
+		}
+
+		boolean allAlreadyInTarget = true;
+		for (DefaultMutableTreeNode node : nodes) {
+			Integer currentParent = folderIdOf((DefaultMutableTreeNode) node.getParent());
 			PlansTreeNode d = data(node);
-			if (d != null && Objects.equals(d.getFolderId(), targetFolderId)) {
+			if (d != null && d.isPlan()) {
+				currentParent = d.getFolderId();
+			}
+			if (!Objects.equals(currentParent, targetFolderId)) {
+				allAlreadyInTarget = false;
+				break;
+			}
+		}
+
+		// By name: only cross-folder moves; sibling position is name-sorted.
+		if (allAlreadyInTarget && !plansSortManual) {
+			return false;
+		}
+
+		if (allAlreadyInTarget && plansSortManual) {
+			return reorderNodesInParent(nodes, targetParent, childIndex);
+		}
+
+		// Cross-folder (or mixed): move membership first, then place at index when Manual.
+		List<DefaultMutableTreeNode> moved = new ArrayList<>();
+		Set<DefaultMutableTreeNode> affectedParents = new HashSet<>();
+		affectedParents.add(targetParent);
+		for (DefaultMutableTreeNode node : nodes) {
+			DefaultMutableTreeNode oldParent = (DefaultMutableTreeNode) node.getParent();
+			if (oldParent != null) {
+				affectedParents.add(oldParent);
+			}
+			PlansTreeNode d = data(node);
+			if (d == null) {
 				continue;
 			}
-			movePlanToFolder(planId.intValue(), targetFolderId, false);
-			node = findPlanNode(planId.intValue());
+			if (d.isFolder() && d.getFolderId() != null) {
+				Integer currentParent = folderIdOf(oldParent);
+				if (!Objects.equals(currentParent, targetFolderId)) {
+					moveFolderToParent(d.getFolderId().intValue(), targetFolderId, false);
+				}
+				node = findFolderNode(d.getFolderId().intValue());
+			} else if (d.isPlan() && d.getPlanId() != null) {
+				if (!Objects.equals(d.getFolderId(), targetFolderId)) {
+					movePlanToFolder(d.getPlanId().intValue(), targetFolderId, false);
+				}
+				node = findPlanNode(d.getPlanId().intValue());
+			}
 			if (node != null) {
 				moved.add(node);
 			}
 		}
 		if (moved.isEmpty()) {
 			return false;
+		}
+		if (plansSortManual) {
+			reorderNodesInParent(moved, targetParent, childIndex);
+			for (DefaultMutableTreeNode parent : affectedParents) {
+				if (parent != targetParent) {
+					persistChildrenSortOrders(parent);
+				}
+			}
 		}
 		suppressTreeSelectionEvents = true;
 		try {
@@ -1988,6 +2653,54 @@ public class FormPanel extends JPanel {
 		}
 		onPlanTreeSelectionChanged();
 		refreshOpenPlanFolderChoosers();
+		return true;
+	}
+
+	/**
+	 * Place {@code nodes} under {@code parent} at {@code childIndex} (-1 = append).
+	 * Persists Manual sort_order for that parent.
+	 */
+	private boolean reorderNodesInParent(List<DefaultMutableTreeNode> nodes, DefaultMutableTreeNode parent,
+			int childIndex) {
+		if (nodes == null || nodes.isEmpty() || parent == null) {
+			return false;
+		}
+		int index = childIndex;
+		if (index < 0) {
+			index = parent.getChildCount();
+		}
+		suppressTreeSelectionEvents = true;
+		try {
+			for (DefaultMutableTreeNode node : nodes) {
+				DefaultMutableTreeNode oldParent = (DefaultMutableTreeNode) node.getParent();
+				if (oldParent == parent) {
+					int oldIndex = parent.getIndex(node);
+					if (oldIndex >= 0 && oldIndex < index) {
+						index--;
+					}
+				}
+			}
+			for (DefaultMutableTreeNode node : nodes) {
+				if (node.getParent() != null) {
+					planTreeModel.removeNodeFromParent(node);
+				}
+			}
+			for (int i = 0; i < nodes.size(); i++) {
+				int insertAt = Math.min(index + i, parent.getChildCount());
+				planTreeModel.insertNodeInto(nodes.get(i), parent, insertAt);
+			}
+			persistChildrenSortOrders(parent);
+			planTree.clearSelection();
+			TreePath[] paths = new TreePath[nodes.size()];
+			for (int i = 0; i < nodes.size(); i++) {
+				paths[i] = new TreePath(nodes.get(i).getPath());
+			}
+			planTree.setSelectionPaths(paths);
+			planTree.scrollPathToVisible(paths[paths.length - 1]);
+		} finally {
+			suppressTreeSelectionEvents = false;
+		}
+		onPlanTreeSelectionChanged();
 		return true;
 	}
 
@@ -2039,7 +2752,36 @@ public class FormPanel extends JPanel {
 				// During drag, transferable may still be readable
 				return true;
 			}
-			return canDropPayloadOnFolder(payload, targetFolderId);
+			if (!canDropPayloadOnFolder(payload, targetFolderId)) {
+				return false;
+			}
+			if (!plansSortManual) {
+				// By name: reject pure sibling reorders (same parent).
+				boolean anyCrossFolder = false;
+				for (Integer folderId : payload.folderIds) {
+					DefaultMutableTreeNode node = findFolderNode(folderId.intValue());
+					Integer currentParent = node == null ? null
+							: folderIdOf((DefaultMutableTreeNode) node.getParent());
+					if (!Objects.equals(currentParent, targetFolderId)) {
+						anyCrossFolder = true;
+						break;
+					}
+				}
+				if (!anyCrossFolder) {
+					for (Integer planId : payload.planIds) {
+						DefaultMutableTreeNode node = findPlanNode(planId.intValue());
+						PlansTreeNode d = data(node);
+						if (d != null && !Objects.equals(d.getFolderId(), targetFolderId)) {
+							anyCrossFolder = true;
+							break;
+						}
+					}
+				}
+				if (!anyCrossFolder) {
+					return false;
+				}
+			}
+			return true;
 		}
 
 		@Override
@@ -2055,7 +2797,8 @@ public class FormPanel extends JPanel {
 			}
 			JTree.DropLocation loc = (JTree.DropLocation) support.getDropLocation();
 			Integer targetFolderId = resolveDropTargetFolderId(loc);
-			return importPlansTreePayload(payload, targetFolderId);
+			int childIndex = loc == null ? -1 : loc.getChildIndex();
+			return importPlansTreePayload(payload, targetFolderId, childIndex);
 		}
 
 		@Override
@@ -2166,20 +2909,42 @@ public class FormPanel extends JPanel {
 			g.drawLine(8, 8, 8, 11);
 			g.drawLine(6, 9, 10, 9);
 			break;
-		case "settings":
-			// simple gear: hub + ring + teeth
-			g.setStroke(new BasicStroke(1.4f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-			g.drawOval(5, 5, 6, 6);
-			g.drawOval(7, 7, 2, 2);
-			for (int i = 0; i < 8; i++) {
-				double angle = i * Math.PI / 4.0;
-				int x1 = (int) Math.round(8 + Math.cos(angle) * 4.2);
-				int y1 = (int) Math.round(8 + Math.sin(angle) * 4.2);
-				int x2 = (int) Math.round(8 + Math.cos(angle) * 6.4);
-				int y2 = (int) Math.round(8 + Math.sin(angle) * 6.4);
-				g.drawLine(x1, y1, x2, y2);
+		case "settings": {
+			// Filled cog with center hole (radial spokes read as a wagon wheel at 16px).
+			final double cx = 7.5;
+			final double cy = 7.5;
+			final double outerR = 6.4;
+			final double rootR = 4.35;
+			final double holeR = 2.05;
+			final int teeth = 8;
+			java.awt.geom.Path2D.Double gear = new java.awt.geom.Path2D.Double();
+			for (int i = 0; i < teeth; i++) {
+				double mid = i * (Math.PI * 2.0 / teeth) - Math.PI / 2.0;
+				double halfStep = Math.PI / teeth;
+				double toothHalf = halfStep * 0.42;
+				double[] angles = {
+						mid - halfStep,
+						mid - toothHalf,
+						mid + toothHalf,
+						mid + halfStep
+				};
+				double[] radii = { rootR, outerR, outerR, rootR };
+				for (int p = 0; p < 4; p++) {
+					double x = cx + Math.cos(angles[p]) * radii[p];
+					double y = cy + Math.sin(angles[p]) * radii[p];
+					if (i == 0 && p == 0) {
+						gear.moveTo(x, y);
+					} else {
+						gear.lineTo(x, y);
+					}
+				}
 			}
+			gear.closePath();
+			g.fill(gear);
+			g.setComposite(java.awt.AlphaComposite.Clear);
+			g.fill(new java.awt.geom.Ellipse2D.Double(cx - holeR, cy - holeR, holeR * 2, holeR * 2));
 			break;
+		}
 		default:
 			break;
 		}
@@ -2701,8 +3466,10 @@ public class FormPanel extends JPanel {
 	/** Insert a folder under {@code parentFolderId} (null = root); returns its new id. */
 	private Integer insertFolderToDatabase(String folderName, Integer parentFolderId) {
 		boolean bolShowSQL = false;
+		int sortOrder = nextSortOrderInFolder(parentFolderId, true);
 		String strSQL = "insert into plan_folders (id_folder, folder_name, parent_id_folder, sort_order)\n"
-				+ "select coalesce(max(id_folder) + 1, 1), " + sqlQuote(folderName) + ", " + sqlFolderIdLiteral(parentFolderId) + ", 0\n"
+				+ "select coalesce(max(id_folder) + 1, 1), " + sqlQuote(folderName) + ", "
+				+ sqlFolderIdLiteral(parentFolderId) + ", " + sortOrder + "\n"
 				+ "from plan_folders;";
 		if (bolShowSQL == true) { System.out.println(strSQL); }
 		Database.dml(strSQL);
@@ -2721,8 +3488,10 @@ public class FormPanel extends JPanel {
 		String strSQL;
 
 		if (bolShowProperties == true) { System.out.println("add to explain_plans"); }
-		strSQL = "insert into explain_plans (id_explain_plan, plan_name, folder_id) select coalesce(max(id_explain_plan) + 1, 1), "
-				+ sqlQuote(planName) + ", " + sqlFolderIdLiteral(folderId) + " from explain_plans";
+		int sortOrder = nextSortOrderInFolder(folderId, false);
+		strSQL = "insert into explain_plans (id_explain_plan, plan_name, folder_id, sort_order) select coalesce(max(id_explain_plan) + 1, 1), "
+				+ sqlQuote(planName) + ", " + sqlFolderIdLiteral(folderId) + ", " + sortOrder
+				+ " from explain_plans";
 		if (bolShowSQL == true) { System.out.println(strSQL); }
 		Database.dml(strSQL);
 
@@ -2754,8 +3523,10 @@ public class FormPanel extends JPanel {
 			return null;
 		}
 		String planName = uniquePlanNameInFolder("Plan " + nextId, folderId);
-		strSQL = "insert into explain_plans (id_explain_plan, plan_name, folder_id) values ("
-				+ nextId + ", " + sqlQuote(planName) + ", " + sqlFolderIdLiteral(folderId) + ")";
+		int sortOrder = nextSortOrderInFolder(folderId, false);
+		strSQL = "insert into explain_plans (id_explain_plan, plan_name, folder_id, sort_order) values ("
+				+ nextId + ", " + sqlQuote(planName) + ", " + sqlFolderIdLiteral(folderId) + ", "
+				+ sortOrder + ")";
 		if (bolShowSQL == true) { System.out.println(strSQL); }
 		Database.dml(strSQL);
 
@@ -2867,6 +3638,18 @@ public class FormPanel extends JPanel {
 				d.setName(strNewPlanName);
 			}
 			planTreeModel.nodeChanged(node);
+			if (!plansSortManual) {
+				DefaultMutableTreeNode parent = (DefaultMutableTreeNode) node.getParent();
+				if (parent != null) {
+					suppressTreeSelectionEvents = true;
+					try {
+						sortTreeNodeChildren(parent, false);
+					} finally {
+						suppressTreeSelectionEvents = false;
+					}
+					selectTreeNode(node);
+				}
+			}
 		}
 		PlanEvent pEvent = plansMapper.get(Integer.valueOf(planId));
 		if (pEvent != null) {
