@@ -1,8 +1,10 @@
 
 package com.williammeitzen.peps.gui;
 
+import java.awt.AlphaComposite;
 import java.awt.BasicStroke;
 import java.awt.Color;
+import java.awt.Composite;
 import java.awt.Stroke;
 import java.awt.Component;
 import java.awt.Container;
@@ -30,10 +32,13 @@ import java.io.IOException;
 import java.net.URL;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 import javax.imageio.ImageIO;
 import javax.swing.JPanel;
@@ -99,6 +104,10 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 	private Color OPERATOR_BOX_COLOR = new Color(0x47, 0x55, 0x69); // slate
 	private Integer OPERATOR_BOX_THICKNESS = 1; // zoom has no effect on operator box thickness
 	private Integer OPERATOR_BOX_CORNER_RADIUS = 8;
+	/** Opacity for operators with Actual Loops = 0 (never executed). */
+	private static final float NEVER_EXECUTED_ALPHA = 0.42f;
+	/** Property ids with Actual Loops = 0 for the diagram currently being painted. */
+	private Set<Integer> neverExecutedOperatorIds = Collections.emptySet();
 	private Integer OPERATOR_BOX_WIDTH = 40; // zoom affects box dimensions
 	private Integer OPERATOR_BOX_HEIGHT = 40; // zoom affects box dimensions
 	private Integer HORIZONTAL_SPACE = 40; // zoom affects empty space between operators
@@ -161,6 +170,13 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 	private Color WORKER_TEXT_FONT_COLOR = Color.black;
 	
 	private static Integer intOldIDExplainPlan;
+	/** When true, next paint re-runs toolbar enable even if plan id is unchanged (e.g. after folder selection). */
+	private static boolean needsDiagramToolbarRefresh = false;
+
+	/** Call after toolbar was blanked (folder-only) so the next diagram paint restores options. */
+	public static void requestDiagramToolbarRefresh() {
+		needsDiagramToolbarRefresh = true;
+	}
 	
 	public PlanGraphPanel(JTabbedPane objCurrentPlanTabs) {
 		boolean bolShowProperties = false;
@@ -182,11 +198,13 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 		boolean bolShowProperties = false;
 		if (bolShowProperties == true) { System.out.println("paint(Graphics g)"); }
 		super.paint(g);
-		if (intOldIDExplainPlan != idExplainPlan) {
-			//if (bolShowProperties == true) { System.out.println("lineThicknessByAndPercentageByButtonsUpdated: " + lineThicknessByAndPercentageByButtonsUpdated); }
+		if (idExplainPlan != null
+				&& (intOldIDExplainPlan == null || !intOldIDExplainPlan.equals(idExplainPlan)
+						|| needsDiagramToolbarRefresh)) {
 			if (bolShowProperties == true) { System.out.println("enableLineThicknessByAndPercentageByButtons()"); }
 			enableLineThicknessByAndPercentageByButtons(idExplainPlan);
 			intOldIDExplainPlan = idExplainPlan;
+			needsDiagramToolbarRefresh = false;
 		}
 	}
 
@@ -2261,6 +2279,16 @@ from explain_plan_operator_annotations
 				"parallel_leader_exclusive_time_highlight = 0\n" +
 				"where coalesce(parallel_leader_exclusive_time_percentage_string*1.0, 0) = 0\n" +
 				"and id_explain_plan = " + intIDExplainPlan + ";\n" +
+
+				// Never-executed (Actual Loops = 0): no hotspot highlighting
+				"update explain_plan_operator_annotations set\n" +
+				"cost_highlight_1 = 0, cost_highlight_2 = 0\n" +
+				", exclusive_time_highlight_1 = 0, exclusive_time_highlight_2 = 0\n" +
+				", difference_time_highlight_1 = 0, difference_time_highlight_2 = 0\n" +
+				", north_1_highlight_1 = 0, north_1_highlight_2 = 0\n" +
+				"where id_explain_plan = " + intIDExplainPlan + "\n" +
+				"and actual_loops is not null and trim(actual_loops) <> ''\n" +
+				"and cast(actual_loops as real) = 0;\n" +
 				"\n";
 
 		if (bolShowSQL == true) { System.out.println(strSQL); }
@@ -3006,6 +3034,14 @@ from explain_plan_operator_annotations
 				if (strSouth3Text == "" && strSouth4Text != "") {
 					strSouth3Text = strSouth4Text;
 					strSouth4Text = "";
+				}
+
+				// Actual Loops = 0 → Postgres "(never executed)"
+				if (isNeverExecutedLoops(jsnObject.get("actual_loops"))) {
+					strSouth5Text = strSouth4Text;
+					strSouth4Text = strSouth3Text;
+					strSouth3Text = strSouth2Text;
+					strSouth2Text = "Never executed";
 				}
 
 				strSQL += "update explain_plan_operator_annotations set\n";
@@ -4176,9 +4212,29 @@ from explain_plan_operator_annotations order by id_explain_plan_property, worker
 				+ " when '" + strLineThicknessBy + "' = 'ESTIMATED_DATA_MASS' then estimated_data_size_line_thickness\n"  
 				+ " when '" + strLineThicknessBy + "' = 'ESTIMATED_ROWS' then estimated_rows_line_thickness\n"
 				+ "end\n"
-				+ "where id_explain_plan = " + intIDExplainPlan + ";\n";
+				+ "where id_explain_plan = " + intIDExplainPlan + ";\n"
+				// Never-executed nodes: don't show misleading "0 bytes" / "0 rows"
+				+ "update explain_plan_operator_annotations set\n"
+				+ "arrow_text = 'Never executed'\n"
+				+ ", arrow_line_thickness = min(coalesce(arrow_line_thickness, 2), max(1, "
+				+ withZoom(2) + "))\n"
+				+ "where id_explain_plan = " + intIDExplainPlan + "\n"
+				+ "and actual_loops is not null and trim(actual_loops) <> ''\n"
+				+ "and cast(actual_loops as real) = 0;\n";
 		if (bolShowSQL == true) { System.out.println(strSQL); }
 		Database.dml(strSQL);
+
+		// Font metrics for the replacement arrow label
+		FontMetrics neverFm = getFontMetrics(new Font(
+				ACTUAL_MASS_ARROW_FONT_NAME, ACTUAL_MASS_ARROW_FONT_STYLE, withZoom(ACTUAL_MASS_ARROW_FONT_SIZE)));
+		int neverWidth = neverFm.stringWidth("Never executed");
+		int neverHeight = neverFm.getAscent();
+		Database.dml("update explain_plan_operator_annotations set\n"
+				+ "arrow_text_fontmetrics_width = " + neverWidth + "\n"
+				+ ", arrow_text_fontmetrics_height = " + neverHeight + "\n"
+				+ "where id_explain_plan = " + intIDExplainPlan + "\n"
+				+ "and actual_loops is not null and trim(actual_loops) <> ''\n"
+				+ "and cast(actual_loops as real) = 0;\n");
 		
 	}
 
@@ -5332,6 +5388,7 @@ order by id_explain_plan_property;
 
 		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 		g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+		neverExecutedOperatorIds = loadNeverExecutedOperatorIds(intIDExplainPlan);
 		
 		// set dimensions
 		strSQL = "select\n";
@@ -5393,8 +5450,13 @@ order by id_explain_plan_property;
 				Double costDifferential = (Double) jsnRow.get("cost_differential");
 				boolean has_workers = (jsnRow.getInteger("has_workers") == 1);
 				boolean workers_expanded = (jsnRow.getInteger("workers_expanded") == 1);
-				drawOperatorBox(g, id_explain_plan_property, box_left, box_right, box_top, box_bottom, has_workers, workers_expanded, getSliderType()
-					, getPlanTimeSliderValueMs(), startMs, durationMs, getPlanCostSlider(), startupCost, costDifferential);
+				Composite priorMute = beginNeverExecutedMute(g, isNeverExecutedOperator(id_explain_plan_property));
+				try {
+					drawOperatorBox(g, id_explain_plan_property, box_left, box_right, box_top, box_bottom, has_workers, workers_expanded, getSliderType()
+						, getPlanTimeSliderValueMs(), startMs, durationMs, getPlanCostSlider(), startupCost, costDifferential);
+				} finally {
+					endNeverExecutedMute(g, priorMute);
+				}
 			}
 		}
 		
@@ -5402,7 +5464,8 @@ order by id_explain_plan_property;
 		// the equalsIgnoreCaseOrNull and order by clause weirdness is to help speed up drawing svg operator icons
 		// generating the svg images takes a while, so use each one as many times as possible before generating the next one
 		strSQL = "select\n";
-		strSQL += "EPOA.box_left\n";
+		strSQL += "EPOA.id_explain_plan_property\n";
+		strSQL += ", EPOA.box_left\n";
 		strSQL += ", EPOA.box_right\n";
 		strSQL += ", EPOA.box_top\n";
 		strSQL += ", EPOA.box_bottom\n";
@@ -5427,6 +5490,7 @@ order by id_explain_plan_property;
 			BufferedImage objImage = null;
 			for (int intRow = 0; intRow < jsnRows.size(); intRow++) {
 				jsnRow = (JsonObject) jsnRows.get(intRow);
+				int id_explain_plan_property = jsnRow.getInteger("id_explain_plan_property");
 				int box_left = jsnRow.getInteger("box_left");
 				int box_right = jsnRow.getInteger("box_right");
 				int box_top = jsnRow.getInteger("box_top");
@@ -5446,8 +5510,13 @@ order by id_explain_plan_property;
 				} else {
 					previousIconTypeIdentical = false;
 				}
-				objImage = drawOperatorIcon(g, box_left, box_right, box_top, box_bottom, node_type, join_type
-						, operation, strategy, command, previousIconTypeIdentical, objImage);
+				Composite priorMute = beginNeverExecutedMute(g, isNeverExecutedOperator(id_explain_plan_property));
+				try {
+					objImage = drawOperatorIcon(g, box_left, box_right, box_top, box_bottom, node_type, join_type
+							, operation, strategy, command, previousIconTypeIdentical, objImage);
+				} finally {
+					endNeverExecutedMute(g, priorMute);
+				}
 				previous_node_type = node_type; 
 				previous_join_type = join_type;
 				previous_operation = operation;
@@ -5538,17 +5607,24 @@ order by id_explain_plan_property;
 				String south_5_text = jsnRow.getString("south_5_text");
 				int south_5_fontmetrics_width = jsnRow.getInteger("south_5_fontmetrics_width");
 				int south_5_fontmetrics_height = jsnRow.getInteger("south_5_fontmetrics_height");
-				drawNorthText(g, x_center, north_y_baseline, north_1_text, north_1_fontmetrics_width
-						, north_1_fontmetrics_height, outside_box_top_margin
-						, north_1_highlight_1, north_1_highlight_2
-						);
-				drawSouthText(g, id_explain_plan_property, x_center, south_y_baseline
-						, south_1_text, south_1_fontmetrics_width, south_1_fontmetrics_height
-						, south_2_text, south_2_fontmetrics_width, south_2_fontmetrics_height
-						, south_3_text, south_3_fontmetrics_width, south_3_fontmetrics_height
-						, south_4_text, south_4_fontmetrics_width, south_4_fontmetrics_height
-						, south_5_text, south_5_fontmetrics_width, south_5_fontmetrics_height
-				);
+				boolean neverExecuted = isNeverExecutedOperator(id_explain_plan_property);
+				Composite priorMute = beginNeverExecutedMute(g, neverExecuted);
+				try {
+					drawNorthText(g, x_center, north_y_baseline, north_1_text, north_1_fontmetrics_width
+							, north_1_fontmetrics_height, outside_box_top_margin
+							, neverExecuted ? false : north_1_highlight_1
+							, neverExecuted ? false : north_1_highlight_2
+							);
+					drawSouthText(g, id_explain_plan_property, x_center, south_y_baseline
+							, south_1_text, south_1_fontmetrics_width, south_1_fontmetrics_height
+							, south_2_text, south_2_fontmetrics_width, south_2_fontmetrics_height
+							, south_3_text, south_3_fontmetrics_width, south_3_fontmetrics_height
+							, south_4_text, south_4_fontmetrics_width, south_4_fontmetrics_height
+							, south_5_text, south_5_fontmetrics_width, south_5_fontmetrics_height
+					);
+				} finally {
+					endNeverExecutedMute(g, priorMute);
+				}
 			}
 		}
 
@@ -5867,11 +5943,21 @@ order by id_explain_plan_property;
 				int previous_box_right = jsnRow.getInteger("previous_box_right");
 				int previous_box_top = jsnRow.getInteger("previous_box_top");
 
-				drawArrowAndText(g, id_explain_plan_property, arrow_line_thickness, column_boundary_left
-						, column_boundary_right, box_top, box_bottom, box_left
-						, arrow_text, arrow_text_fontmetrics_width, arrow_text_fontmetrics_height, arrow_text_bottom_margin, total_actual_rows_is_exact, total_actual_mass_is_exact, plan_width_is_zero
-						, previous_column_boundary_right, previous_box_top, previous_box_right
-				);
+				boolean neverExecuted = isNeverExecutedOperator(id_explain_plan_property);
+				if (neverExecuted) {
+					arrow_line_thickness = Math.min(arrow_line_thickness, Math.max(1, withZoom(2)));
+					arrow_text = "Never executed";
+				}
+				Composite priorMute = beginNeverExecutedMute(g, neverExecuted);
+				try {
+					drawArrowAndText(g, id_explain_plan_property, arrow_line_thickness, column_boundary_left
+							, column_boundary_right, box_top, box_bottom, box_left
+							, arrow_text, arrow_text_fontmetrics_width, arrow_text_fontmetrics_height, arrow_text_bottom_margin, total_actual_rows_is_exact, total_actual_mass_is_exact, plan_width_is_zero
+							, previous_column_boundary_right, previous_box_top, previous_box_right
+					);
+				} finally {
+					endNeverExecutedMute(g, priorMute);
+				}
 
 			}
 		}
@@ -6737,6 +6823,53 @@ order by id_explain_plan_property;
 			return Integer.parseInt(text);
 		} catch (NumberFormatException ex) {
 			return null;
+		}
+	}
+
+	/** True when ANALYZE reported Actual Loops = 0 (operator never ran). */
+	private static boolean isNeverExecutedLoops(Object actualLoopsValue) {
+		Integer loops = parseAnnotationInt(actualLoopsValue);
+		return loops != null && loops.intValue() == 0;
+	}
+
+	private Set<Integer> loadNeverExecutedOperatorIds(int planId) {
+		Set<Integer> ids = new HashSet<>();
+		JsonArray rows = Database.rows(
+				"select id_explain_plan_property, actual_loops\n"
+						+ "from explain_plan_operator_annotations\n"
+						+ "where id_explain_plan = " + planId + ";");
+		if (rows == null) {
+			return ids;
+		}
+		for (int i = 0; i < rows.size(); i++) {
+			JsonObject row = (JsonObject) rows.get(i);
+			if (!isNeverExecutedLoops(row.get("actual_loops"))) {
+				continue;
+			}
+			Integer id = row.getInteger("id_explain_plan_property");
+			if (id != null) {
+				ids.add(id);
+			}
+		}
+		return ids;
+	}
+
+	private boolean isNeverExecutedOperator(int idExplainPlanProperty) {
+		return neverExecutedOperatorIds != null && neverExecutedOperatorIds.contains(Integer.valueOf(idExplainPlanProperty));
+	}
+
+	private Composite beginNeverExecutedMute(Graphics2D g, boolean neverExecuted) {
+		if (!neverExecuted) {
+			return null;
+		}
+		Composite prior = g.getComposite();
+		g.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, NEVER_EXECUTED_ALPHA));
+		return prior;
+	}
+
+	private void endNeverExecutedMute(Graphics2D g, Composite prior) {
+		if (prior != null) {
+			g.setComposite(prior);
 		}
 	}
 

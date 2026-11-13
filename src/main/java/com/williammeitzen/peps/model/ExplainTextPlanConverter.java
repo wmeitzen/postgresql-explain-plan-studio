@@ -26,6 +26,9 @@ public final class ExplainTextPlanConverter {
 			"\\(actual time=([\\d.]+)\\.\\.([\\d.]+)\\s+rows=([\\d.]+)\\s+loops=(\\d+)\\)");
 	private static final Pattern ACTUAL_NEVER = Pattern.compile(
 			"\\(actual rows=([\\d.]+)\\s+loops=(\\d+)\\)");
+	/** Postgres text when a node did not run at all. */
+	private static final Pattern NEVER_EXECUTED = Pattern.compile(
+			"\\(never executed\\)", Pattern.CASE_INSENSITIVE);
 	private static final Pattern BUFFERS = Pattern.compile(
 			"^\\s*Buffers:\\s*(.+)$", Pattern.CASE_INSENSITIVE);
 	private static final Pattern WORKERS_PLANNED = Pattern.compile(
@@ -422,6 +425,9 @@ public final class ExplainTextPlanConverter {
 			node.put("Actual Total Time", Double.valueOf(actual.group(2)));
 			node.put("Actual Rows", parseRowCount(actual.group(3)));
 			node.put("Actual Loops", Long.valueOf(actual.group(4)));
+		} else if (NEVER_EXECUTED.matcher(body).find()) {
+			node.put("Actual Rows", Long.valueOf(0));
+			node.put("Actual Loops", Long.valueOf(0));
 		} else {
 			Matcher never = ACTUAL_NEVER.matcher(body);
 			if (never.find()) {

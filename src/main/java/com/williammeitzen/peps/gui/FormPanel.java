@@ -447,8 +447,11 @@ public class FormPanel extends JPanel {
 
 			updatePlanDiagramTabEnabled();
 
-			if (planDiagramToolbar != null) {
-				planDiagramToolbar.setAllDiagramOptionsEnabled(false);
+			// Folder-only blanks the toolbar; force a refresh on next diagram paint even if
+			// this is the same plan id (enable previously ran only when the id changed).
+			PlanGraphPanel.requestDiagramToolbarRefresh();
+			if (pEvent.getPlanGraphPanel() != null) {
+				pEvent.getPlanGraphPanel().repaint();
 			}
 
 			pEvent.getPlanSourcePanel().refreshFolderChooser();
@@ -513,6 +516,7 @@ public class FormPanel extends JPanel {
 		if (planDiagramToolbar != null) {
 			planDiagramToolbar.setAllDiagramOptionsEnabled(false);
 		}
+		PlanGraphPanel.requestDiagramToolbarRefresh();
 	}
 
 	/**
