@@ -2,11 +2,18 @@ package com.williammeitzen.peps.gui;
 
 import java.awt.BorderLayout;
 import java.awt.Dimension;
+import java.awt.Toolkit;
+import java.awt.event.ActionEvent;
+import java.awt.event.KeyEvent;
 import java.awt.event.MouseWheelListener;
 
+import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
+import javax.swing.BoxLayout;
+import javax.swing.JComponent;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.KeyStroke;
 
 import bibliothek.gui.dock.common.CControl;
 import bibliothek.gui.dock.common.CGrid;
@@ -26,6 +33,8 @@ public class DiagramDockingPanel extends JPanel {
 
 	private final CControl control;
 	private final PlanDiagramToolbar toolbar;
+	private final PlanGraphPanel graphPanel;
+	private final DiagramFindBar findBar;
 	private final DefaultSingleCDockable graphDockable;
 	private final DefaultSingleCDockable propertiesDockable;
 	private final DefaultSingleCDockable slidersDockable;
@@ -42,13 +51,36 @@ public class DiagramDockingPanel extends JPanel {
 		super(new BorderLayout(0, 4));
 		setBorder(BorderFactory.createEmptyBorder(4, 4, 4, 4));
 		this.toolbar = toolbar;
+		this.graphPanel = graphPanel;
 
+		JPanel northStack = new JPanel();
+		northStack.setLayout(new BoxLayout(northStack, BoxLayout.Y_AXIS));
+		northStack.setOpaque(false);
 		if (toolbar != null) {
 			if (toolbar.getParent() != null) {
 				toolbar.getParent().remove(toolbar);
 			}
-			add(toolbar, BorderLayout.NORTH);
+			toolbar.setAlignmentX(LEFT_ALIGNMENT);
+			northStack.add(toolbar);
 		}
+		findBar = new DiagramFindBar();
+		findBar.setGraphPanel(graphPanel);
+		findBar.setOnCloseRequest(v -> hideFind());
+		findBar.setAlignmentX(LEFT_ALIGNMENT);
+		// Cap height so BoxLayout does not stretch the strip; width can grow.
+		findBar.setMaximumSize(new Dimension(Integer.MAX_VALUE, 48));
+		northStack.add(findBar);
+		add(northStack, BorderLayout.NORTH);
+		if (toolbar != null) {
+			toolbar.setFindVisibilityListener(show -> {
+				if (Boolean.TRUE.equals(show)) {
+					showFind();
+				} else {
+					hideFind();
+				}
+			});
+		}
+		installFindShortcuts();
 
 		// Detached control: dockables stay inside this tab and cannot join the main shell.
 		control = new CControl();
@@ -93,7 +125,7 @@ public class DiagramDockingPanel extends JPanel {
 		slidersScroll.getVerticalScrollBar().setUnitIncrement(wheelUnitIncrement);
 
 		String suffix = Integer.toHexString(System.identityHashCode(graphPanel));
-		graphDockable = createInnerDockable("diagram-graph-" + suffix, "Graph", graphScroll);
+		graphDockable = createInnerDockable("diagram-graph-" + suffix, "Plan Diagram", graphScroll);
 		graphDockable.setCloseable(false);
 
 		DefaultSingleCDockable createdZoom = null;
@@ -252,13 +284,19 @@ public class DiagramDockingPanel extends JPanel {
 		fireViewMenuSync();
 	}
 
-	/** Keep Graph / Zoom / Properties / Sliders docking titles on the active scheme. */
+	/** Keep Plan Diagram / Zoom / Properties / Sliders docking titles on the active scheme. */
 	public void syncThemeColors() {
 		UiTheme.applyDockableColors(graphDockable.getColors());
 		UiTheme.applyDockableColors(propertiesDockable.getColors());
 		UiTheme.applyDockableColors(slidersDockable.getColors());
 		if (zoomDockable != null) {
 			UiTheme.applyDockableColors(zoomDockable.getColors());
+		}
+		if (findBar != null) {
+			findBar.syncThemeSurfaces();
+		}
+		if (toolbar != null) {
+			toolbar.syncThemeSurfaces();
 		}
 		revalidate();
 		repaint();
@@ -318,6 +356,100 @@ public class DiagramDockingPanel extends JPanel {
 
 	private static void putText(TextManager texts, String key, String value) {
 		texts.put(Priority.CLIENT, key, value);
+	}
+
+	/** Show Find bar and focus the query field (Ctrl/Cmd+F or Find checkbox). */
+	public void showFind() {
+		if (!isShowing()) {
+			return;
+		}
+		if (toolbar != null) {
+			toolbar.setFindCheckboxSelected(true);
+		}
+		findBar.openAndFocus();
+		revalidate();
+		repaint();
+	}
+
+	public void hideFind() {
+		if (toolbar != null) {
+			toolbar.setFindCheckboxSelected(false);
+		}
+		findBar.closeBar();
+		revalidate();
+		repaint();
+		if (graphPanel != null) {
+			graphPanel.requestFocusInWindow();
+		}
+	}
+
+	public DiagramFindBar getFindBar() {
+		return findBar;
+	}
+
+	/**
+	 * Ctrl/Cmd+F opens Find when this diagram tab is showing.
+	 * Esc / F3 / Shift+F3 also work while Find is open even if focus is on the graph.
+	 */
+	private void installFindShortcuts() {
+		int menuMask = Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx();
+		getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(
+				KeyStroke.getKeyStroke(KeyEvent.VK_F, menuMask), "diagramFind");
+		if (menuMask != KeyEvent.CTRL_DOWN_MASK) {
+			getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(
+					KeyStroke.getKeyStroke(KeyEvent.VK_F, KeyEvent.CTRL_DOWN_MASK), "diagramFind");
+		}
+		getActionMap().put("diagramFind", new AbstractAction() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				if (!isShowing()) {
+					return;
+				}
+				showFind();
+			}
+		});
+
+		getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(
+				KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), "diagramFindClose");
+		getActionMap().put("diagramFindClose", new AbstractAction() {
+			@Override
+			public boolean isEnabled() {
+				return isShowing() && findBar.isOpen();
+			}
+
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				hideFind();
+			}
+		});
+
+		getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(
+				KeyStroke.getKeyStroke(KeyEvent.VK_F3, 0), "diagramFindNext");
+		getActionMap().put("diagramFindNext", new AbstractAction() {
+			@Override
+			public boolean isEnabled() {
+				return isShowing() && findBar.isOpen();
+			}
+
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				findBar.findNext();
+			}
+		});
+
+		getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(
+				KeyStroke.getKeyStroke(KeyEvent.VK_F3, KeyEvent.SHIFT_DOWN_MASK), "diagramFindPrev");
+		getActionMap().put("diagramFindPrev", new AbstractAction() {
+			@Override
+			public boolean isEnabled() {
+				return isShowing() && findBar.isOpen();
+			}
+
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				findBar.findPrevious();
+			}
+		});
 	}
 
 	@Override

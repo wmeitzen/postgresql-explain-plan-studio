@@ -46,6 +46,7 @@ public class PlanDiagramToolbar extends JPanel {
 	private final JButton zoom100Button;
 	private final JButton zoomFitButton;
 	private final JCheckBox zoomSliderCheckBox;
+	private final JCheckBox findCheckBox;
 	private final JSlider zoomSlider;
 	private final JPanel zoomSliderSidePanel;
 	private final JComboBox<LineThicknesses> lineThicknessCombo;
@@ -59,9 +60,11 @@ public class PlanDiagramToolbar extends JPanel {
 	private PercentageByRadioButtonsToolbarListener percentageByListener;
 	private Runnable zoomSliderSyncHook;
 	private Consumer<Boolean> zoomSliderVisibilityListener;
+	private Consumer<Boolean> findVisibilityListener;
 	private boolean suppressComboEvents;
 	private boolean suppressZoomSliderEvents;
 	private boolean suppressZoomSliderCheckBoxEvents;
+	private boolean suppressFindCheckBoxEvents;
 	private boolean percentageByNoneAvailable;
 
 	/**
@@ -88,11 +91,15 @@ public class PlanDiagramToolbar extends JPanel {
 			percentageByEnabled.put(value, Boolean.TRUE);
 		}
 
-		JLabel zoomLabel = new JLabel("Zoom:");
-		zoomSliderCheckBox = new JCheckBox("Slider");
+		zoomSliderCheckBox = new JCheckBox("Zoom slider");
 		zoomSliderCheckBox.setToolTipText("Show the Zoom slider (vertical when tall, horizontal when wide)");
 		zoomSliderCheckBox.setOpaque(false);
 		zoomSliderCheckBox.setSelected(true);
+
+		findCheckBox = new JCheckBox("Find");
+		findCheckBox.setToolTipText("Show Find (Ctrl+F)");
+		findCheckBox.setOpaque(false);
+		findCheckBox.setSelected(false);
 		zoomMinusButton = new JButton("-");
 		zoomPlusButton = new JButton("+");
 		zoom100Button = new JButton("100%");
@@ -229,7 +236,15 @@ public class PlanDiagramToolbar extends JPanel {
 			firePercentageBy(selected);
 		});
 
-		add(zoomLabel);
+		findCheckBox.addActionListener(e -> {
+			if (suppressFindCheckBoxEvents) {
+				return;
+			}
+			if (findVisibilityListener != null) {
+				findVisibilityListener.accept(Boolean.valueOf(findCheckBox.isSelected()));
+			}
+		});
+
 		add(zoomSliderCheckBox);
 		add(zoomMinusButton);
 		add(zoomPlusButton);
@@ -239,6 +254,7 @@ public class PlanDiagramToolbar extends JPanel {
 		add(lineThicknessCombo);
 		add(new JLabel("  Percentage By:"));
 		add(percentageByCombo);
+		add(findCheckBox);
 	}
 
 	/** Vertical zoom slider strip for the right edge of the Graph pane. */
@@ -368,6 +384,28 @@ public class PlanDiagramToolbar extends JPanel {
 
 	public boolean isZoomSliderCheckboxEventSuppressed() {
 		return suppressZoomSliderCheckBoxEvents;
+	}
+
+	/** Show/hide the Find strip when the Find checkbox changes. */
+	public void setFindVisibilityListener(Consumer<Boolean> listener) {
+		this.findVisibilityListener = listener;
+	}
+
+	/** Keep the Find checkbox aligned when Find is opened (Ctrl+F) or closed (Esc / ×). */
+	public void setFindCheckboxSelected(boolean selected) {
+		if (findCheckBox.isSelected() == selected) {
+			return;
+		}
+		suppressFindCheckBoxEvents = true;
+		try {
+			findCheckBox.setSelected(selected);
+		} finally {
+			suppressFindCheckBoxEvents = false;
+		}
+	}
+
+	public boolean isFindCheckboxSelected() {
+		return findCheckBox.isSelected();
 	}
 
 	public void setLineThicknessListener(LineThicknessByRadioButtonsToolbarListener listener) {

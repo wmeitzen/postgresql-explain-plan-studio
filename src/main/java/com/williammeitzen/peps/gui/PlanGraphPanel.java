@@ -149,6 +149,12 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 	private Color HIGHLIGHT_1_FONT_BACKGROUND_COLOR = Color.red;
 	private Color HIGHLIGHT_2_FONT_FOREGROUND_COLOR = Color.red;
 	private Color HIGHLIGHT_2_FONT_BACKGROUND_COLOR = Color.yellow;
+
+	/** Yellow find-match underline fill (substring highlights from Ctrl+F / Find). */
+	private static final Color FIND_MATCH_BACKGROUND = new Color(0xFF, 0xEB, 0x3B);
+	private static final Color FIND_MATCH_FOREGROUND = new Color(0x11, 0x18, 0x27);
+	/** Active Find query; empty/null → no substring highlights. */
+	private String findHighlightQuery = null;
 	
 	// for grey, keep all 3 numbers the same.
 	// higher is lighter: (204, 204, 204) is lighter than (51, 51, 51)
@@ -3036,14 +3042,6 @@ from explain_plan_operator_annotations
 					strSouth4Text = "";
 				}
 
-				// Actual Loops = 0 → Postgres "(never executed)"
-				if (isNeverExecutedLoops(jsnObject.get("actual_loops"))) {
-					strSouth5Text = strSouth4Text;
-					strSouth4Text = strSouth3Text;
-					strSouth3Text = strSouth2Text;
-					strSouth2Text = "Never executed";
-				}
-
 				strSQL += "update explain_plan_operator_annotations set\n";
 				strSQL += "south_1_text = '" + strSouth1Text + "'\n";
 				strSQL += ", south_2_text = '" + strSouth2Text + "'\n";
@@ -5111,22 +5109,24 @@ order by id_explain_plan_property;
 		int textWidth = Math.max(fm.stringWidth(north_1_text), north_1_fontmetrics_width);
 		int textHeight = Math.max(fm.getAscent(), north_1_fontmetrics_height);
 		int textX = GRAPH_LEFT_MARGIN + x_center - (textWidth / 2);
+		Color textColor;
 		if (north_1_highlight_1 == true) {
 			g.setColor(HIGHLIGHT_1_FONT_BACKGROUND_COLOR);
 			g.fillRect(textX - highlightMargin
 					, GRAPH_TOP_MARGIN + y_baseline - textHeight
 					, textWidth + highlightMargin * 2, textHeight);
-			g.setColor(HIGHLIGHT_1_FONT_FOREGROUND_COLOR);
+			textColor = HIGHLIGHT_1_FONT_FOREGROUND_COLOR;
 		} else if (north_1_highlight_2 == true) {
 			g.setColor(HIGHLIGHT_2_FONT_BACKGROUND_COLOR);
 			g.fillRect(textX - highlightMargin
 					, GRAPH_TOP_MARGIN + y_baseline - textHeight
 					, textWidth + highlightMargin * 2, textHeight);
-			g.setColor(HIGHLIGHT_2_FONT_FOREGROUND_COLOR);
+			textColor = HIGHLIGHT_2_FONT_FOREGROUND_COLOR;
 		} else {
-			g.setColor(operatorLabelColor());
+			textColor = operatorLabelColor();
 		}
-		g.drawString(north_1_text, textX, GRAPH_TOP_MARGIN + y_baseline - withZoom(outside_box_top_margin));
+		drawStringWithFindHighlights(g, north_1_text, textX,
+				GRAPH_TOP_MARGIN + y_baseline - withZoom(outside_box_top_margin), textColor);
 	}
 	
 	public void drawWorkerText(Graphics2D g, int id_explain_plan_property, int box_left, int box_top, int worker_row_number
@@ -5232,32 +5232,37 @@ order by id_explain_plan_property;
 	
 		// draw text — center with live FontMetrics so outline/hit bounds stay aligned
 		g.setFont(operatorLabelFont());
-		g.setColor(operatorLabelColor());
+		Color labelColor = operatorLabelColor();
 		FontMetrics fm = g.getFontMetrics();
 		y_baseline += south_1_fontmetrics_height; // bump it down
 		if (south_1_text != null) {
 			int w = Math.max(fm.stringWidth(south_1_text), south_1_fontmetrics_width);
-			g.drawString(south_1_text, GRAPH_LEFT_MARGIN + x_center - (w / 2), GRAPH_TOP_MARGIN + y_baseline);
+			drawStringWithFindHighlights(g, south_1_text,
+					GRAPH_LEFT_MARGIN + x_center - (w / 2), GRAPH_TOP_MARGIN + y_baseline, labelColor);
 		}
 		y_baseline += south_1_fontmetrics_height;
 		if (south_2_text != null) {
 			int w = Math.max(fm.stringWidth(south_2_text), south_2_fontmetrics_width);
-			g.drawString(south_2_text, GRAPH_LEFT_MARGIN + x_center - (w / 2), GRAPH_TOP_MARGIN + y_baseline);
+			drawStringWithFindHighlights(g, south_2_text,
+					GRAPH_LEFT_MARGIN + x_center - (w / 2), GRAPH_TOP_MARGIN + y_baseline, labelColor);
 		}
 		y_baseline += south_2_fontmetrics_height;
 		if (south_3_text != null) {
 			int w = Math.max(fm.stringWidth(south_3_text), south_3_fontmetrics_width);
-			g.drawString(south_3_text, GRAPH_LEFT_MARGIN + x_center - (w / 2), GRAPH_TOP_MARGIN + y_baseline);
+			drawStringWithFindHighlights(g, south_3_text,
+					GRAPH_LEFT_MARGIN + x_center - (w / 2), GRAPH_TOP_MARGIN + y_baseline, labelColor);
 		}
 		y_baseline += south_3_fontmetrics_height;
 		if (south_4_text != null) {
 			int w = Math.max(fm.stringWidth(south_4_text), south_4_fontmetrics_width);
-			g.drawString(south_4_text, GRAPH_LEFT_MARGIN + x_center - (w / 2), GRAPH_TOP_MARGIN + y_baseline);
+			drawStringWithFindHighlights(g, south_4_text,
+					GRAPH_LEFT_MARGIN + x_center - (w / 2), GRAPH_TOP_MARGIN + y_baseline, labelColor);
 		}
 		y_baseline += south_4_fontmetrics_height;
 		if (south_5_text != null) {
 			int w = Math.max(fm.stringWidth(south_5_text), south_5_fontmetrics_width);
-			g.drawString(south_5_text, GRAPH_LEFT_MARGIN + x_center - (w / 2), GRAPH_TOP_MARGIN + y_baseline);
+			drawStringWithFindHighlights(g, south_5_text,
+					GRAPH_LEFT_MARGIN + x_center - (w / 2), GRAPH_TOP_MARGIN + y_baseline, labelColor);
 		}
 	}
 	
@@ -5360,11 +5365,80 @@ order by id_explain_plan_property;
 				arrowTextColor = PLAN_WIDTH_0_ARROW_FONT_COLOR;
 
 			g.setFont(arrowTextFont);
-			g.setColor(arrowTextColor);
 			int arrowWidth = arrowTextFont != null
 					? Math.max(g.getFontMetrics().stringWidth(arrow_text), arrow_text_fontmetrics_width)
 					: arrow_text_fontmetrics_width;
-			g.drawString(arrow_text, GRAPH_LEFT_MARGIN + box_left - arrowWidth, GRAPH_TOP_MARGIN + box_top + withZoom(OPERATOR_BOX_HEIGHT) / 2 - arrow_line_thickness / 2 - arrow_text_bottom_margin);
+			drawStringWithFindHighlights(g, arrow_text,
+					GRAPH_LEFT_MARGIN + box_left - arrowWidth,
+					GRAPH_TOP_MARGIN + box_top + withZoom(OPERATOR_BOX_HEIGHT) / 2 - arrow_line_thickness / 2 - arrow_text_bottom_margin,
+					arrowTextColor);
+		}
+	}
+
+	/**
+	 * Active Find query for substring highlights on north/south/arrow labels.
+	 * Pass null or blank to clear. Triggers a repaint.
+	 */
+	public void setFindHighlightQuery(String query) {
+		String next = query == null ? null : query.trim();
+		if (next != null && next.isEmpty()) {
+			next = null;
+		}
+		if ((findHighlightQuery == null && next == null)
+				|| (findHighlightQuery != null && findHighlightQuery.equals(next))) {
+			return;
+		}
+		findHighlightQuery = next;
+		repaint();
+	}
+
+	/**
+	 * Draw {@code text} at ({@code textX}, {@code baseline}), painting a yellow
+	 * background behind each case-insensitive occurrence of the Find query.
+	 */
+	private void drawStringWithFindHighlights(Graphics2D g, String text, int textX, int baseline, Color defaultFg) {
+		if (text == null || text.isEmpty()) {
+			return;
+		}
+		String query = findHighlightQuery;
+		if (query == null || query.isEmpty()) {
+			g.setColor(defaultFg);
+			g.drawString(text, textX, baseline);
+			return;
+		}
+		FontMetrics fm = g.getFontMetrics();
+		String lowerText = text.toLowerCase(java.util.Locale.ROOT);
+		String lowerQuery = query.toLowerCase(java.util.Locale.ROOT);
+		int queryLen = lowerQuery.length();
+		int ascent = fm.getAscent();
+		int descent = Math.max(0, fm.getDescent());
+		int x = textX;
+		int i = 0;
+		while (i < text.length()) {
+			int match = lowerText.indexOf(lowerQuery, i);
+			if (match < 0) {
+				g.setColor(defaultFg);
+				g.drawString(text.substring(i), x, baseline);
+				break;
+			}
+			if (match > i) {
+				String gap = text.substring(i, match);
+				g.setColor(defaultFg);
+				g.drawString(gap, x, baseline);
+				x += fm.stringWidth(gap);
+			}
+			int end = Math.min(text.length(), match + queryLen);
+			String hit = text.substring(match, end);
+			int hitW = fm.stringWidth(hit);
+			g.setColor(FIND_MATCH_BACKGROUND);
+			g.fillRect(x, baseline - ascent, hitW, ascent + descent);
+			g.setColor(FIND_MATCH_FOREGROUND);
+			g.drawString(hit, x, baseline);
+			x += hitW;
+			i = end;
+			if (queryLen == 0) {
+				break;
+			}
 		}
 	}
 
@@ -7615,5 +7689,79 @@ order by id_explain_plan_property;
 
 	public Integer getSelectedOperatorId() {
 		return selectedOperatorId;
+	}
+
+	/**
+	 * Select an operator as if clicked: Properties/Sliders, blue outline, scroll into view.
+	 */
+	public void selectOperator(Integer id) {
+		selectedOperatorId = id;
+		if (id == null) {
+			repaint();
+			return;
+		}
+		refreshSelectedOperatorProperties();
+		SliderPanel sliderPanel = findSliderPanelInSelectedTab();
+		if (sliderPanel != null) {
+			sliderPanel.showSelectedOperator(selectedOperatorId);
+		}
+		repaint();
+		SwingUtilities.invokeLater(this::ensureSelectedOperatorVisible);
+	}
+
+	/**
+	 * Operators whose painted/label text contains {@code query} (case-insensitive substring).
+	 * Empty query → empty list. Stable order: x_cart, y_cart, id.
+	 */
+	public List<Integer> findOperatorIdsMatching(String query) {
+		List<Integer> ids = new ArrayList<>();
+		if (idExplainPlan == null || query == null) {
+			return ids;
+		}
+		String trimmed = query.trim();
+		if (trimmed.isEmpty()) {
+			return ids;
+		}
+		String likeLiteral = ("%" + escapeLikePattern(trimmed) + "%").replace("'", "''");
+		String sql = "select id_explain_plan_property\n"
+				+ "from explain_plan_operator_annotations\n"
+				+ "where id_explain_plan = " + idExplainPlan + "\n"
+				+ "and (\n"
+				+ "  lower(coalesce(north_1_text, '')) like lower('" + likeLiteral + "') escape '\\'\n"
+				+ "  or lower(coalesce(south_1_text, '')) like lower('" + likeLiteral + "') escape '\\'\n"
+				+ "  or lower(coalesce(south_2_text, '')) like lower('" + likeLiteral + "') escape '\\'\n"
+				+ "  or lower(coalesce(south_3_text, '')) like lower('" + likeLiteral + "') escape '\\'\n"
+				+ "  or lower(coalesce(south_4_text, '')) like lower('" + likeLiteral + "') escape '\\'\n"
+				+ "  or lower(coalesce(south_5_text, '')) like lower('" + likeLiteral + "') escape '\\'\n"
+				+ "  or lower(coalesce(arrow_text, '')) like lower('" + likeLiteral + "') escape '\\'\n"
+				+ "  or lower(coalesce(node_type, '')) like lower('" + likeLiteral + "') escape '\\'\n"
+				+ "  or lower(coalesce(relation_name, '')) like lower('" + likeLiteral + "') escape '\\'\n"
+				+ ")\n"
+				+ "order by x_cart, y_cart, id_explain_plan_property;\n";
+		JsonArray rows = Database.rows(sql);
+		if (rows == null) {
+			return ids;
+		}
+		for (int i = 0; i < rows.size(); i++) {
+			JsonObject row = (JsonObject) rows.get(i);
+			Integer id = row.getInteger("id_explain_plan_property");
+			if (id != null) {
+				ids.add(id);
+			}
+		}
+		return ids;
+	}
+
+	/** Escape {@code %}, {@code _}, and {@code \} for SQLite LIKE … ESCAPE '\'. */
+	private static String escapeLikePattern(String raw) {
+		StringBuilder sb = new StringBuilder(raw.length() + 8);
+		for (int i = 0; i < raw.length(); i++) {
+			char c = raw.charAt(i);
+			if (c == '\\' || c == '%' || c == '_') {
+				sb.append('\\');
+			}
+			sb.append(c);
+		}
+		return sb.toString();
 	}
 }
