@@ -72,6 +72,7 @@ public class PlanSourcePanel extends JPanel {
 	//private JRadioButton planSourceFromJSONRadio;
 	private JTextArea jsonPlanTextArea;
 	private JScrollPane jsonPlanTextAreaScrollPane;
+	private Timer planFormatChromeTimer;
 	//private JRadioButton planSourceFromPEGRadio;
 	private int idExplainPlan;
 	private JButton showPlanGraphButton;
@@ -241,10 +242,12 @@ public class PlanSourcePanel extends JPanel {
 		planSourceFromQuerySQLLabel = new JLabel("EXPLAIN (with options) and SQL command:");
 		planSourceFromQuerySQLTextArea = new JTextArea(8, 40);
 		planSourceFromQuerySQLTextArea.setText("\nexplain (analyze, buffers, format json, verbose)\n\nselect \n");
+		Utils.installCrossPlatformEditBindings(planSourceFromQuerySQLTextArea);
 		planSourceFromQuerySQLTextAreaScrollPane = new JScrollPane(planSourceFromQuerySQLTextArea);
 
 		jsonPlanLabel = new JLabel("Text plan or JSON plan:");
 		jsonPlanTextArea = new JTextArea(8, 40);
+		Utils.installCrossPlatformEditBindings(jsonPlanTextArea);
 		jsonPlanTextAreaScrollPane = new JScrollPane(jsonPlanTextArea);
 		jsonPlanDefaultBorder = jsonPlanTextAreaScrollPane.getBorder();
 
@@ -279,19 +282,19 @@ public class PlanSourcePanel extends JPanel {
 			public void insertUpdate(DocumentEvent e) {
 				clearJsonPlanErrorStyle();
 				setPlanTextIsDirty(true);
-				refreshPlanFormatChrome();
+				schedulePlanFormatChromeRefresh();
 			}
 
 			public void removeUpdate(DocumentEvent e) {
 				clearJsonPlanErrorStyle();
 				setPlanTextIsDirty(true);
-				refreshPlanFormatChrome();
+				schedulePlanFormatChromeRefresh();
 			}
 
 			public void changedUpdate(DocumentEvent e) {
 				clearJsonPlanErrorStyle();
 				setPlanTextIsDirty(true);
-				refreshPlanFormatChrome();
+				schedulePlanFormatChromeRefresh();
 			}
 
 		};
@@ -1096,6 +1099,15 @@ public class PlanSourcePanel extends JPanel {
 		}
 		PlanFormat format = sniffPlanFormat(getJsonPlanText());
 		return format == PlanFormat.JSON || format == PlanFormat.TEXT;
+	}
+
+	/** Debounce label updates so large plan pastes are not blocked on the EDT. */
+	private void schedulePlanFormatChromeRefresh() {
+		if (planFormatChromeTimer == null) {
+			planFormatChromeTimer = new Timer(200, e -> refreshPlanFormatChrome());
+			planFormatChromeTimer.setRepeats(false);
+		}
+		planFormatChromeTimer.restart();
 	}
 
 	/** Update field label and Show/Execute button captions from sniffed plan content. */

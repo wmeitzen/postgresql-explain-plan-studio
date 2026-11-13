@@ -9,6 +9,9 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
+# shellcheck source=lib-dev-lock.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-dev-lock.sh"
+
 LOCK_FILE="$REPO_ROOT/target/dev-build.lock"
 RUN_DIR="$REPO_ROOT/target/run"
 RUN_JAR="$RUN_DIR/peps-dev.jar"
@@ -24,20 +27,15 @@ if ! command -v java >/dev/null 2>&1; then
   exit 1
 fi
 
-# Wait only while a builder holds the flock. A leftover lock *file* after a
+# Wait only while a builder holds the lock. A leftover lock *file* after a
 # finished/crashed build must not block launch (old watchers left the file behind).
 mkdir -p "$REPO_ROOT/target"
 announced=0
 deadline=$((SECONDS + WAIT_TIMEOUT_SEC))
 while true; do
-  exec 9>"$LOCK_FILE"
-  if flock -n 9; then
-    flock -u 9
-    exec 9>&-
-    rm -f "$LOCK_FILE"
+  if peps_lock_try_clear_idle "$LOCK_FILE"; then
     break
   fi
-  exec 9>&-
   if (( SECONDS > deadline )); then
     echo "Timed out after ${WAIT_TIMEOUT_SEC}s waiting for recompile to finish ($LOCK_FILE still held)." >&2
     exit 1

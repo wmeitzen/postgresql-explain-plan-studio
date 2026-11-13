@@ -14,6 +14,7 @@ import com.williammeitzen.peps.gui.FormPanel;
 import com.williammeitzen.peps.gui.PlanGraphPanel;
 
 import java.awt.Dimension;
+import java.awt.Toolkit;
 import java.awt.GridBagConstraints;
 //import java.awt.FlowLayout;
 //import java.awt.Font;
@@ -320,7 +321,8 @@ public class MainFrame extends JFrame {
 		this.viewMenuForAlt = viewMenu;
 		this.helpMenuForAlt = helpMenu;
 		
-		exitItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_X, ActionEvent.CTRL_MASK));
+		exitItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_Q,
+				Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx()));
 
 		exitItem.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {

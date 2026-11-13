@@ -24,6 +24,8 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib-dev-lock.sh
+source "$SCRIPT_DIR/lib-dev-lock.sh"
 POLL_SEC="${PEPS_SYNC_POLL:-2}"
 LOCAL_REPO="${PEPS_LOCAL_REPO:-$HOME/peps}"
 HOST_REPO="${PEPS_HOST_REPO:-${1:-}}"
@@ -102,12 +104,10 @@ run_build() {
   mkdir -p "$local/target"
   # Exclusive lock so systemd sync-watch and a manual ~/peps/dev-watch.sh cannot
   # shade-replace the same jar at once (maven-shade "Could not replace original artifact").
-  exec 9>"$lock_file"
-  if ! flock -n 9; then
+  if ! peps_lock_acquire "$lock_file"; then
     log "Another Maven build holds $lock_file — skipping this cycle"
     return 0
   fi
-  printf 'pid=%s\nstarted=%s\n' "$$" "$(date +%Y-%m-%dT%H:%M:%S%z)" >"$lock_file"
   # Clear half-finished shade renames from a prior crash/race.
   rm -f "$local"/target/*-shaded.jar
   log "Building in $local …"
@@ -125,8 +125,7 @@ run_build() {
     return "$exit_code"
   )
   local rc=$?
-  flock -u 9
-  exec 9>&-
+  peps_lock_release "$lock_file"
   return "$rc"
 }
 

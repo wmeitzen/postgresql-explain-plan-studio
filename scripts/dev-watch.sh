@@ -22,6 +22,9 @@
 # Launch the app with scripts/dev-run.sh (from ~/peps on Ubuntu).
 set -uo pipefail
 
+# shellcheck source=lib-dev-lock.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-dev-lock.sh"
+
 log() {
   printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*"
 }
@@ -33,7 +36,8 @@ die() {
 
 need_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1
-Install with:  sudo apt install -y openjdk-17-jdk rsync"
+Linux:  sudo apt install -y openjdk-17-jdk rsync
+macOS:  brew install openjdk@17 rsync"
 }
 
 # Empty /mnt/hgfs is common before fuse mount — do not treat that as "OK".
@@ -211,22 +215,17 @@ interruptible_sleep() {
 
 run_build_locked() {
   mkdir -p "$REPO_ROOT/target"
-  exec 9>"$LOCK_FILE"
-  if ! flock -n 9; then
+  if ! peps_lock_acquire "$LOCK_FILE"; then
     log "Another Maven build holds $LOCK_FILE — will retry next poll"
-    exec 9>&-
     return 0
   fi
-  printf 'pid=%s\nstarted=%s\n' "$$" "$(date +%Y-%m-%dT%H:%M:%S%z)" >"$LOCK_FILE"
   rm -f "$REPO_ROOT"/target/*-shaded.jar
   log "Building in $REPO_ROOT …"
   set +e
   ./mvnw -DskipTests package
   local exit_code=$?
   set -e
-  flock -u 9
-  exec 9>&-
-  rm -f "$LOCK_FILE"
+  peps_lock_release "$LOCK_FILE"
   if [[ "$exit_code" -eq 0 ]]; then
     log "Build OK"
   else
@@ -243,7 +242,6 @@ HOST_REPO=""
 if on_shared_host || [[ -n "${PEPS_HOST_REPO:-}" ]] || find_host_repo_path >/dev/null 2>&1; then
   need_cmd java
   need_cmd rsync
-  need_cmd flock
   ensure_hgfs
   HOST_REPO="$(find_host_repo_path)" || die "Could not find the Windows PEPS repo under /mnt/hgfs.
 Share the repo in VMware (folder name often \"peps\"), then:
@@ -286,20 +284,13 @@ need_cmd java
 chmod +x "$REPO_ROOT/mvnw" 2>/dev/null || true
 
 mkdir -p "$REPO_ROOT/target"
-if [[ -f "$LOCK_FILE" ]]; then
-  exec 9>"$LOCK_FILE"
-  if flock -n 9; then
-    flock -u 9
-    exec 9>&-
-    rm -f "$LOCK_FILE"
-    log "Removed stale $LOCK_FILE"
-  else
-    exec 9>&-
-    log "Note: $LOCK_FILE is held — a build is in progress"
-  fi
+if peps_lock_try_clear_idle "$LOCK_FILE"; then
+  log "Cleared idle build lock (if any)"
+else
+  log "Note: $LOCK_FILE is held — a build is in progress"
 fi
 
-log "Local-only mode (no HGFS share detected)."
+log "Local-only mode (no Linux HGFS share detected)."
 log "Initial build (before watching RECOMPILENOW)…"
 run_build_locked || true
 

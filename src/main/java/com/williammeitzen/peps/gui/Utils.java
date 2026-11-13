@@ -2,9 +2,17 @@ package com.williammeitzen.peps.gui;
 
 import java.awt.Font;
 import java.awt.FontFormatException;
+import java.awt.Toolkit;
+import java.awt.datatransfer.Clipboard;
+import java.awt.datatransfer.DataFlavor;
+import java.awt.datatransfer.StringSelection;
+import java.awt.datatransfer.Transferable;
+import java.awt.event.InputEvent;
+import java.awt.event.KeyEvent;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.Reader;
 import java.net.URL;
 //import java.sql.Connection;
 //import java.sql.DriverManager;
@@ -16,7 +24,15 @@ import java.text.NumberFormat;
 //import org.sqlite.SQLiteConfig;
 //import org.sqlite.SQLiteOpenMode;
 
+import javax.swing.AbstractAction;
 import javax.swing.ImageIcon;
+import javax.swing.JComponent;
+import javax.swing.JMenuItem;
+import javax.swing.JPopupMenu;
+import javax.swing.KeyStroke;
+import javax.swing.TransferHandler;
+import javax.swing.text.DefaultEditorKit;
+import javax.swing.text.JTextComponent;
 
 //import org.json.simple.DeserializationException;
 //import org.json.simple.JsonArray;
@@ -24,6 +40,170 @@ import javax.swing.ImageIcon;
 //import org.json.simple.Jsoner;
 
 public class Utils {
+
+	/**
+	 * On macOS the LAF binds paste/cut/copy to Cmd (Meta); Ctrl+V does nothing.
+	 * Bind both Ctrl and Meta, use a TransferHandler that reads plain text from
+	 * more clipboard flavors (pgAdmin / browsers often put HTML first), and add
+	 * a right-click Cut/Copy/Paste menu.
+	 */
+	public static void installCrossPlatformEditBindings(JTextComponent text) {
+		if (text == null) {
+			return;
+		}
+		text.setTransferHandler(new PlainTextTransferHandler());
+
+		AbstractAction pasteAction = new AbstractAction() {
+			@Override
+			public void actionPerformed(java.awt.event.ActionEvent e) {
+				pastePlainTextInto(text);
+			}
+		};
+		AbstractAction selectAllAction = new AbstractAction() {
+			@Override
+			public void actionPerformed(java.awt.event.ActionEvent e) {
+				text.selectAll();
+			}
+		};
+		text.getActionMap().put("peps-paste-plain", pasteAction);
+		text.getActionMap().put("peps-select-all", selectAllAction);
+
+		KeyStroke[][] strokes = {
+				{ KeyStroke.getKeyStroke(KeyEvent.VK_X, InputEvent.CTRL_DOWN_MASK),
+						KeyStroke.getKeyStroke(KeyEvent.VK_X, InputEvent.META_DOWN_MASK) },
+				{ KeyStroke.getKeyStroke(KeyEvent.VK_C, InputEvent.CTRL_DOWN_MASK),
+						KeyStroke.getKeyStroke(KeyEvent.VK_C, InputEvent.META_DOWN_MASK) },
+				{ KeyStroke.getKeyStroke(KeyEvent.VK_V, InputEvent.CTRL_DOWN_MASK),
+						KeyStroke.getKeyStroke(KeyEvent.VK_V, InputEvent.META_DOWN_MASK) },
+				{ KeyStroke.getKeyStroke(KeyEvent.VK_A, InputEvent.CTRL_DOWN_MASK),
+						KeyStroke.getKeyStroke(KeyEvent.VK_A, InputEvent.META_DOWN_MASK) },
+		};
+		String[] actions = {
+				DefaultEditorKit.cutAction,
+				DefaultEditorKit.copyAction,
+				"peps-paste-plain",
+				"peps-select-all",
+		};
+		javax.swing.InputMap focused = text.getInputMap(JComponent.WHEN_FOCUSED);
+		for (int i = 0; i < actions.length; i++) {
+			focused.put(strokes[i][0], actions[i]);
+			focused.put(strokes[i][1], actions[i]);
+		}
+
+		JPopupMenu popup = new JPopupMenu();
+		JMenuItem cut = new JMenuItem(new DefaultEditorKit.CutAction());
+		cut.setText("Cut");
+		JMenuItem copy = new JMenuItem(new DefaultEditorKit.CopyAction());
+		copy.setText("Copy");
+		JMenuItem paste = new JMenuItem(pasteAction);
+		paste.setText("Paste");
+		JMenuItem selectAll = new JMenuItem(selectAllAction);
+		selectAll.setText("Select All");
+		popup.add(cut);
+		popup.add(copy);
+		popup.add(paste);
+		popup.addSeparator();
+		popup.add(selectAll);
+		text.setComponentPopupMenu(popup);
+	}
+
+	/** Insert clipboard text at the caret (or replace selection), preferring plain text flavors. */
+	public static void pastePlainTextInto(JTextComponent text) {
+		if (text == null || !text.isEditable() || !text.isEnabled()) {
+			return;
+		}
+		String clip = readClipboardPlainText();
+		if (clip == null) {
+			return;
+		}
+		text.replaceSelection(clip);
+	}
+
+	public static String readClipboardPlainText() {
+		try {
+			Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+			if (clipboard == null) {
+				return null;
+			}
+			return transferableToPlainText(clipboard.getContents(null));
+		} catch (Exception ignored) {
+			return null;
+		}
+	}
+
+	static String transferableToPlainText(Transferable transferable) {
+		if (transferable == null) {
+			return null;
+		}
+		try {
+			if (transferable.isDataFlavorSupported(DataFlavor.stringFlavor)) {
+				Object data = transferable.getTransferData(DataFlavor.stringFlavor);
+				if (data != null) {
+					return data.toString();
+				}
+			}
+		} catch (Exception ignored) {
+			// try other flavors
+		}
+		try {
+			DataFlavor best = DataFlavor.selectBestTextFlavor(transferable.getTransferDataFlavors());
+			if (best != null) {
+				Reader reader = best.getReaderForText(transferable);
+				StringBuilder sb = new StringBuilder();
+				char[] buf = new char[8192];
+				int n;
+				while ((n = reader.read(buf)) >= 0) {
+					sb.append(buf, 0, n);
+				}
+				reader.close();
+				return sb.toString();
+			}
+		} catch (Exception ignored) {
+			// fall through
+		}
+		return null;
+	}
+
+	/**
+	 * Import plain text even when the clipboard leads with HTML (common on macOS
+	 * from browsers / some DB tools). Export is selected text as a string.
+	 */
+	private static final class PlainTextTransferHandler extends TransferHandler {
+		@Override
+		public int getSourceActions(JComponent c) {
+			return COPY_OR_MOVE;
+		}
+
+		@Override
+		protected Transferable createTransferable(JComponent c) {
+			if (!(c instanceof JTextComponent)) {
+				return null;
+			}
+			String selected = ((JTextComponent) c).getSelectedText();
+			return selected == null ? null : new StringSelection(selected);
+		}
+
+		@Override
+		public boolean canImport(TransferSupport support) {
+			if (support.isDataFlavorSupported(DataFlavor.stringFlavor)) {
+				return true;
+			}
+			return DataFlavor.selectBestTextFlavor(support.getDataFlavors()) != null;
+		}
+
+		@Override
+		public boolean importData(TransferSupport support) {
+			if (!(support.getComponent() instanceof JTextComponent)) {
+				return false;
+			}
+			String text = transferableToPlainText(support.getTransferable());
+			if (text == null) {
+				return false;
+			}
+			((JTextComponent) support.getComponent()).replaceSelection(text);
+			return true;
+		}
+	}
 	
 	public enum LineThicknesses {
 		ACTUAL_DATA_MASS

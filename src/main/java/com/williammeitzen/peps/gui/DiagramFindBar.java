@@ -50,6 +50,7 @@ public class DiagramFindBar extends JPanel {
 
 		add(new JLabel("Find:"));
 		queryField.setToolTipText("Search operator labels (Ctrl+F)");
+		Utils.installCrossPlatformEditBindings(queryField);
 		add(queryField);
 
 		JButton prevBtn = new JButton("Previous");

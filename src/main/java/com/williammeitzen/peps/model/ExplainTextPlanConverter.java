@@ -141,34 +141,27 @@ public final class ExplainTextPlanConverter {
 		return PlanFormat.UNKNOWN;
 	}
 
+	/**
+	 * Fast structural check only — do not full-parse JSON here.
+	 * Plan-field DocumentListeners call {@link #sniff} on every edit; deserializing a
+	 * multi‑MB EXPLAIN on the EDT makes paste appear to hang or fail (seen on macOS).
+	 * Full parse happens when building the diagram via {@link #resolveToJsonArrayString}.
+	 */
 	public static boolean looksLikeJson(String trimmed) {
 		if (trimmed == null || trimmed.isEmpty()) {
 			return false;
 		}
 		char c = trimmed.charAt(0);
-		if (c != '{' && c != '[') {
-			return false;
-		}
-		try {
-			Jsoner.deserialize(trimmed);
+		if (c == '{' || c == '[') {
 			return true;
-		} catch (Exception ignored) {
-			// May still be JSON with psql wrappers — normalize then retry.
 		}
+		// psql wrappers / leading noise before the JSON payload
 		String normalized = normalizePsqlWrappers(trimmed);
-		if (normalized.isBlank()) {
+		if (normalized == null || normalized.isBlank()) {
 			return false;
 		}
 		char n = normalized.trim().charAt(0);
-		if (n != '{' && n != '[') {
-			return false;
-		}
-		try {
-			Jsoner.deserialize(normalized.trim());
-			return true;
-		} catch (Exception ignored) {
-			return false;
-		}
+		return n == '{' || n == '[';
 	}
 
 	public static boolean looksLikeTextPlan(String text) {
