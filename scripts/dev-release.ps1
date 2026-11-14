@@ -84,6 +84,51 @@ function Write-Status([string]$Message) {
 	Write-Host "[$ts] $Message"
 }
 
+# Coarse overall progress (same Write-Progress UI as Compress-Archive). Not byte-accurate.
+$script:ReleaseProgressId = 1
+$script:ReleaseProgressStep = 0
+$script:ReleaseProgressTotal = 1
+$script:ReleaseProgressActivity = "PEPS release"
+
+function Initialize-ReleaseProgress {
+	param(
+		[string]$Activity,
+		[string[]]$Steps
+	)
+	$script:ReleaseProgressActivity = $Activity
+	$script:ReleaseProgressStep = 0
+	$script:ReleaseProgressTotal = [Math]::Max(1, $Steps.Count)
+	$script:ReleaseProgressSteps = $Steps
+	Write-Progress -Id $script:ReleaseProgressId -Activity $Activity -Status "Starting…" -PercentComplete 0
+}
+
+function Update-ReleaseProgress {
+	param([string]$Status)
+	$script:ReleaseProgressStep++
+	$step = [Math]::Min($script:ReleaseProgressStep, $script:ReleaseProgressTotal)
+	$pct = [int][Math]::Floor(100.0 * $step / $script:ReleaseProgressTotal)
+	if ($pct -gt 100) { $pct = 100 }
+	$label = if ($Status) { $Status } elseif ($script:ReleaseProgressSteps -and ($step -le $script:ReleaseProgressSteps.Count)) {
+		$script:ReleaseProgressSteps[$step - 1]
+	} else {
+		"Working…"
+	}
+	Write-Progress -Id $script:ReleaseProgressId `
+		-Activity $script:ReleaseProgressActivity `
+		-Status ("[{0}/{1}] {2}" -f $step, $script:ReleaseProgressTotal, $label) `
+		-PercentComplete $pct
+	Write-Status $label
+}
+
+function Complete-ReleaseProgress {
+	param([string]$Status = "Done")
+	Write-Progress -Id $script:ReleaseProgressId `
+		-Activity $script:ReleaseProgressActivity `
+		-Status $Status `
+		-PercentComplete 100 `
+		-Completed
+}
+
 function Get-CurrentPomVersion {
 	[xml]$pom = Get-Content -Raw (Join-Path $RepoRoot "pom.xml")
 	return [string]$pom.project.version
@@ -641,118 +686,136 @@ if ($confirm -match '^[Nn]') {
 
 Save-DevReleaseLocalConfig -UbuntuSshTarget $UbuntuSsh -LastVersion $Version
 
-# Push first so the Windows share (and any git consumers) see the release commit before Ubuntu syncs.
-if (-not $SkipGit) {
-	Write-Status "Committing version bump (if any) and tagging $Tag"
-	git add pom.xml README.md scripts/dev-release.ps1 "src/main/java/com/williammeitzen/peps/gui/MainFrame.java"
-	$status = git status --porcelain -- pom.xml README.md scripts/dev-release.ps1 "src/main/java/com/williammeitzen/peps/gui/MainFrame.java"
-	if ($status) {
-		$commit = Invoke-Native -Command { git commit -m "Release $Version" }
-		if ($commit.Output) { $commit.Output | ForEach-Object { Write-Host $_ } }
-		if ($commit.ExitCode -ne 0) { throw "git commit failed (exit $($commit.ExitCode))" }
-	}
-	$existingTag = git tag -l $Tag
-	if ($existingTag) {
-		Write-Status "Tag $Tag already exists — overwriting"
-		Invoke-Native -Command { git tag -d $Tag } | Out-Null
-		# Remote tag may or may not exist; ignore delete failures.
-		$del = Invoke-Native -Command { git push origin "refs/tags/${Tag}" --delete }
-		if ($del.Output) { $del.Output | ForEach-Object { Write-Host $_ } }
-	}
-	$tagResult = Invoke-Native -Command { git tag -a $Tag -m $Tag }
-	if ($tagResult.ExitCode -ne 0) {
-		if ($tagResult.Output) { $tagResult.Output | ForEach-Object { Write-Host $_ } }
-		throw "git tag failed (exit $($tagResult.ExitCode))"
-	}
-	Write-Status "Pushing main and $Tag"
-	$pushMain = Invoke-Native -Command { git push origin HEAD }
-	if ($pushMain.Output) { $pushMain.Output | ForEach-Object { Write-Host $_ } }
-	if ($pushMain.ExitCode -ne 0) { throw "git push failed (exit $($pushMain.ExitCode))" }
-	$pushTag = Invoke-Native -Command { git push origin $Tag --force }
-	if ($pushTag.Output) { $pushTag.Output | ForEach-Object { Write-Host $_ } }
-	if ($pushTag.ExitCode -ne 0) { throw "git push tag failed (exit $($pushTag.ExitCode))" }
-}
-
+$progressSteps = @()
+if (-not $SkipGit) { $progressSteps += "Commit, tag, and push $Tag" }
 if (-not $SkipBuild) {
 	if ($MacOnlyRelease) {
-		# TEMPORARY Mac-only: shaded jar + packaging/mac launcher zip (no jpackage .app yet).
-		$packMac = Join-Path $PSScriptRoot "pack-mac-jar.ps1"
-		Write-Status "Building macOS JAR zip via pack-mac-jar.ps1…"
-		& $packMac
-		if ($LASTEXITCODE -ne 0) {
-			throw "pack-mac-jar.ps1 failed with exit $LASTEXITCODE"
-		}
-		if (-not (Test-Path $MacJar)) {
-			throw "Missing Mac JAR zip: $MacJar"
-		}
+		$progressSteps += "Build macOS JAR zip"
 	} else {
-		$mvnw = Join-Path $RepoRoot "mvnw.cmd"
-		Write-Status "Building Windows jpackage zip (+ .exe if WiX present)…"
-		& $mvnw -P jpackage -DskipTests verify
-		if ($LASTEXITCODE -ne 0) {
-			throw "Windows mvnw jpackage failed with exit $LASTEXITCODE"
+		$progressSteps += "Build Windows jpackage packages"
+		if (-not $SkipUbuntu) { $progressSteps += "Build Ubuntu zip + .deb" }
+		$progressSteps += "Build macOS JAR zip"
+	}
+}
+$progressSteps += "Collect release assets"
+$progressSteps += "Publish GitHub release $Tag"
+Initialize-ReleaseProgress -Activity ("PEPS release $Tag") -Steps $progressSteps
+
+try {
+	# Push first so the Windows share (and any git consumers) see the release commit before Ubuntu syncs.
+	if (-not $SkipGit) {
+		Update-ReleaseProgress "Commit, tag, and push $Tag"
+		git add pom.xml README.md scripts/dev-release.ps1 "src/main/java/com/williammeitzen/peps/gui/MainFrame.java"
+		$status = git status --porcelain -- pom.xml README.md scripts/dev-release.ps1 "src/main/java/com/williammeitzen/peps/gui/MainFrame.java"
+		if ($status) {
+			$commit = Invoke-Native -Command { git commit -m "Release $Version" }
+			if ($commit.Output) { $commit.Output | ForEach-Object { Write-Host $_ } }
+			if ($commit.ExitCode -ne 0) { throw "git commit failed (exit $($commit.ExitCode))" }
 		}
+		$existingTag = git tag -l $Tag
+		if ($existingTag) {
+			Write-Status "Tag $Tag already exists — overwriting"
+			Invoke-Native -Command { git tag -d $Tag } | Out-Null
+			# Remote tag may or may not exist; ignore delete failures.
+			$del = Invoke-Native -Command { git push origin "refs/tags/${Tag}" --delete }
+			if ($del.Output) { $del.Output | ForEach-Object { Write-Host $_ } }
+		}
+		$tagResult = Invoke-Native -Command { git tag -a $Tag -m $Tag }
+		if ($tagResult.ExitCode -ne 0) {
+			if ($tagResult.Output) { $tagResult.Output | ForEach-Object { Write-Host $_ } }
+			throw "git tag failed (exit $($tagResult.ExitCode))"
+		}
+		Write-Status "Pushing main and $Tag"
+		$pushMain = Invoke-Native -Command { git push origin HEAD }
+		if ($pushMain.Output) { $pushMain.Output | ForEach-Object { Write-Host $_ } }
+		if ($pushMain.ExitCode -ne 0) { throw "git push failed (exit $($pushMain.ExitCode))" }
+		$pushTag = Invoke-Native -Command { git push origin $Tag --force }
+		if ($pushTag.Output) { $pushTag.Output | ForEach-Object { Write-Host $_ } }
+		if ($pushTag.ExitCode -ne 0) { throw "git push tag failed (exit $($pushTag.ExitCode))" }
+	}
+
+	if (-not $SkipBuild) {
+		if ($MacOnlyRelease) {
+			# TEMPORARY Mac-only: shaded jar + packaging/mac launcher zip (no jpackage .app yet).
+			Update-ReleaseProgress "Build macOS JAR zip"
+			$packMac = Join-Path $PSScriptRoot "pack-mac-jar.ps1"
+			& $packMac
+			if ($LASTEXITCODE -ne 0) {
+				throw "pack-mac-jar.ps1 failed with exit $LASTEXITCODE"
+			}
+			if (-not (Test-Path $MacJar)) {
+				throw "Missing Mac JAR zip: $MacJar"
+			}
+		} else {
+			Update-ReleaseProgress "Build Windows jpackage packages"
+			$mvnw = Join-Path $RepoRoot "mvnw.cmd"
+			& $mvnw -P jpackage -DskipTests verify
+			if ($LASTEXITCODE -ne 0) {
+				throw "Windows mvnw jpackage failed with exit $LASTEXITCODE"
+			}
+			if (-not (Test-Path $WindowsZip)) {
+				throw "Missing Windows zip: $WindowsZip"
+			}
+			if (-not (Test-Path $WindowsExe)) {
+				Write-Warning "Windows installer missing: $WindowsExeName (install WiX Toolset for jpackage --type exe, or ignore if zip-only is enough)"
+			}
+
+			if (-not $SkipUbuntu) {
+				Update-ReleaseProgress "Build Ubuntu zip + .deb"
+				Build-UbuntuPackage -SshTarget $UbuntuSsh -HostRepo $UbuntuHostRepo `
+					-LocalRepo $UbuntuLocalRepo -AppVersion $Version `
+					-ZipName $LinuxZipName -DebName $LinuxDebName `
+					-DestZip $LinuxZip -DestDeb $LinuxDeb
+			}
+
+			Update-ReleaseProgress "Build macOS JAR zip"
+			$packMac = Join-Path $PSScriptRoot "pack-mac-jar.ps1"
+			& $packMac -SkipBuild
+			if ($LASTEXITCODE -ne 0) {
+				throw "pack-mac-jar.ps1 failed with exit $LASTEXITCODE"
+			}
+			if (-not (Test-Path $MacJar)) {
+				throw "Missing Mac JAR zip: $MacJar"
+			}
+		}
+	}
+
+	Update-ReleaseProgress "Collect release assets"
+	$assets = @()
+	if (-not $MacOnlyRelease) {
+		if (Test-Path $WindowsZip) { $assets += $WindowsZip }
+		if (Test-Path $WindowsExe) { $assets += $WindowsExe }
+		if (Test-Path $LinuxZip) { $assets += $LinuxZip }
+		if (Test-Path $LinuxDeb) { $assets += $LinuxDeb }
+	}
+	if (Test-Path $MacJar) { $assets += $MacJar }
+	if ($assets.Count -eq 0) {
+		throw "No release assets found in target\ for version $Version"
+	}
+	if (-not $MacOnlyRelease) {
 		if (-not (Test-Path $WindowsZip)) {
-			throw "Missing Windows zip: $WindowsZip"
+			Write-Warning "Windows zip missing: $WindowsZipName"
 		}
 		if (-not (Test-Path $WindowsExe)) {
-			Write-Warning "Windows installer missing: $WindowsExeName (install WiX Toolset for jpackage --type exe, or ignore if zip-only is enough)"
+			Write-Warning "Windows installer missing: $WindowsExeName"
 		}
-
-		if (-not $SkipUbuntu) {
-			Build-UbuntuPackage -SshTarget $UbuntuSsh -HostRepo $UbuntuHostRepo `
-				-LocalRepo $UbuntuLocalRepo -AppVersion $Version `
-				-ZipName $LinuxZipName -DebName $LinuxDebName `
-				-DestZip $LinuxZip -DestDeb $LinuxDeb
+		if (-not (Test-Path $LinuxZip) -and -not $SkipUbuntu) {
+			throw "Linux zip missing after Ubuntu build: $LinuxZip"
 		}
-
-		$packMac = Join-Path $PSScriptRoot "pack-mac-jar.ps1"
-		Write-Status "Building macOS JAR zip via pack-mac-jar.ps1…"
-		& $packMac -SkipBuild
-		if ($LASTEXITCODE -ne 0) {
-			throw "pack-mac-jar.ps1 failed with exit $LASTEXITCODE"
-		}
-		if (-not (Test-Path $MacJar)) {
-			throw "Missing Mac JAR zip: $MacJar"
+		if (-not (Test-Path $LinuxDeb) -and -not $SkipUbuntu) {
+			throw "Linux .deb missing after Ubuntu build: $LinuxDeb"
 		}
 	}
-}
+	if (-not (Test-Path $MacJar)) {
+		throw "Mac JAR zip missing: $MacJar"
+	}
 
-$assets = @()
-if (-not $MacOnlyRelease) {
-	if (Test-Path $WindowsZip) { $assets += $WindowsZip }
-	if (Test-Path $WindowsExe) { $assets += $WindowsExe }
-	if (Test-Path $LinuxZip) { $assets += $LinuxZip }
-	if (Test-Path $LinuxDeb) { $assets += $LinuxDeb }
-}
-if (Test-Path $MacJar) { $assets += $MacJar }
-if ($assets.Count -eq 0) {
-	throw "No release assets found in target\ for version $Version"
-}
-if (-not $MacOnlyRelease) {
-	if (-not (Test-Path $WindowsZip)) {
-		Write-Warning "Windows zip missing: $WindowsZipName"
-	}
-	if (-not (Test-Path $WindowsExe)) {
-		Write-Warning "Windows installer missing: $WindowsExeName"
-	}
-	if (-not (Test-Path $LinuxZip) -and -not $SkipUbuntu) {
-		throw "Linux zip missing after Ubuntu build: $LinuxZip"
-	}
-	if (-not (Test-Path $LinuxDeb) -and -not $SkipUbuntu) {
-		throw "Linux .deb missing after Ubuntu build: $LinuxDeb"
-	}
-}
-if (-not (Test-Path $MacJar)) {
-	throw "Mac JAR zip missing: $MacJar"
-}
+	Write-Host "Assets to publish:"
+	$assets | ForEach-Object { Write-Host "  $_" }
 
-Write-Host "Assets to publish:"
-$assets | ForEach-Object { Write-Host "  $_" }
-
-$title = "v$Version"
-if ($MacOnlyRelease) {
-	$notes = @"
+	$title = "v$Version"
+	if ($MacOnlyRelease) {
+		$notes = @"
 ## PostgreSQL Explain Plan Studio v$Version
 
 TEMPORARY Mac-only release iteration (Windows/Linux assets not rebuilt this run).
@@ -763,18 +826,18 @@ TEMPORARY Mac-only release iteration (Windows/Linux assets not rebuilt this run)
 - Unzip, then: ``chmod +x peps.sh && ./peps.sh``
 - User data: ``~/.local/share/postgresql-explain-plan-studio/`` (or ``PEPS_DATA_DIR`` / ``-Dpeps.data.dir``)
 "@
-} else {
-	$exeNotes = if (Test-Path $WindowsExe) {
-		@"
+	} else {
+		$exeNotes = if (Test-Path $WindowsExe) {
+			@"
 - Installer: ``$WindowsExeName`` (Program Files setup; upgrades keep your plans)
 - Portable: ``$WindowsZipName`` — unzip and run ``PostgreSQLExplainPlanStudio\PostgreSQLExplainPlanStudio.exe``
 "@
-	} else {
-		@"
+		} else {
+			@"
 - Portable: ``$WindowsZipName`` — unzip and run ``PostgreSQLExplainPlanStudio\PostgreSQLExplainPlanStudio.exe``
 "@
-	}
-	$notes = @"
+		}
+		$notes = @"
 ## PostgreSQL Explain Plan Studio v$Version
 
 Bundled Java runtime included (Windows/Linux). macOS JAR zip requires a system JDK 17+.
@@ -796,22 +859,28 @@ $exeNotes
 - Asset: ``$MacJarName``
 - Unzip, ``chmod +x peps.sh``, install JDK 17+, then ``./peps.sh``
 "@
-}
+	}
 
-$prevEa = $ErrorActionPreference
-$ErrorActionPreference = "Continue"
-$existing = gh release view $Tag 2>$null
-$releaseExists = ($LASTEXITCODE -eq 0)
-$ErrorActionPreference = $prevEa
-if ($releaseExists) {
-	Write-Status "Release $Tag already exists — replacing assets"
-	gh release upload $Tag @assets --clobber
-	if ($LASTEXITCODE -ne 0) { throw "gh release upload failed" }
-	gh release edit $Tag --title $title --notes $notes | Out-Null
-} else {
-	Write-Status "Creating release $Tag"
-	gh release create $Tag @assets --title $title --notes $notes
-	if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
-}
+	Update-ReleaseProgress "Publish GitHub release $Tag"
+	$prevEa = $ErrorActionPreference
+	$ErrorActionPreference = "Continue"
+	$existing = gh release view $Tag 2>$null
+	$releaseExists = ($LASTEXITCODE -eq 0)
+	$ErrorActionPreference = $prevEa
+	if ($releaseExists) {
+		Write-Status "Release $Tag already exists — replacing assets"
+		gh release upload $Tag @assets --clobber
+		if ($LASTEXITCODE -ne 0) { throw "gh release upload failed" }
+		gh release edit $Tag --title $title --notes $notes | Out-Null
+	} else {
+		Write-Status "Creating release $Tag"
+		gh release create $Tag @assets --title $title --notes $notes
+		if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
+	}
 
-Write-Status "Done: $(gh release view $Tag --json url -q .url)"
+	Complete-ReleaseProgress "Done"
+	Write-Status "Done: $(gh release view $Tag --json url -q .url)"
+} catch {
+	Complete-ReleaseProgress "Failed"
+	throw
+}

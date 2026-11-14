@@ -4,13 +4,13 @@ Graphical viewer for PostgreSQL `EXPLAIN` plans.
 
 ## Download
 
-- <img src="docs/readme-icons/windows.svg" width="16" height="16" alt="Windows" /> Windows installer: [PostgreSQLExplainPlanStudio-0.0.18-windows-x64-installer.exe](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.18-windows-x64-installer.exe)
-- <img src="docs/readme-icons/windows.svg" width="16" height="16" alt="Windows" /> Windows zip: [PostgreSQLExplainPlanStudio-0.0.18-windows-x64.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.18-windows-x64.zip)
-- <img src="docs/readme-icons/linux.svg" width="16" height="16" alt="Linux" /> Linux zip: [PostgreSQLExplainPlanStudio-0.0.18-linux-x64.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.18-linux-x64.zip)
-- <img src="docs/readme-icons/linux.svg" width="16" height="16" alt="Linux" /> Linux `.deb`: [PostgreSQLExplainPlanStudio-0.0.18-linux-x64.deb](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.18-linux-x64.deb)
+- <img src="docs/readme-icons/windows.svg" width="16" height="16" alt="Windows" /> Windows installer: [PostgreSQLExplainPlanStudio-0.0.19-windows-x64-installer.exe](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.19-windows-x64-installer.exe)
+- <img src="docs/readme-icons/windows.svg" width="16" height="16" alt="Windows" /> Windows zip: [PostgreSQLExplainPlanStudio-0.0.19-windows-x64.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.19-windows-x64.zip)
+- <img src="docs/readme-icons/linux.svg" width="16" height="16" alt="Linux" /> Linux zip: [PostgreSQLExplainPlanStudio-0.0.19-linux-x64.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.19-linux-x64.zip)
+- <img src="docs/readme-icons/linux.svg" width="16" height="16" alt="Linux" /> Linux `.deb`: [PostgreSQLExplainPlanStudio-0.0.19-linux-x64.deb](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.19-linux-x64.deb)
 
-  To install the `.deb` on Linux: `sudo apt install ./PostgreSQLExplainPlanStudio-0.0.18-linux-x64.deb`
-- <img src="docs/readme-icons/apple.svg" width="16" height="16" alt="macOS" /> macOS (JAR): [PostgreSQLExplainPlanStudio-0.0.18-mac-jar.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.18-mac-jar.zip) — unzip, `chmod +x peps.sh`, install JDK 17+, then `./peps.sh`
+  To install the `.deb` on Linux: `sudo apt install ./PostgreSQLExplainPlanStudio-0.0.19-linux-x64.deb`
+- <img src="docs/readme-icons/apple.svg" width="16" height="16" alt="macOS" /> macOS (JAR): [PostgreSQLExplainPlanStudio-0.0.19-mac-jar.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.19-mac-jar.zip) — unzip, `chmod +x peps.sh`, install JDK 17+, then `./peps.sh`
 
 All [releases](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases).
 
@@ -167,22 +167,32 @@ objdump -T target/jpackage/PostgreSQLExplainPlanStudio/bin/PostgreSQLExplainPlan
   | grep -oE 'GLIBC_[0-9.]+' | sort -Vu
 ```
 
-**macOS (easiest: JAR, no native arch choice)**
+**macOS â€” JAR zip (any Mac + JDK 17+)**
 
-Do **not** pick Intel / Apple Silicon / universal for this path. Ship the shaded JAR plus `peps.sh`; one zip runs on both CPU types when a JDK is installed. Build the zip on Windows (no Mac required):
+One JAR works on Intel and Apple Silicon when a JDK is installed. Build on Windows (no Mac required):
 
 ```powershell
 .\scripts\pack-mac-jar.ps1
 ```
 
-On the Mac: install Temurin (or another) JDK 17+, unzip `target/PostgreSQLExplainPlanStudio-<version>-mac-jar.zip`, then:
+On the Mac: unzip `target/PostgreSQLExplainPlanStudio-<version>-mac-jar.zip`, then `chmod +x peps.sh && ./peps.sh`.
+
+**macOS â€” `.app` / DMG (drag into Applications; bundled JRE)**
+
+Must be built **on a Mac** with JDK 17+ (`jpackage`). Prefer a **local** checkout (e.g. `~/peps`), not a VMware HGFS share:
 
 ```bash
-chmod +x peps.sh
-./peps.sh
+chmod +x scripts/pack-mac-app.sh
+./scripts/pack-mac-app.sh
 ```
 
-A self-contained `.app` via `jpackage` (and any Intel / arm64 / universal native bundle, signing, or notarization) is deferred until you need a double-clickable Mac app without a system JDK.
+Outputs:
+
+- `target/jpackage-mac/PostgreSQLExplainPlanStudio.app`
+- `target/PostgreSQLExplainPlanStudio-<version>-mac-x64.dmg` (or `mac-arm64` on Apple Silicon)
+- matching `.zip` of the `.app`
+
+Open the DMG and drag the app into Applications. Unsigned builds may need right-click â†’ Open the first time. Signing/notarization is still deferred.
 
 ## License
 
