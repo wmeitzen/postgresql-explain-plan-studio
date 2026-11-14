@@ -13,7 +13,7 @@
   5) Creates/uploads the GitHub release (private repos OK when `gh auth login` is done)
 
   Default Ubuntu SSH target: administrator@192.168.163.156 (Ubuntu 20.04 release VM).
-  Default Mac SSH target: macosx@192.168.18.35 (Catalina release VM).
+  Default Mac SSH target: macosx@192.168.163.164 (Catalina release VM).
   Day-to-day RECOMPILENOW sync stays on the newer Ubuntu VM (e.g. 154); Linux jpackage
   must build on 20.04 so the zip runs on Ubuntu 20.04+ desktop.
   Override with -UbuntuSsh / -MacSsh, $env:PEPS_UBUNTU_SSH / $env:PEPS_MAC_SSH, or
@@ -37,7 +37,7 @@
   Path on the VM to the Windows share checkout (default: /mnt/hgfs/peps)
 
 .PARAMETER MacSsh
-  SSH target for the macOS release VM (default: macosx@192.168.18.35)
+  SSH target for the macOS release VM (default: macosx@192.168.163.164)
 
 .PARAMETER MacLocalRepo
   Path on the Mac for the local build tree (default: ~/peps)
@@ -60,7 +60,7 @@
 .EXAMPLE
   .\scripts\dev-release.ps1
   .\scripts\dev-release.ps1 -Version 0.0.9 -UbuntuSsh administrator@192.168.56.101
-  .\scripts\dev-release.ps1 -MacSsh macosx@192.168.18.35
+  .\scripts\dev-release.ps1 -MacSsh macosx@192.168.163.164
 #>
 param(
 	[string]$Version,
@@ -268,7 +268,7 @@ function Get-DefaultMacSsh {
 	if (-not [string]::IsNullOrWhiteSpace($PepsMacSsh)) {
 		return $PepsMacSsh.Trim()
 	}
-	return "macosx@192.168.18.35"
+	return "macosx@192.168.163.164"
 }
 
 function Get-NextPatchVersion {
