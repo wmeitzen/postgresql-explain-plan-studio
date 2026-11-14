@@ -23,7 +23,7 @@ Graphical viewer for PostgreSQL `EXPLAIN` plans.
   - Navigate to the unzipped file's new directory
   - `chmod +x peps.sh`
   - Install JDK 17 or later
-  - `./peps.sh`
+  - To launch: `./peps.sh`
 
 All [releases](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases).
 
