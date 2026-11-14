@@ -10,8 +10,11 @@ Graphical viewer for PostgreSQL `EXPLAIN` plans.
 - <img src="docs/readme-icons/linux.svg" width="16" height="16" alt="Linux" /> Linux `.deb`: [PostgreSQLExplainPlanStudio-0.0.23-linux-x64.deb](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.23-linux-x64.deb)
 
   To install the `.deb` on Linux: `sudo apt install ./PostgreSQLExplainPlanStudio-0.0.23-linux-x64.deb`
-- <img src="docs/readme-icons/apple.svg" width="16" height="16" alt="macOS" /> macOS app: [PostgreSQLExplainPlanStudio-0.0.23-mac-x64.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.23-mac-x64.zip) � unzip and drag `PostgreSQLExplainPlanStudio.app` to Applications (bundled JRE)
-- <img src="docs/readme-icons/apple.svg" width="16" height="16" alt="macOS" /> macOS (JAR): [PostgreSQLExplainPlanStudio-0.0.23-mac-jar.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.23-mac-jar.zip) � unzip, `chmod +x peps.sh`, install JDK 17+, then `./peps.sh`
+- <img src="docs/readme-icons/apple.svg" width="16" height="16" alt="macOS" /> macOS app: [PostgreSQLExplainPlanStudio-0.0.23-mac-x64.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.23-mac-x64.zip)
+  To install the `x64.zip` on macOS:
+  - Unzip file
+  - Drag `PostgreSQLExplainPlanStudio.app` to Applications
+- <img src="docs/readme-icons/apple.svg" width="16" height="16" alt="macOS" /> macOS (JAR): [PostgreSQLExplainPlanStudio-0.0.23-mac-jar.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.23-mac-jar.zip) — unzip, `chmod +x peps.sh`, install JDK 17+, then `./peps.sh`
 
 All [releases](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases).
 
@@ -32,13 +35,13 @@ All [releases](https://github.com/wmeitzen/postgresql-explain-plan-studio/releas
 
 I develop on Windows, and continuously cascade changes to a linux VM.
 
-**Windows** â€” two terminals from the repo root:
+**Windows** Ã¢â‚¬â€ two terminals from the repo root:
 
 ```powershell
-# Terminal 1 â€” keep running while developing
+# Terminal 1 Ã¢â‚¬â€ keep running while developing
 .\scripts\dev-watch.ps1
 
-# Terminal 2 â€” launch when you want to test
+# Terminal 2 Ã¢â‚¬â€ launch when you want to test
 .\scripts\dev-run.ps1
 
 # Optional: trigger a rebuild by hand
@@ -55,7 +58,7 @@ sudo apt install -y openjdk-17-jdk rsync   # once
 bash ~/peps/scripts/dev-watch.sh
 ```
 
-That mounts HGFS if `/mnt/hgfs` is empty, refreshes from the Windows share when `~/peps` is stale, syncs Windows â†’ `~/peps`, does an **initial compile**, then watches host changes / `RECOMPILENOW`. First boot only (no `~/peps` yet):
+That mounts HGFS if `/mnt/hgfs` is empty, refreshes from the Windows share when `~/peps` is stale, syncs Windows Ã¢â€ â€™ `~/peps`, does an **initial compile**, then watches host changes / `RECOMPILENOW`. First boot only (no `~/peps` yet):
 
 ```bash
 sudo mkdir -p /mnt/hgfs
@@ -114,7 +117,7 @@ Or prompt for a version, build **Windows + Linux** packages, tag, and upload to 
 
 ```powershell
 # optional local default (gitignored):
-#   scripts\dev-release.local.ps1  â†’  $PepsUbuntuSsh = "administrator@192.168.163.156"
+#   scripts\dev-release.local.ps1  Ã¢â€ â€™  $PepsUbuntuSsh = "administrator@192.168.163.156"
 .\scripts\dev-release.ps1
 # optional: .\scripts\dev-release.ps1 -Version 0.0.9 -UbuntuSsh administrator@192.168.163.156
 ```
@@ -161,14 +164,14 @@ Run the app:
 # sudo apt install ./PostgreSQLExplainPlanStudio-<version>-linux-x64.deb
 ```
 
-Optional glibc check (should be â‰¤ 2.31):
+Optional glibc check (should be Ã¢â€°Â¤ 2.31):
 
 ```bash
 objdump -T target/jpackage/PostgreSQLExplainPlanStudio/bin/PostgreSQLExplainPlanStudio \
   | grep -oE 'GLIBC_[0-9.]+' | sort -Vu
 ```
 
-**macOS — JAR zip (any Mac + JDK 17+)**
+**macOS â€” JAR zip (any Mac + JDK 17+)**
 
 One JAR works on Intel and Apple Silicon when a JDK is installed. Build on Windows (no Mac required):
 
@@ -178,7 +181,7 @@ One JAR works on Intel and Apple Silicon when a JDK is installed. Build on Windo
 
 On the Mac: unzip `target/PostgreSQLExplainPlanStudio-<version>-mac-jar.zip`, then `chmod +x peps.sh && ./peps.sh`.
 
-**macOS — `.app` (drag into Applications; bundled JRE)**
+**macOS â€” `.app` (drag into Applications; bundled JRE)**
 
 Must be built **on a Mac** with JDK 17+ (`jpackage`). Prefer a **local** checkout (e.g. `~/peps`), not a VMware HGFS share.
 
@@ -192,11 +195,11 @@ chmod +x scripts/pack-mac-app.sh
 Outputs:
 
 - `target/jpackage-mac/PostgreSQLExplainPlanStudio.app`
-- `target/PostgreSQLExplainPlanStudio-<version>-mac-x64.zip` (or `mac-arm64`) — unzip and drag the `.app` to Applications
+- `target/PostgreSQLExplainPlanStudio-<version>-mac-x64.zip` (or `mac-arm64`) â€” unzip and drag the `.app` to Applications
 - matching `.dmg` when built interactively (skipped over SSH to avoid the SetFile / Xcode CLT dialog)
 
-Unsigned builds may need right-click → Open the first time. Signing/notarization is still deferred.
+Unsigned builds may need right-click â†’ Open the first time. Signing/notarization is still deferred.
 
 ## License
 
-MIT â€” see [LICENSE](LICENSE).
+MIT Ã¢â‚¬â€ see [LICENSE](LICENSE).
