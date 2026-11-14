@@ -58,6 +58,14 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# TEMPORARY — Mac-only release iteration: skip Windows/Linux builds; ship mac-jar.zip.
+# Flip to $false (or remove) when restoring full multi-OS releases.
+$MacOnlyRelease = $true
+if ($MacOnlyRelease) {
+	$SkipUbuntu = $true
+	Write-Host "[dev-release] TEMPORARY Mac-only mode: Windows jpackage + Ubuntu zip/.deb are skipped."
+}
+
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $RepoRoot
 
@@ -134,6 +142,7 @@ function Update-ReadmeDownloads([string]$NewVersion) {
 	$winIcon = '<img src="docs/readme-icons/windows.svg" width="16" height="16" alt="Windows" />'
 	$linuxIcon = '<img src="docs/readme-icons/linux.svg" width="16" height="16" alt="Linux" />'
 	$macIcon = '<img src="docs/readme-icons/apple.svg" width="16" height="16" alt="macOS" />'
+	$macJar = "PostgreSQLExplainPlanStudio-$NewVersion-mac-jar.zip"
 	$downloadBlock = @"
 ## Download
 
@@ -143,7 +152,7 @@ function Update-ReadmeDownloads([string]$NewVersion) {
 - $linuxIcon Linux ``.deb``: [$linuxDeb]($base/$linuxDeb)
 
   To install the ``.deb`` on Linux: ``sudo apt install ./$linuxDeb``
-- $macIcon macOS (JAR): build with ``.\scripts\pack-mac-jar.ps1`` → ``target/PostgreSQLExplainPlanStudio-<version>-mac-jar.zip`` (install JDK 17+, then ``chmod +x peps.sh && ./peps.sh``)
+- $macIcon macOS (JAR): [$macJar]($base/$macJar) — unzip, ``chmod +x peps.sh``, install JDK 17+, then ``./peps.sh``
 
 All [releases](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases).
 "@
@@ -583,10 +592,12 @@ $WindowsZipName = "PostgreSQLExplainPlanStudio-$Version-windows-x64.zip"
 $WindowsExeName = "PostgreSQLExplainPlanStudio-$Version-windows-x64-installer.exe"
 $LinuxZipName = "PostgreSQLExplainPlanStudio-$Version-linux-x64.zip"
 $LinuxDebName = "PostgreSQLExplainPlanStudio-$Version-linux-x64.deb"
+$MacJarName = "PostgreSQLExplainPlanStudio-$Version-mac-jar.zip"
 $WindowsZip = Join-Path $RepoRoot "target\$WindowsZipName"
 $WindowsExe = Join-Path $RepoRoot "target\$WindowsExeName"
 $LinuxZip = Join-Path $RepoRoot "target\$LinuxZipName"
 $LinuxDeb = Join-Path $RepoRoot "target\$LinuxDebName"
+$MacJar = Join-Path $RepoRoot "target\$MacJarName"
 
 Write-Status "Preparing release $Tag"
 Test-GhAuth
@@ -612,9 +623,16 @@ if (-not $SkipUbuntu -and -not $SkipBuild) {
 Write-Host ""
 Write-Host "This will:"
 Write-Host "  - $(if ($SkipGit) { 'Skip git commit/tag/push' } else { "Commit/tag/push $Tag" })"
-Write-Host "  - $(if ($SkipBuild) { 'Skip Windows build' } else { 'Build Windows jpackage zip (+ .exe installer if WiX is available)' })"
-Write-Host "  - $(if ($SkipBuild -or $SkipUbuntu) { 'Skip Ubuntu build' } else { "Build Ubuntu jpackage zip + .deb on $UbuntuSsh" })"
-Write-Host "  - Upload available zip/.exe/.deb assets to GitHub release $Tag"
+if ($MacOnlyRelease) {
+	Write-Host "  - $(if ($SkipBuild) { 'Skip Mac JAR zip build' } else { 'Build macOS JAR zip (pack-mac-jar.ps1)' })  [TEMPORARY Mac-only]"
+	Write-Host "  - Skip Windows jpackage  [TEMPORARY]"
+	Write-Host "  - Skip Ubuntu zip/.deb  [TEMPORARY]"
+} else {
+	Write-Host "  - $(if ($SkipBuild) { 'Skip Windows build' } else { 'Build Windows jpackage zip (+ .exe installer if WiX is available)' })"
+	Write-Host "  - $(if ($SkipBuild -or $SkipUbuntu) { 'Skip Ubuntu build' } else { "Build Ubuntu jpackage zip + .deb on $UbuntuSsh" })"
+	Write-Host "  - $(if ($SkipBuild) { 'Skip Mac JAR zip' } else { 'Build macOS JAR zip (pack-mac-jar.ps1)' })"
+}
+Write-Host "  - Upload available release assets to GitHub release $Tag"
 $confirm = Read-Host "Continue? [Y/n]"
 if ($confirm -match '^[Nn]') {
 	Write-Status "Aborted."
@@ -656,70 +674,115 @@ if (-not $SkipGit) {
 }
 
 if (-not $SkipBuild) {
-	$mvnw = Join-Path $RepoRoot "mvnw.cmd"
-	Write-Status "Building Windows jpackage zip (+ .exe if WiX present)…"
-	& $mvnw -P jpackage -DskipTests verify
-	if ($LASTEXITCODE -ne 0) {
-		throw "Windows mvnw jpackage failed with exit $LASTEXITCODE"
-	}
-	if (-not (Test-Path $WindowsZip)) {
-		throw "Missing Windows zip: $WindowsZip"
-	}
-	if (-not (Test-Path $WindowsExe)) {
-		Write-Warning "Windows installer missing: $WindowsExeName (install WiX Toolset for jpackage --type exe, or ignore if zip-only is enough)"
-	}
+	if ($MacOnlyRelease) {
+		# TEMPORARY Mac-only: shaded jar + packaging/mac launcher zip (no jpackage .app yet).
+		$packMac = Join-Path $PSScriptRoot "pack-mac-jar.ps1"
+		Write-Status "Building macOS JAR zip via pack-mac-jar.ps1…"
+		& $packMac
+		if ($LASTEXITCODE -ne 0) {
+			throw "pack-mac-jar.ps1 failed with exit $LASTEXITCODE"
+		}
+		if (-not (Test-Path $MacJar)) {
+			throw "Missing Mac JAR zip: $MacJar"
+		}
+	} else {
+		$mvnw = Join-Path $RepoRoot "mvnw.cmd"
+		Write-Status "Building Windows jpackage zip (+ .exe if WiX present)…"
+		& $mvnw -P jpackage -DskipTests verify
+		if ($LASTEXITCODE -ne 0) {
+			throw "Windows mvnw jpackage failed with exit $LASTEXITCODE"
+		}
+		if (-not (Test-Path $WindowsZip)) {
+			throw "Missing Windows zip: $WindowsZip"
+		}
+		if (-not (Test-Path $WindowsExe)) {
+			Write-Warning "Windows installer missing: $WindowsExeName (install WiX Toolset for jpackage --type exe, or ignore if zip-only is enough)"
+		}
 
-	if (-not $SkipUbuntu) {
-		Build-UbuntuPackage -SshTarget $UbuntuSsh -HostRepo $UbuntuHostRepo `
-			-LocalRepo $UbuntuLocalRepo -AppVersion $Version `
-			-ZipName $LinuxZipName -DebName $LinuxDebName `
-			-DestZip $LinuxZip -DestDeb $LinuxDeb
+		if (-not $SkipUbuntu) {
+			Build-UbuntuPackage -SshTarget $UbuntuSsh -HostRepo $UbuntuHostRepo `
+				-LocalRepo $UbuntuLocalRepo -AppVersion $Version `
+				-ZipName $LinuxZipName -DebName $LinuxDebName `
+				-DestZip $LinuxZip -DestDeb $LinuxDeb
+		}
+
+		$packMac = Join-Path $PSScriptRoot "pack-mac-jar.ps1"
+		Write-Status "Building macOS JAR zip via pack-mac-jar.ps1…"
+		& $packMac -SkipBuild
+		if ($LASTEXITCODE -ne 0) {
+			throw "pack-mac-jar.ps1 failed with exit $LASTEXITCODE"
+		}
+		if (-not (Test-Path $MacJar)) {
+			throw "Missing Mac JAR zip: $MacJar"
+		}
 	}
 }
 
 $assets = @()
-if (Test-Path $WindowsZip) { $assets += $WindowsZip }
-if (Test-Path $WindowsExe) { $assets += $WindowsExe }
-if (Test-Path $LinuxZip) { $assets += $LinuxZip }
-if (Test-Path $LinuxDeb) { $assets += $LinuxDeb }
+if (-not $MacOnlyRelease) {
+	if (Test-Path $WindowsZip) { $assets += $WindowsZip }
+	if (Test-Path $WindowsExe) { $assets += $WindowsExe }
+	if (Test-Path $LinuxZip) { $assets += $LinuxZip }
+	if (Test-Path $LinuxDeb) { $assets += $LinuxDeb }
+}
+if (Test-Path $MacJar) { $assets += $MacJar }
 if ($assets.Count -eq 0) {
 	throw "No release assets found in target\ for version $Version"
 }
-if (-not (Test-Path $WindowsZip)) {
-	Write-Warning "Windows zip missing: $WindowsZipName"
+if (-not $MacOnlyRelease) {
+	if (-not (Test-Path $WindowsZip)) {
+		Write-Warning "Windows zip missing: $WindowsZipName"
+	}
+	if (-not (Test-Path $WindowsExe)) {
+		Write-Warning "Windows installer missing: $WindowsExeName"
+	}
+	if (-not (Test-Path $LinuxZip) -and -not $SkipUbuntu) {
+		throw "Linux zip missing after Ubuntu build: $LinuxZip"
+	}
+	if (-not (Test-Path $LinuxDeb) -and -not $SkipUbuntu) {
+		throw "Linux .deb missing after Ubuntu build: $LinuxDeb"
+	}
 }
-if (-not (Test-Path $WindowsExe)) {
-	Write-Warning "Windows installer missing: $WindowsExeName"
-}
-if (-not (Test-Path $LinuxZip) -and -not $SkipUbuntu) {
-	throw "Linux zip missing after Ubuntu build: $LinuxZip"
-}
-if (-not (Test-Path $LinuxDeb) -and -not $SkipUbuntu) {
-	throw "Linux .deb missing after Ubuntu build: $LinuxDeb"
+if (-not (Test-Path $MacJar)) {
+	throw "Mac JAR zip missing: $MacJar"
 }
 
 Write-Host "Assets to publish:"
 $assets | ForEach-Object { Write-Host "  $_" }
 
 $title = "v$Version"
-$exeNotes = if (Test-Path $WindowsExe) {
-	@"
+if ($MacOnlyRelease) {
+	$notes = @"
+## PostgreSQL Explain Plan Studio v$Version
+
+TEMPORARY Mac-only release iteration (Windows/Linux assets not rebuilt this run).
+
+### macOS (JAR)
+- Asset: ``$MacJarName``
+- Requires JDK 17+ on the Mac
+- Unzip, then: ``chmod +x peps.sh && ./peps.sh``
+- User data: ``~/.local/share/postgresql-explain-plan-studio/`` (or ``PEPS_DATA_DIR`` / ``-Dpeps.data.dir``)
+"@
+} else {
+	$exeNotes = if (Test-Path $WindowsExe) {
+		@"
 - Installer: ``$WindowsExeName`` (Program Files setup; upgrades keep your plans)
 - Portable: ``$WindowsZipName`` — unzip and run ``PostgreSQLExplainPlanStudio\PostgreSQLExplainPlanStudio.exe``
 "@
-} else {
-	@"
+	} else {
+		@"
 - Portable: ``$WindowsZipName`` — unzip and run ``PostgreSQLExplainPlanStudio\PostgreSQLExplainPlanStudio.exe``
 "@
-}
-$notes = @"
+	}
+	$notes = @"
 ## PostgreSQL Explain Plan Studio v$Version
 
-Bundled Java runtime included.
+Bundled Java runtime included (Windows/Linux). macOS JAR zip requires a system JDK 17+.
 
 User data (SQLite plans) lives outside the app install tree:
 - Windows: ``%APPDATA%\PostgreSQLExplainPlanStudio\``
 - Linux: ``~/.local/share/postgresql-explain-plan-studio/``
+- macOS: ``~/.local/share/postgresql-explain-plan-studio/``
 
 ### Windows
 $exeNotes
@@ -728,7 +791,12 @@ $exeNotes
 - Installer (Ubuntu/Debian): ``$LinuxDebName`` — ``sudo apt install ./$LinuxDebName``
 - Portable: ``$LinuxZipName`` — unzip and run ``PostgreSQLExplainPlanStudio/bin/PostgreSQLExplainPlanStudio``
 - Upgrades: replace the app / reinstall the ``.deb``; leave the data directory above alone
+
+### macOS (JAR)
+- Asset: ``$MacJarName``
+- Unzip, ``chmod +x peps.sh``, install JDK 17+, then ``./peps.sh``
 "@
+}
 
 $prevEa = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
