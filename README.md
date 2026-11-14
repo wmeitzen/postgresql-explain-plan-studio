@@ -11,10 +11,12 @@ Graphical viewer for PostgreSQL `EXPLAIN` plans.
 
   To install the `.deb` on Linux: `sudo apt install ./PostgreSQLExplainPlanStudio-0.0.23-linux-x64.deb`
 - <img src="docs/readme-icons/apple.svg" width="16" height="16" alt="macOS" /> macOS app: [PostgreSQLExplainPlanStudio-0.0.23-mac-x64.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.23-mac-x64.zip)
-  
+
   To install the `x64.zip` on macOS:
   - Unzip file
   - Drag `PostgreSQLExplainPlanStudio.app` to Applications
+  - No separate Java install needed (JRE is bundled)
+  - First launch of an unsigned build: right-click the app → Open → Open
 - <img src="docs/readme-icons/apple.svg" width="16" height="16" alt="macOS" /> macOS (JAR): [PostgreSQLExplainPlanStudio-0.0.23-mac-jar.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.23-mac-jar.zip)
 
   To install the `jar.zip` on macOS:
@@ -22,7 +24,7 @@ Graphical viewer for PostgreSQL `EXPLAIN` plans.
   - Open a terminal
   - Navigate to the unzipped file's new directory
   - `chmod +x peps.sh`
-  - Install JDK 17 or later
+  - Install [Java 17 or later](https://adoptium.net/temurin/releases/?version=17) (Temurin or any JRE/JDK)
   - To launch: `./peps.sh`
 
 All [releases](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases).

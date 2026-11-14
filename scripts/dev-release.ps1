@@ -226,8 +226,22 @@ function Update-ReadmeDownloads([string]$NewVersion) {
 - $linuxIcon Linux ``.deb``: [$linuxDeb]($base/$linuxDeb)
 
   To install the ``.deb`` on Linux: ``sudo apt install ./$linuxDeb``
-- $macIcon macOS app: [$macAppZip]($base/$macAppZip) — unzip and drag ``PostgreSQLExplainPlanStudio.app`` to Applications (bundled JRE)
-- $macIcon macOS (JAR): [$macJar]($base/$macJar) — unzip, ``chmod +x peps.sh``, install JDK 17+, then ``./peps.sh``
+- $macIcon macOS app: [$macAppZip]($base/$macAppZip)
+
+  To install the ``x64.zip`` on macOS:
+  - Unzip file
+  - Drag ``PostgreSQLExplainPlanStudio.app`` to Applications
+  - No separate Java install needed (JRE is bundled)
+  - First launch of an unsigned build: right-click the app → Open → Open
+- $macIcon macOS (JAR): [$macJar]($base/$macJar)
+
+  To install the ``jar.zip`` on macOS:
+  - Unzip file
+  - Open a terminal
+  - Navigate to the unzipped file's new directory
+  - ``chmod +x peps.sh``
+  - Install [Java 17 or later](https://adoptium.net/temurin/releases/?version=17) (Temurin or any JRE/JDK)
+  - To launch: ``./peps.sh``
 
 All [releases](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases).
 "@
