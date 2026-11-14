@@ -2,6 +2,7 @@ package com.williammeitzen.peps.gui;
 
 import java.awt.BasicStroke;
 import java.awt.BorderLayout;
+import java.awt.CardLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Container;
@@ -101,12 +102,17 @@ import com.williammeitzen.peps.model.Database;
 
 public class FormPanel extends JPanel {
 
+	public static final String DOCUMENTS_CARD_TABS = "tabs";
+	public static final String DOCUMENTS_CARD_EMPTY = "empty";
+
 	private JButton addPlanBtn;
 	private JButton addFolderBtn;
 	private JButton deletePlanBtn;
 	private JButton duplicatePlanBtn;
 	private JButton settingsBtn;
 	private JPanel planToolbar;
+	private JPanel documentsHost;
+	private DocumentsEmptyPanel documentsEmptyPanel;
 
 	/** When true, sibling order is drag-arranged (sort_order); when false, sorted by name. */
 	private boolean plansSortManual = false;
@@ -145,9 +151,14 @@ public class FormPanel extends JPanel {
 	private boolean suppressDiagramViewMenuEvents;
 
 	public FormPanel(JTabbedPane tabPane, PlanDiagramToolbar planDiagramToolbar) {
+		this(tabPane, planDiagramToolbar, null);
+	}
+
+	public FormPanel(JTabbedPane tabPane, PlanDiagramToolbar planDiagramToolbar, JPanel documentsHost) {
 		
 		tabPaneToLink = tabPane;
 		this.planDiagramToolbar = planDiagramToolbar;
+		this.documentsHost = documentsHost;
 		// Selecting Plan Diagram generates from JSON (same as "Show JSON Plan Diagram"),
 		// unless Execute-and-show already set a button action.
 		tabPaneToLink.addChangeListener(new ChangeListener() {
@@ -370,6 +381,49 @@ public class FormPanel extends JPanel {
 		layoutComponents();
 	}
 
+	public void setDocumentsEmptyPanel(DocumentsEmptyPanel emptyPanel) {
+		this.documentsEmptyPanel = emptyPanel;
+	}
+
+	/** Show the Documents landing screen when there are no plans; otherwise show tabs. */
+	public void refreshDocumentsEmptyState() {
+		if (documentsHost == null || !(documentsHost.getLayout() instanceof CardLayout)) {
+			return;
+		}
+		CardLayout cards = (CardLayout) documentsHost.getLayout();
+		if (plansMapper == null || plansMapper.isEmpty()) {
+			if (tabPaneToLink != null) {
+				tabPaneToLink.removeAll();
+			}
+			cards.show(documentsHost, DOCUMENTS_CARD_EMPTY);
+			if (documentsEmptyPanel != null) {
+				documentsEmptyPanel.refreshChrome();
+			}
+		} else {
+			cards.show(documentsHost, DOCUMENTS_CARD_TABS);
+		}
+		documentsHost.revalidate();
+		documentsHost.repaint();
+	}
+
+	/** Empty-state / toolbar: create a blank plan. */
+	public void addBlankPlan() {
+		addPlan();
+		refreshDocumentsEmptyState();
+	}
+
+	/** Empty-state: create a plan filled with a large sample JSON EXPLAIN. */
+	public void addSampleJsonPlan() {
+		addPlanWithContent("Sample JSON plan", SampleExplainPlans.JSON_EXPLAIN_SQL,
+				SampleExplainPlans.jsonPlanText());
+	}
+
+	/** Empty-state: create a plan filled with a large sample text EXPLAIN. */
+	public void addSampleTextPlan() {
+		addPlanWithContent("Sample text plan", SampleExplainPlans.TEXT_EXPLAIN_SQL,
+				SampleExplainPlans.textPlanText());
+	}
+
 	// ------------------------------------------------------------------
 	// Tree selection
 	// ------------------------------------------------------------------
@@ -545,6 +599,14 @@ public class FormPanel extends JPanel {
 	// ------------------------------------------------------------------
 
 	private void addPlan() {
+		addPlanWithContent(null, null, null);
+	}
+
+	/**
+	 * Create a plan at the current add target. Optional SQL / plan text are filled and persisted
+	 * (used by the Documents empty-state sample buttons).
+	 */
+	private void addPlanWithContent(String preferredName, String explainSql, String planText) {
 		if (getSelectedTreeNodes().size() > 1) {
 			return;
 		}
@@ -556,7 +618,9 @@ public class FormPanel extends JPanel {
 		PlanSourcePanel newPlanSourcePanel = new PlanSourcePanel(tabPaneToLink);
 		PlanGraphPanel newPlanGraphPanel = new PlanGraphPanel(tabPaneToLink);
 		PlanEvent pEvent = new PlanEvent(newPlanSourcePanel, newPlanGraphPanel);
-		Integer newPlanId = addPlanToDatabase(folderId, newPlanSourcePanel, newPlanGraphPanel);
+		Integer newPlanId = preferredName == null
+				? addPlanToDatabase(folderId, newPlanSourcePanel, newPlanGraphPanel)
+				: addNamedPlanToDatabase(preferredName, folderId, newPlanSourcePanel, newPlanGraphPanel);
 		if (newPlanId == null) {
 			return;
 		}
@@ -565,13 +629,35 @@ public class FormPanel extends JPanel {
 
 		pEvent.setPlanName(newPlanName);
 		newPlanSourcePanel.setPlanSourceFromQueryPlanNameField(newPlanName);
+		if (explainSql != null) {
+			newPlanSourcePanel.setSQLQueryText(explainSql);
+		}
+		if (planText != null) {
+			newPlanSourcePanel.setJsonPlanText(planText);
+		}
 		newPlanGraphPanel.setIDExplainPlan(newPlanId);
 		plansMapper.put(newPlanId, pEvent);
+
+		if (explainSql != null || planText != null) {
+			Database.updateExplainPlanFields(newPlanId.intValue(), newPlanName,
+					newPlanSourcePanel.getPlanSourceFromQueryServerField(),
+					newPlanSourcePanel.getPlanSourceFromQueryPortField(),
+					newPlanSourcePanel.getPlanSourceFromQueryDatabaseField(),
+					newPlanSourcePanel.getPlanSourceFromQueryUserField(),
+					newPlanSourcePanel.getPlanSourceFromQueryPasswordField(),
+					newPlanSourcePanel.getPlanSourceFromQueryRememberPasswordCheckbox(),
+					newPlanSourcePanel.getAuthenticationTypeCode(),
+					newPlanSourcePanel.getPlanSourceFromQueryPreCommandField(),
+					newPlanSourcePanel.getSQLQueryText(),
+					newPlanSourcePanel.getPlanSourceFromQueryPostCommandField(),
+					newPlanSourcePanel.getJsonPlanText());
+		}
 
 		int sortOrder = readPlanSortOrder(newPlanId.intValue());
 		DefaultMutableTreeNode node = new DefaultMutableTreeNode(
 				PlansTreeNode.plan(newPlanId.intValue(), folderId, newPlanName, sortOrder));
 		insertTreeNode(targetFolder, node, insertIndex);
+		refreshDocumentsEmptyState();
 		// Selection listener builds the Plan Source / Compare / Diagram tabs.
 		selectTreeNode(node);
 	}
@@ -706,6 +792,7 @@ public class FormPanel extends JPanel {
 			tabPaneToLink.removeAll();
 			Database.saveSelectedPlanId(null);
 			updateAddButtonsEnabled();
+			refreshDocumentsEmptyState();
 		}
 	}
 
@@ -3516,19 +3603,29 @@ public class FormPanel extends JPanel {
 	
 	/** Insert a new "Plan N" in {@code folderId} (null = root); returns the new plan id. */
 	private Integer addPlanToDatabase(Integer folderId, PlanSourcePanel planSource, PlanGraphPanel planGraphPanel) {
-		boolean bolShowProperties = false;
-		boolean bolShowSQL = false;
-		String strSQL;
-
-		if (bolShowProperties == true) { System.out.println("addPlanToDatabase"); }
 		JsonObject idRow = Database.row("select coalesce(max(id_explain_plan) + 1, 1) as next_id from explain_plans;");
 		Integer nextId = idRow == null ? null : toInteger(idRow.get("next_id"));
 		if (nextId == null) {
 			return null;
 		}
-		String planName = uniquePlanNameInFolder("Plan " + nextId, folderId);
+		return insertPlanRow(nextId, uniquePlanNameInFolder("Plan " + nextId, folderId), folderId);
+	}
+
+	private Integer addNamedPlanToDatabase(String preferredName, Integer folderId,
+			PlanSourcePanel planSource, PlanGraphPanel planGraphPanel) {
+		JsonObject idRow = Database.row("select coalesce(max(id_explain_plan) + 1, 1) as next_id from explain_plans;");
+		Integer nextId = idRow == null ? null : toInteger(idRow.get("next_id"));
+		if (nextId == null) {
+			return null;
+		}
+		String base = (preferredName == null || preferredName.isBlank()) ? ("Plan " + nextId) : preferredName.trim();
+		return insertPlanRow(nextId, uniquePlanNameInFolder(base, folderId), folderId);
+	}
+
+	private Integer insertPlanRow(Integer nextId, String planName, Integer folderId) {
+		boolean bolShowSQL = false;
 		int sortOrder = nextSortOrderInFolder(folderId, false);
-		strSQL = "insert into explain_plans (id_explain_plan, plan_name, folder_id, sort_order) values ("
+		String strSQL = "insert into explain_plans (id_explain_plan, plan_name, folder_id, sort_order) values ("
 				+ nextId + ", " + sqlQuote(planName) + ", " + sqlFolderIdLiteral(folderId) + ", "
 				+ sortOrder + ")";
 		if (bolShowSQL == true) { System.out.println(strSQL); }

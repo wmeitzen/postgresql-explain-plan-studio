@@ -108,8 +108,15 @@ public class MainFrame extends JFrame {
 		tabPane.putClientProperty("JTabbedPane.showTabSeparators", Boolean.TRUE);
 		tabPane.putClientProperty("JTabbedPane.tabSeparatorsFullHeight", Boolean.TRUE);
 		tabPane.setTabLayoutPolicy(JTabbedPane.SCROLL_TAB_LAYOUT);
-		formPanel = new FormPanel(tabPane, planDiagramToolbar);
-		dockingLayout = new DockingLayout(this, formPanel, tabPane);
+
+		javax.swing.JPanel documentsHost = new javax.swing.JPanel(new java.awt.CardLayout());
+		formPanel = new FormPanel(tabPane, planDiagramToolbar, documentsHost);
+		DocumentsEmptyPanel emptyDocuments = new DocumentsEmptyPanel(formPanel);
+		documentsHost.add(tabPane, FormPanel.DOCUMENTS_CARD_TABS);
+		documentsHost.add(emptyDocuments, FormPanel.DOCUMENTS_CARD_EMPTY);
+		formPanel.setDocumentsEmptyPanel(emptyDocuments);
+		formPanel.refreshDocumentsEmptyState();
+		dockingLayout = new DockingLayout(this, formPanel, documentsHost);
 		
 		setJMenuBar(createMenuBar()); // can't call set JMenuBar for historical / compatibility reasons
 		UiTheme.styleMenuBar(getJMenuBar());
@@ -426,6 +433,7 @@ public class MainFrame extends JFrame {
 		// Linux/VMware: updateComponentTreeUI can desync Docking Frames visibility vs View menu.
 		if (formPanel != null) {
 			formPanel.repairDiagramDockingAfterThemeChange();
+			formPanel.refreshDocumentsEmptyState();
 		}
 		UiTheme.styleMenuBar(getJMenuBar());
 	}

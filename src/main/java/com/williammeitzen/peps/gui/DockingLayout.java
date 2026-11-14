@@ -7,10 +7,10 @@ import java.io.StringWriter;
 
 import javax.swing.BorderFactory;
 import javax.swing.JCheckBoxMenuItem;
+import javax.swing.JComponent;
 import javax.swing.JFrame;
 import javax.swing.JMenu;
 import javax.swing.JPanel;
-import javax.swing.JTabbedPane;
 import javax.swing.SwingUtilities;
 
 import com.williammeitzen.peps.model.Database;
@@ -45,7 +45,7 @@ public class DockingLayout {
 	/** Called after Plans show/hide so nested Plan Diagram docks can re-sync. */
 	private Runnable layoutChangedHook;
 
-	public DockingLayout(JFrame owner, FormPanel plansPanel, JTabbedPane documentTabs) {
+	public DockingLayout(JFrame owner, FormPanel plansPanel, JComponent documentsContent) {
 		instance = this;
 		control = new CControl(owner);
 		SsmsDockingGuides.install(control);
@@ -56,7 +56,7 @@ public class DockingLayout {
 		plansDockable = createToolDockable(ID_PLANS, "Plans", plansPanel);
 
 		JPanel documentsHost = new JPanel(new BorderLayout());
-		documentsHost.add(documentTabs, BorderLayout.CENTER);
+		documentsHost.add(documentsContent, BorderLayout.CENTER);
 		documentsDockable = new DefaultSingleCDockable(ID_DOCUMENTS, "Documents", documentsHost);
 		documentsDockable.setCloseable(false);
 		documentsDockable.setExternalizable(false);

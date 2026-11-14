@@ -82,9 +82,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# TEMPORARY — Mac-only release iteration: skip Windows/Linux builds; ship mac-jar + .app.
-# Flip to $false (or remove) when restoring full multi-OS releases.
-$MacOnlyRelease = $true
+# Set $true to ship Mac-only (skip Windows jpackage + Ubuntu zip/.deb) during Mac iteration.
+$MacOnlyRelease = $false
 if ($MacOnlyRelease) {
 	$SkipUbuntu = $true
 	Write-Host "[dev-release] TEMPORARY Mac-only mode: Windows jpackage + Ubuntu zip/.deb are skipped."
@@ -516,7 +515,10 @@ function Build-UbuntuPackage {
 		"-o", "ConnectTimeout=20",
 		"-o", "StrictHostKeyChecking=accept-new"
 	)
-	$sshBatch = $sshKeyOpts + @("-o", "BatchMode=yes", "-o", "PreferredAuthentications=publickey")
+	# ssh -n: do not read console stdin (avoids a pause after remote build until Enter).
+	# Do not pass -n to scp — there it means dry-run.
+	$sshBatch = $sshKeyOpts + @("-n", "-o", "BatchMode=yes", "-o", "PreferredAuthentications=publickey")
+	$scpBatch = $sshKeyOpts + @("-o", "BatchMode=yes", "-o", "PreferredAuthentications=publickey")
 	$sshPassword = @(
 		"-o", "ConnectTimeout=20",
 		"-o", "StrictHostKeyChecking=accept-new",
@@ -645,7 +647,7 @@ echo "Built `$DEB_ABS"
 	try {
 		Write-Status "Uploading build script and running jpackage on Ubuntu…"
 		$remoteTmp = "/tmp/peps-ubuntu-jpackage.sh"
-		$up = Invoke-ScpDirect -ArgumentList ($sshBatch + @($remoteScriptPath, "${SshTarget}:$remoteTmp"))
+		$up = Invoke-ScpDirect -ArgumentList ($scpBatch + @($remoteScriptPath, "${SshTarget}:$remoteTmp"))
 		if ($up -ne 0) { throw "scp of build script failed (exit $up)" }
 
 		$build = Invoke-SshDirect -ArgumentList ($sshBatch + @($SshTarget, "bash $remoteTmp"))
@@ -675,7 +677,7 @@ echo "Built `$DEB_ABS"
 
 		Write-Status "Copying ${SshTarget}:$resolvedZip → $DestZip"
 		New-Item -ItemType Directory -Force -Path (Split-Path $DestZip) | Out-Null
-		$copyZip = Invoke-ScpDirect -ArgumentList ($sshBatch + @("${SshTarget}:$resolvedZip", $DestZip))
+		$copyZip = Invoke-ScpDirect -ArgumentList ($scpBatch + @("${SshTarget}:$resolvedZip", $DestZip))
 		if ($copyZip -ne 0) {
 			throw "scp of Linux zip failed (exit $copyZip)"
 		}
@@ -684,7 +686,7 @@ echo "Built `$DEB_ABS"
 		}
 
 		Write-Status "Copying ${SshTarget}:$resolvedDeb → $DestDeb"
-		$copyDeb = Invoke-ScpDirect -ArgumentList ($sshBatch + @("${SshTarget}:$resolvedDeb", $DestDeb))
+		$copyDeb = Invoke-ScpDirect -ArgumentList ($scpBatch + @("${SshTarget}:$resolvedDeb", $DestDeb))
 		if ($copyDeb -ne 0) {
 			throw "scp of Linux .deb failed (exit $copyDeb)"
 		}
@@ -720,7 +722,10 @@ function Build-MacAppPackage {
 		"-o", "ConnectTimeout=20",
 		"-o", "StrictHostKeyChecking=accept-new"
 	)
-	$sshBatch = $sshKeyOpts + @("-o", "BatchMode=yes", "-o", "PreferredAuthentications=publickey")
+	# ssh -n: do not read console stdin (avoids a pause after remote build until Enter).
+	# Do not pass -n to scp — there it means dry-run.
+	$sshBatch = $sshKeyOpts + @("-n", "-o", "BatchMode=yes", "-o", "PreferredAuthentications=publickey")
+	$scpBatch = $sshKeyOpts + @("-o", "BatchMode=yes", "-o", "PreferredAuthentications=publickey")
 	$sshPassword = @(
 		"-o", "ConnectTimeout=20",
 		"-o", "StrictHostKeyChecking=accept-new",
@@ -842,7 +847,7 @@ echo "Built `$ZIP_ABS"
 	try {
 		Write-Status "Uploading build script and running pack-mac-app.sh on Mac…"
 		$remoteTmp = "/tmp/peps-mac-jpackage.sh"
-		$up = Invoke-ScpDirect -ArgumentList ($sshBatch + @($remoteScriptPath, "${SshTarget}:$remoteTmp"))
+		$up = Invoke-ScpDirect -ArgumentList ($scpBatch + @($remoteScriptPath, "${SshTarget}:$remoteTmp"))
 		if ($up -ne 0) { throw "scp of Mac build script failed (exit $up)" }
 
 		$build = Invoke-SshDirect -ArgumentList ($sshBatch + @($SshTarget, "bash $remoteTmp"))
@@ -884,7 +889,7 @@ echo "Built `$ZIP_ABS"
 
 		Write-Status "Copying ${SshTarget}:$resolvedZip → $destZip"
 		New-Item -ItemType Directory -Force -Path $DestDir | Out-Null
-		$copyZip = Invoke-ScpDirect -ArgumentList ($sshBatch + @("${SshTarget}:$resolvedZip", $destZip))
+		$copyZip = Invoke-ScpDirect -ArgumentList ($scpBatch + @("${SshTarget}:$resolvedZip", $destZip))
 		if ($copyZip -ne 0) {
 			throw "scp of Mac .app zip failed (exit $copyZip)"
 		}
@@ -895,7 +900,7 @@ echo "Built `$ZIP_ABS"
 		$copiedDmg = $null
 		if (-not [string]::IsNullOrWhiteSpace($resolvedDmg)) {
 			Write-Status "Copying ${SshTarget}:$resolvedDmg → $destDmg"
-			$copyDmg = Invoke-ScpDirect -ArgumentList ($sshBatch + @("${SshTarget}:$resolvedDmg", $destDmg))
+			$copyDmg = Invoke-ScpDirect -ArgumentList ($scpBatch + @("${SshTarget}:$resolvedDmg", $destDmg))
 			if ($copyDmg -ne 0) {
 				Write-Warning "scp of Mac DMG failed (exit $copyDmg); continuing with .app zip only"
 			} elseif (Test-Path $destDmg) {
