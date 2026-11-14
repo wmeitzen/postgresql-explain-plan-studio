@@ -45,3 +45,6 @@ scripts/dev-release.local.ps1
 
 # Dev watch semaphore (created by Cursor / developer; consumed by scripts/dev-watch.*)
 RECOMPILENOW
+
+# Generated on macOS by scripts/pack-mac-app.sh
+packaging/mac/peps.icns

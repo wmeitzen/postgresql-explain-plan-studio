@@ -1,6 +1,25 @@
-PostgreSQL Explain Plan Studio — macOS (JAR)
+PostgreSQL Explain Plan Studio — macOS packaging
+================================================
 
-Install JDK 17+ (e.g. Temurin), then run: ./peps.sh
+1) JAR zip (any Mac + JDK 17+)
+   Built on Windows: .\scripts\pack-mac-jar.ps1
+   → target/PostgreSQLExplainPlanStudio-<ver>-mac-jar.zip
+   On the Mac: unzip, chmod +x peps.sh, ./peps.sh
 
-One JAR works on Intel and Apple Silicon Macs. A native .app / jpackage
-bundle (Intel, Apple Silicon, or universal) is not required for this path.
+2) Native .app / DMG (drag into Applications; bundled JRE)
+   Must be built ON a Mac (Intel → mac-x64, Apple Silicon → mac-arm64):
+
+     # Prefer a local disk copy (e.g. ~/peps), not a VMware HGFS share:
+     ./scripts/pack-mac-app.sh
+
+   Outputs:
+     target/jpackage-mac/PostgreSQLExplainPlanStudio.app
+     target/PostgreSQLExplainPlanStudio-<ver>-mac-<arch>.dmg
+     target/PostgreSQLExplainPlanStudio-<ver>-mac-<arch>.zip
+
+   Install: open the .dmg and drag the .app into Applications.
+
+   First launch of an unsigned build: right-click the app → Open → Open.
+   Signing/notarization can remove that Gatekeeper step later.
+
+peps.icns is generated from src/main/resources/images/app-icon.png by pack-mac-app.sh.
