@@ -15,7 +15,15 @@ Graphical viewer for PostgreSQL `EXPLAIN` plans.
   To install the `x64.zip` on macOS:
   - Unzip file
   - Drag `PostgreSQLExplainPlanStudio.app` to Applications
-- <img src="docs/readme-icons/apple.svg" width="16" height="16" alt="macOS" /> macOS (JAR): [PostgreSQLExplainPlanStudio-0.0.23-mac-jar.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.23-mac-jar.zip) — unzip, `chmod +x peps.sh`, install JDK 17+, then `./peps.sh`
+- <img src="docs/readme-icons/apple.svg" width="16" height="16" alt="macOS" /> macOS (JAR): [PostgreSQLExplainPlanStudio-0.0.23-mac-jar.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.23-mac-jar.zip)
+
+  To install the `jar.zip` on macOS:
+  - Unzip file
+  - Open a terminal
+  - Navigate to the unzipped file's new directory
+  - `chmod +x peps.sh`
+  - Install JDK 17 or later
+  - `./peps.sh`
 
 All [releases](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases).
 
