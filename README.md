@@ -7,7 +7,8 @@ Graphical viewer for PostgreSQL `EXPLAIN` plans.
 - Windows installer: [PostgreSQLExplainPlanStudio-0.0.17-windows-x64-installer.exe](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.17-windows-x64-installer.exe)
 - Windows zip: [PostgreSQLExplainPlanStudio-0.0.17-windows-x64.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.17-windows-x64.zip)
 - Linux zip: [PostgreSQLExplainPlanStudio-0.0.17-linux-x64.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.17-linux-x64.zip)
-- Linux `.deb`: [PostgreSQLExplainPlanStudio-0.0.17-linux-x64.deb](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.17-linux-x64.deb) � `sudo apt install ./PostgreSQLExplainPlanStudio-0.0.17-linux-x64.deb`
+- Linux `.deb`: [PostgreSQLExplainPlanStudio-0.0.17-linux-x64.deb](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.17-linux-x64.deb)
+  To install .deb file on linux: `sudo apt install ./PostgreSQLExplainPlanStudio-0.0.17-linux-x64.deb`
 - macOS (JAR): build with `.\scripts\pack-mac-jar.ps1` ? `target/PostgreSQLExplainPlanStudio-<version>-mac-jar.zip` (install JDK 17+, then `chmod +x peps.sh && ./peps.sh`)
 
 All [releases](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases).
@@ -29,13 +30,13 @@ All [releases](https://github.com/wmeitzen/postgresql-explain-plan-studio/releas
 
 I develop on Windows, and continuously cascade changes to a linux VM.
 
-**Windows** — two terminals from the repo root:
+**Windows** â€” two terminals from the repo root:
 
 ```powershell
-# Terminal 1 — keep running while developing
+# Terminal 1 â€” keep running while developing
 .\scripts\dev-watch.ps1
 
-# Terminal 2 — launch when you want to test
+# Terminal 2 â€” launch when you want to test
 .\scripts\dev-run.ps1
 
 # Optional: trigger a rebuild by hand
@@ -52,7 +53,7 @@ sudo apt install -y openjdk-17-jdk rsync   # once
 bash ~/peps/scripts/dev-watch.sh
 ```
 
-That mounts HGFS if `/mnt/hgfs` is empty, refreshes from the Windows share when `~/peps` is stale, syncs Windows → `~/peps`, does an **initial compile**, then watches host changes / `RECOMPILENOW`. First boot only (no `~/peps` yet):
+That mounts HGFS if `/mnt/hgfs` is empty, refreshes from the Windows share when `~/peps` is stale, syncs Windows â†’ `~/peps`, does an **initial compile**, then watches host changes / `RECOMPILENOW`. First boot only (no `~/peps` yet):
 
 ```bash
 sudo mkdir -p /mnt/hgfs
@@ -111,7 +112,7 @@ Or prompt for a version, build **Windows + Linux** packages, tag, and upload to 
 
 ```powershell
 # optional local default (gitignored):
-#   scripts\dev-release.local.ps1  →  $PepsUbuntuSsh = "administrator@192.168.163.156"
+#   scripts\dev-release.local.ps1  â†’  $PepsUbuntuSsh = "administrator@192.168.163.156"
 .\scripts\dev-release.ps1
 # optional: .\scripts\dev-release.ps1 -Version 0.0.9 -UbuntuSsh administrator@192.168.163.156
 ```
@@ -158,7 +159,7 @@ Run the app:
 # sudo apt install ./PostgreSQLExplainPlanStudio-<version>-linux-x64.deb
 ```
 
-Optional glibc check (should be ≤ 2.31):
+Optional glibc check (should be â‰¤ 2.31):
 
 ```bash
 objdump -T target/jpackage/PostgreSQLExplainPlanStudio/bin/PostgreSQLExplainPlanStudio \
@@ -184,4 +185,4 @@ A self-contained `.app` via `jpackage` (and any Intel / arm64 / universal native
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT â€” see [LICENSE](LICENSE).
