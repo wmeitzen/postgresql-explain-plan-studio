@@ -8,6 +8,7 @@ Graphical viewer for PostgreSQL `EXPLAIN` plans.
 - Windows zip: [PostgreSQLExplainPlanStudio-0.0.17-windows-x64.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.17-windows-x64.zip)
 - Linux zip: [PostgreSQLExplainPlanStudio-0.0.17-linux-x64.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.17-linux-x64.zip)
 - Linux `.deb`: [PostgreSQLExplainPlanStudio-0.0.17-linux-x64.deb](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.17-linux-x64.deb)
+
   To install .deb file on linux: `sudo apt install ./PostgreSQLExplainPlanStudio-0.0.17-linux-x64.deb`
 - macOS (JAR): build with `.\scripts\pack-mac-jar.ps1` ? `target/PostgreSQLExplainPlanStudio-<version>-mac-jar.zip` (install JDK 17+, then `chmod +x peps.sh && ./peps.sh`)
 
