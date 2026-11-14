@@ -4,13 +4,13 @@ Graphical viewer for PostgreSQL `EXPLAIN` plans.
 
 ## Download
 
-- Windows installer: [PostgreSQLExplainPlanStudio-0.0.17-windows-x64-installer.exe](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.17-windows-x64-installer.exe)
-- Windows zip: [PostgreSQLExplainPlanStudio-0.0.17-windows-x64.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.17-windows-x64.zip)
-- Linux zip: [PostgreSQLExplainPlanStudio-0.0.17-linux-x64.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.17-linux-x64.zip)
-- Linux `.deb`: [PostgreSQLExplainPlanStudio-0.0.17-linux-x64.deb](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.17-linux-x64.deb)
+- <img src="docs/readme-icons/windows.svg" width="16" height="16" alt="Windows" /> Windows installer: [PostgreSQLExplainPlanStudio-0.0.17-windows-x64-installer.exe](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.17-windows-x64-installer.exe)
+- <img src="docs/readme-icons/windows.svg" width="16" height="16" alt="Windows" /> Windows zip: [PostgreSQLExplainPlanStudio-0.0.17-windows-x64.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.17-windows-x64.zip)
+- <img src="docs/readme-icons/linux.svg" width="16" height="16" alt="Linux" /> Linux zip: [PostgreSQLExplainPlanStudio-0.0.17-linux-x64.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.17-linux-x64.zip)
+- <img src="docs/readme-icons/linux.svg" width="16" height="16" alt="Linux" /> Linux `.deb`: [PostgreSQLExplainPlanStudio-0.0.17-linux-x64.deb](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.17-linux-x64.deb)
 
-  To install .deb file on linux: `sudo apt install ./PostgreSQLExplainPlanStudio-0.0.17-linux-x64.deb`
-- macOS (JAR): build with `.\scripts\pack-mac-jar.ps1` ? `target/PostgreSQLExplainPlanStudio-<version>-mac-jar.zip` (install JDK 17+, then `chmod +x peps.sh && ./peps.sh`)
+  To install the `.deb` on Linux: `sudo apt install ./PostgreSQLExplainPlanStudio-0.0.17-linux-x64.deb`
+- <img src="docs/readme-icons/apple.svg" width="16" height="16" alt="macOS" /> macOS (JAR): build with `.\scripts\pack-mac-jar.ps1` → `target/PostgreSQLExplainPlanStudio-<version>-mac-jar.zip` (install JDK 17+, then `chmod +x peps.sh && ./peps.sh`)
 
 All [releases](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases).
 

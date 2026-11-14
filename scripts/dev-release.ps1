@@ -131,14 +131,19 @@ function Update-ReadmeDownloads([string]$NewVersion) {
 	$winZip = "PostgreSQLExplainPlanStudio-$NewVersion-windows-x64.zip"
 	$linuxZip = "PostgreSQLExplainPlanStudio-$NewVersion-linux-x64.zip"
 	$linuxDeb = "PostgreSQLExplainPlanStudio-$NewVersion-linux-x64.deb"
+	$winIcon = '<img src="docs/readme-icons/windows.svg" width="16" height="16" alt="Windows" />'
+	$linuxIcon = '<img src="docs/readme-icons/linux.svg" width="16" height="16" alt="Linux" />'
+	$macIcon = '<img src="docs/readme-icons/apple.svg" width="16" height="16" alt="macOS" />'
 	$downloadBlock = @"
 ## Download
 
-- Windows installer: [$winExe]($base/$winExe)
-- Windows zip: [$winZip]($base/$winZip)
-- Linux zip: [$linuxZip]($base/$linuxZip)
-- Linux ``.deb``: [$linuxDeb]($base/$linuxDeb) — ``sudo apt install ./$linuxDeb``
-- macOS (JAR): build with ``.\scripts\pack-mac-jar.ps1`` → ``target/PostgreSQLExplainPlanStudio-<version>-mac-jar.zip`` (install JDK 17+, then ``chmod +x peps.sh && ./peps.sh``)
+- $winIcon Windows installer: [$winExe]($base/$winExe)
+- $winIcon Windows zip: [$winZip]($base/$winZip)
+- $linuxIcon Linux zip: [$linuxZip]($base/$linuxZip)
+- $linuxIcon Linux ``.deb``: [$linuxDeb]($base/$linuxDeb)
+
+  To install the ``.deb`` on Linux: ``sudo apt install ./$linuxDeb``
+- $macIcon macOS (JAR): build with ``.\scripts\pack-mac-jar.ps1`` → ``target/PostgreSQLExplainPlanStudio-<version>-mac-jar.zip`` (install JDK 17+, then ``chmod +x peps.sh && ./peps.sh``)
 
 All [releases](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases).
 "@
