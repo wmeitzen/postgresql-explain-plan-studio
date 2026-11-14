@@ -6,8 +6,8 @@
 .DESCRIPTION
   1) Bumps version, commits/tags/pushes (unless -SkipGit)
   2) Builds Windows zip (+ .exe installer when WiX is available) on this machine
-  3) SSHs to the Ubuntu VM, syncs from the VMware share into ~/peps, runs jpackage,
-     and copies the linux-x64 zip back
+  3) SSHs to the Ubuntu VM, syncs from the VMware share into ~/peps, runs jpackage
+     (app-image zip + .deb), and copies both Linux artifacts back
   4) Creates/uploads the GitHub release (private repos OK when `gh auth login` is done)
 
   Default Ubuntu SSH target: administrator@192.168.163.156 (Ubuntu 20.04 release VM).
@@ -34,7 +34,7 @@
   Path on the VM to the Windows share checkout (default: /mnt/hgfs/peps)
 
 .PARAMETER SkipBuild
-  Skip both OS builds; upload existing zips already in target\
+  Skip both OS builds; upload existing zip/.exe/.deb assets already in target\
 
 .PARAMETER SkipUbuntu
   Build/upload Windows only
@@ -118,6 +118,41 @@ function Set-ProjectVersion([string]$NewVersion) {
 		throw "Failed to update APPLICATION_VERSION in MainFrame.java"
 	}
 	$mainLines | Set-Content -Path $mainPath
+}
+
+function Update-ReadmeDownloads([string]$NewVersion) {
+	# Keep README ## Download links in sync with release asset names (incl. linux-x64.deb).
+	$readmePath = Join-Path $RepoRoot "README.md"
+	if (-not (Test-Path -LiteralPath $readmePath)) {
+		throw "Missing README.md at $readmePath"
+	}
+	$base = "https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download"
+	$winExe = "PostgreSQLExplainPlanStudio-$NewVersion-windows-x64-installer.exe"
+	$winZip = "PostgreSQLExplainPlanStudio-$NewVersion-windows-x64.zip"
+	$linuxZip = "PostgreSQLExplainPlanStudio-$NewVersion-linux-x64.zip"
+	$linuxDeb = "PostgreSQLExplainPlanStudio-$NewVersion-linux-x64.deb"
+	$downloadBlock = @"
+## Download
+
+- Windows installer: [$winExe]($base/$winExe)
+- Windows zip: [$winZip]($base/$winZip)
+- Linux zip: [$linuxZip]($base/$linuxZip)
+- Linux ``.deb``: [$linuxDeb]($base/$linuxDeb) — ``sudo apt install ./$linuxDeb``
+- macOS (JAR): build with ``.\scripts\pack-mac-jar.ps1`` → ``target/PostgreSQLExplainPlanStudio-<version>-mac-jar.zip`` (install JDK 17+, then ``chmod +x peps.sh && ./peps.sh``)
+
+All [releases](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases).
+"@
+	$raw = Get-Content -LiteralPath $readmePath -Raw
+	# Normalize newlines for a reliable match, then restore Windows CRLF on write.
+	$normalized = $raw -replace "`r`n", "`n"
+	$pattern = '(?s)## Download\n.*?\nAll \[releases\]\(https://github\.com/wmeitzen/postgresql-explain-plan-studio/releases\)\.\n'
+	$replacement = ($downloadBlock -replace "`r`n", "`n") + "`n"
+	if ($normalized -notmatch $pattern) {
+		throw "Failed to locate README ## Download section to update for version $NewVersion"
+	}
+	$updated = [regex]::Replace($normalized, $pattern, [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $replacement }, 1)
+	$updated = $updated -replace "`n", "`r`n"
+	Set-Content -LiteralPath $readmePath -Value $updated -NoNewline
 }
 
 function Test-GhAuth {
@@ -327,8 +362,11 @@ function Build-UbuntuPackage {
 		[string]$SshTarget,
 		[string]$HostRepo,
 		[string]$LocalRepo,
+		[string]$AppVersion,
 		[string]$ZipName,
-		[string]$DestZip
+		[string]$DebName,
+		[string]$DestZip,
+		[string]$DestDeb
 	)
 
 	if (-not (Get-Command ssh.exe -ErrorAction SilentlyContinue) -or
@@ -336,7 +374,7 @@ function Build-UbuntuPackage {
 		throw "OpenSSH client (ssh/scp) not found. Install 'OpenSSH Client' optional feature on Windows."
 	}
 
-	Write-Status "Building Ubuntu jpackage on $SshTarget …"
+	Write-Status "Building Ubuntu jpackage (zip + .deb) on $SshTarget …"
 
 	$keyPath = Ensure-PepsSshKey
 	$sshKeyOpts = @(
@@ -366,21 +404,25 @@ function Build-UbuntuPackage {
 	Write-Status "SSH key auth OK — no more password prompts for this release"
 
 	$remoteScriptPath = Join-Path $env:TEMP "peps-ubuntu-jpackage.sh"
-	$remotePathFile = "/tmp/peps-linux-zip-path.txt"
+	$remoteZipPathFile = "/tmp/peps-linux-zip-path.txt"
+	$remoteDebPathFile = "/tmp/peps-linux-deb-path.txt"
 	# Note: quoted "~/peps" does NOT expand in bash — expand leading ~ to $HOME explicitly.
 	$remoteScript = @"
 set -euo pipefail
 HOST_REPO='$HostRepo'
 LOCAL_REPO='$LocalRepo'
+APP_VERSION='$AppVersion'
 ZIP_NAME='$ZipName'
-PATH_FILE='$remotePathFile'
+DEB_NAME='$DebName'
+ZIP_PATH_FILE='$remoteZipPathFile'
+DEB_PATH_FILE='$remoteDebPathFile'
 MAX_GLIBC='2.31'
 case "`$LOCAL_REPO" in
   "~") LOCAL_REPO="`$HOME" ;;
   "~/"*) LOCAL_REPO="`$HOME/`${LOCAL_REPO#~/}" ;;
 esac
 
-# Linux releases must build on Ubuntu 20.04 so the zip runs on 20.04+ (glibc floor).
+# Linux releases must build on Ubuntu 20.04 so the zip/.deb run on 20.04+ (glibc floor).
 if [[ -r /etc/os-release ]]; then
   # shellcheck disable=SC1091
   . /etc/os-release
@@ -388,6 +430,12 @@ fi
 if [[ "`${VERSION_ID:-}" != "20.04" ]]; then
   echo "Refusing Linux jpackage on this host: need Ubuntu 20.04, got '`${PRETTY_NAME:-unknown}' (VERSION_ID=`${VERSION_ID:-?})." >&2
   echo "Point -UbuntuSsh / scripts/dev-release.local.ps1 at the Ubuntu 20.04 release VM (not the newer sync VM)." >&2
+  exit 1
+fi
+
+if ! command -v fakeroot >/dev/null 2>&1; then
+  echo "fakeroot is required for jpackage --type deb." >&2
+  echo "Install on the Ubuntu 20.04 VM: sudo apt update && sudo apt install -y fakeroot" >&2
   exit 1
 fi
 
@@ -411,7 +459,8 @@ test -f "target/`$ZIP_NAME"
 ZIP_ABS="`$(pwd)/target/`$ZIP_NAME"
 
 # Fail if the launcher needs a newer glibc than Ubuntu 20.04 (e.g. wrong build host).
-LAUNCHER="target/jpackage/PostgreSQLExplainPlanStudio/bin/PostgreSQLExplainPlanStudio"
+APP_IMAGE="target/jpackage/PostgreSQLExplainPlanStudio"
+LAUNCHER="`$APP_IMAGE/bin/PostgreSQLExplainPlanStudio"
 if [[ ! -x "`$LAUNCHER" ]]; then
   echo "Missing jpackage launcher: `$LAUNCHER" >&2
   exit 1
@@ -427,8 +476,36 @@ if [[ "`$(printf '%s\n%s\n' "`$MAX_GLIBC" "`$FLOOR" | sort -V | tail -1)" != "`$
   exit 1
 fi
 
-printf '%s\n' "`$ZIP_ABS" > "`$PATH_FILE"
+# .deb from the app-image already verified above (bundled runtime + glibc floor).
+rm -f target/*.deb
+jpackage \
+  --type deb \
+  --app-image "`$APP_IMAGE" \
+  --dest target \
+  --name PostgreSQLExplainPlanStudio \
+  --app-version "`$APP_VERSION" \
+  --vendor 'William Meitzen' \
+  --description 'PostgreSQL Explain Plan Studio' \
+  --linux-package-name postgresql-explain-plan-studio \
+  --linux-app-category database \
+  --linux-shortcut \
+  --linux-menu-group 'Development'
+shopt -s nullglob
+debs=(target/*.deb)
+shopt -u nullglob
+if [[ `${#debs[@]} -ne 1 ]]; then
+  echo "Expected exactly one .deb in target/ after jpackage; found `${#debs[@]}." >&2
+  printf '  %s\n' "`${debs[@]}" >&2
+  exit 1
+fi
+mv -f "`${debs[0]}" "target/`$DEB_NAME"
+DEB_ABS="`$(pwd)/target/`$DEB_NAME"
+test -f "`$DEB_ABS"
+
+printf '%s\n' "`$ZIP_ABS" > "`$ZIP_PATH_FILE"
+printf '%s\n' "`$DEB_ABS" > "`$DEB_PATH_FILE"
 echo "Built `$ZIP_ABS"
+echo "Built `$DEB_ABS"
 "@
 	[System.IO.File]::WriteAllText($remoteScriptPath, ($remoteScript -replace "`r`n", "`n"))
 
@@ -440,32 +517,46 @@ echo "Built `$ZIP_ABS"
 
 		$build = Invoke-SshDirect -ArgumentList ($sshBatch + @($SshTarget, "bash $remoteTmp"))
 		if ($build -ne 0) {
-			throw "Ubuntu remote jpackage failed (exit $build). Check that /mnt/hgfs/peps is mounted and JDK 17 + rsync are installed."
+			throw "Ubuntu remote jpackage failed (exit $build). Check that /mnt/hgfs/peps is mounted and JDK 17 + rsync + fakeroot are installed."
 		}
 
-		$pathOutFile = Join-Path $env:TEMP "peps-remote-zip-path.txt"
-		Remove-Item -Force $pathOutFile -ErrorAction SilentlyContinue
-		$prev = $ErrorActionPreference
-		$ErrorActionPreference = "SilentlyContinue"
-		try {
-			& ssh.exe @sshBatch $SshTarget "cat $remotePathFile" | Set-Content -Path $pathOutFile
-			$pathCode = $LASTEXITCODE
-		} finally {
-			$ErrorActionPreference = $prev
+		function Get-RemotePathFromFile([string]$RemoteFile, [string]$Label) {
+			$pathOutFile = Join-Path $env:TEMP ("peps-remote-" + $Label + "-path.txt")
+			Remove-Item -Force $pathOutFile -ErrorAction SilentlyContinue
+			$prev = $ErrorActionPreference
+			$ErrorActionPreference = "SilentlyContinue"
+			try {
+				& ssh.exe @sshBatch $SshTarget "cat $RemoteFile" | Set-Content -Path $pathOutFile
+				$pathCode = $LASTEXITCODE
+			} finally {
+				$ErrorActionPreference = $prev
+			}
+			if ($pathCode -ne 0 -or -not (Test-Path $pathOutFile) -or -not (Get-Content $pathOutFile -Raw).Trim()) {
+				throw "Could not read remote $Label path from $RemoteFile"
+			}
+			return ((Get-Content $pathOutFile -Raw).Trim() -replace "`r", "" -replace "`n", "")
 		}
-		if ($pathCode -ne 0 -or -not (Test-Path $pathOutFile) -or -not (Get-Content $pathOutFile -Raw).Trim()) {
-			throw "Could not read remote zip path from $remotePathFile"
-		}
-		$resolved = (Get-Content $pathOutFile -Raw).Trim() -replace "`r", "" -replace "`n", ""
 
-		Write-Status "Copying ${SshTarget}:$resolved → $DestZip"
+		$resolvedZip = Get-RemotePathFromFile -RemoteFile $remoteZipPathFile -Label "zip"
+		$resolvedDeb = Get-RemotePathFromFile -RemoteFile $remoteDebPathFile -Label "deb"
+
+		Write-Status "Copying ${SshTarget}:$resolvedZip → $DestZip"
 		New-Item -ItemType Directory -Force -Path (Split-Path $DestZip) | Out-Null
-		$copy = Invoke-ScpDirect -ArgumentList ($sshBatch + @("${SshTarget}:$resolved", $DestZip))
-		if ($copy -ne 0) {
-			throw "scp of Linux zip failed (exit $copy)"
+		$copyZip = Invoke-ScpDirect -ArgumentList ($sshBatch + @("${SshTarget}:$resolvedZip", $DestZip))
+		if ($copyZip -ne 0) {
+			throw "scp of Linux zip failed (exit $copyZip)"
 		}
 		if (-not (Test-Path $DestZip)) {
 			throw "Linux zip was not copied to $DestZip"
+		}
+
+		Write-Status "Copying ${SshTarget}:$resolvedDeb → $DestDeb"
+		$copyDeb = Invoke-ScpDirect -ArgumentList ($sshBatch + @("${SshTarget}:$resolvedDeb", $DestDeb))
+		if ($copyDeb -ne 0) {
+			throw "scp of Linux .deb failed (exit $copyDeb)"
+		}
+		if (-not (Test-Path $DestDeb)) {
+			throw "Linux .deb was not copied to $DestDeb"
 		}
 	} finally {
 		Remove-Item -Force $remoteScriptPath -ErrorAction SilentlyContinue
@@ -486,9 +577,11 @@ $Tag = "v$Version"
 $WindowsZipName = "PostgreSQLExplainPlanStudio-$Version-windows-x64.zip"
 $WindowsExeName = "PostgreSQLExplainPlanStudio-$Version-windows-x64-installer.exe"
 $LinuxZipName = "PostgreSQLExplainPlanStudio-$Version-linux-x64.zip"
+$LinuxDebName = "PostgreSQLExplainPlanStudio-$Version-linux-x64.deb"
 $WindowsZip = Join-Path $RepoRoot "target\$WindowsZipName"
 $WindowsExe = Join-Path $RepoRoot "target\$WindowsExeName"
 $LinuxZip = Join-Path $RepoRoot "target\$LinuxZipName"
+$LinuxDeb = Join-Path $RepoRoot "target\$LinuxDebName"
 
 Write-Status "Preparing release $Tag"
 Test-GhAuth
@@ -499,6 +592,8 @@ if ($current -ne $Version) {
 } else {
 	Write-Status "pom.xml already at $Version"
 }
+Write-Status "Updating README download links for $Version"
+Update-ReadmeDownloads $Version
 
 if (-not $SkipUbuntu -and -not $SkipBuild) {
 	$UbuntuSsh = Resolve-UbuntuSshTarget -Explicit $UbuntuSsh
@@ -513,8 +608,8 @@ Write-Host ""
 Write-Host "This will:"
 Write-Host "  - $(if ($SkipGit) { 'Skip git commit/tag/push' } else { "Commit/tag/push $Tag" })"
 Write-Host "  - $(if ($SkipBuild) { 'Skip Windows build' } else { 'Build Windows jpackage zip (+ .exe installer if WiX is available)' })"
-Write-Host "  - $(if ($SkipBuild -or $SkipUbuntu) { 'Skip Ubuntu build' } else { "Build Ubuntu jpackage on $UbuntuSsh" })"
-Write-Host "  - Upload available zip/.exe assets to GitHub release $Tag"
+Write-Host "  - $(if ($SkipBuild -or $SkipUbuntu) { 'Skip Ubuntu build' } else { "Build Ubuntu jpackage zip + .deb on $UbuntuSsh" })"
+Write-Host "  - Upload available zip/.exe/.deb assets to GitHub release $Tag"
 $confirm = Read-Host "Continue? [Y/n]"
 if ($confirm -match '^[Nn]') {
 	Write-Status "Aborted."
@@ -526,8 +621,8 @@ Save-DevReleaseLocalConfig -UbuntuSshTarget $UbuntuSsh -LastVersion $Version
 # Push first so the Windows share (and any git consumers) see the release commit before Ubuntu syncs.
 if (-not $SkipGit) {
 	Write-Status "Committing version bump (if any) and tagging $Tag"
-	git add pom.xml "src/main/java/com/williammeitzen/peps/gui/MainFrame.java"
-	$status = git status --porcelain -- pom.xml "src/main/java/com/williammeitzen/peps/gui/MainFrame.java"
+	git add pom.xml README.md scripts/dev-release.ps1 "src/main/java/com/williammeitzen/peps/gui/MainFrame.java"
+	$status = git status --porcelain -- pom.xml README.md scripts/dev-release.ps1 "src/main/java/com/williammeitzen/peps/gui/MainFrame.java"
 	if ($status) {
 		$commit = Invoke-Native -Command { git commit -m "Release $Version" }
 		if ($commit.Output) { $commit.Output | ForEach-Object { Write-Host $_ } }
@@ -571,7 +666,9 @@ if (-not $SkipBuild) {
 
 	if (-not $SkipUbuntu) {
 		Build-UbuntuPackage -SshTarget $UbuntuSsh -HostRepo $UbuntuHostRepo `
-			-LocalRepo $UbuntuLocalRepo -ZipName $LinuxZipName -DestZip $LinuxZip
+			-LocalRepo $UbuntuLocalRepo -AppVersion $Version `
+			-ZipName $LinuxZipName -DebName $LinuxDebName `
+			-DestZip $LinuxZip -DestDeb $LinuxDeb
 	}
 }
 
@@ -579,6 +676,7 @@ $assets = @()
 if (Test-Path $WindowsZip) { $assets += $WindowsZip }
 if (Test-Path $WindowsExe) { $assets += $WindowsExe }
 if (Test-Path $LinuxZip) { $assets += $LinuxZip }
+if (Test-Path $LinuxDeb) { $assets += $LinuxDeb }
 if ($assets.Count -eq 0) {
 	throw "No release assets found in target\ for version $Version"
 }
@@ -590,6 +688,9 @@ if (-not (Test-Path $WindowsExe)) {
 }
 if (-not (Test-Path $LinuxZip) -and -not $SkipUbuntu) {
 	throw "Linux zip missing after Ubuntu build: $LinuxZip"
+}
+if (-not (Test-Path $LinuxDeb) -and -not $SkipUbuntu) {
+	throw "Linux .deb missing after Ubuntu build: $LinuxDeb"
 }
 
 Write-Host "Assets to publish:"
@@ -619,9 +720,9 @@ User data (SQLite plans) lives outside the app install tree:
 $exeNotes
 
 ### Ubuntu / Linux
-- Asset: ``$LinuxZipName``
-- Unzip and run ``PostgreSQLExplainPlanStudio/bin/PostgreSQLExplainPlanStudio``
-- Upgrades: replace the app folder; leave the data directory above alone
+- Installer (Ubuntu/Debian): ``$LinuxDebName`` — ``sudo apt install ./$LinuxDebName``
+- Portable: ``$LinuxZipName`` — unzip and run ``PostgreSQLExplainPlanStudio/bin/PostgreSQLExplainPlanStudio``
+- Upgrades: replace the app / reinstall the ``.deb``; leave the data directory above alone
 "@
 
 $prevEa = $ErrorActionPreference

@@ -4,10 +4,10 @@ Graphical viewer for PostgreSQL `EXPLAIN` plans.
 
 ## Download
 
-- Windows installer: [PostgreSQLExplainPlanStudio-0.0.16-windows-installer.exe](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.16-windows-installer.exe)
-- Windows zip: [PostgreSQLExplainPlanStudio-0.0.16-windows-x64.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.16-windows-x64.zip)
-- Linux zip: [PostgreSQLExplainPlanStudio-0.0.16-linux-x64.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.16-linux-x64.zip)
-- Linux RPM: [add link to filename]
+- Windows installer: [PostgreSQLExplainPlanStudio-0.0.17-windows-x64-installer.exe](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.17-windows-x64-installer.exe)
+- Windows zip: [PostgreSQLExplainPlanStudio-0.0.17-windows-x64.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.17-windows-x64.zip)
+- Linux zip: [PostgreSQLExplainPlanStudio-0.0.17-linux-x64.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.17-linux-x64.zip)
+- Linux `.deb`: [PostgreSQLExplainPlanStudio-0.0.17-linux-x64.deb](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.17-linux-x64.deb) — `sudo apt install ./PostgreSQLExplainPlanStudio-0.0.17-linux-x64.deb`
 - macOS (JAR): build with `.\scripts\pack-mac-jar.ps1` → `target/PostgreSQLExplainPlanStudio-<version>-mac-jar.zip` (install JDK 17+, then `chmod +x peps.sh && ./peps.sh`)
 
 All [releases](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases).
@@ -107,7 +107,7 @@ For the setup `.exe` installer, also install [WiX Toolset](https://wixtoolset.or
 .\mvnw.cmd -P jpackage -DskipTests verify
 ```
 
-Or prompt for a version, build **Windows + Linux** packages, tag, and upload to GitHub (private repo OK if `gh auth login` is done). The Linux jpackage step SSHs to the **Ubuntu 20.04** release VM (default `administrator@192.168.163.156`), syncs from `/mnt/hgfs/peps`, and refuses hosts that are not 20.04 / launchers needing glibc newer than 2.31. Day-to-day `RECOMPILENOW` sync can stay on a newer Ubuntu VM (e.g. 154).
+Or prompt for a version, build **Windows + Linux** packages, tag, and upload to GitHub (private repo OK if `gh auth login` is done). The Linux jpackage step SSHs to the **Ubuntu 20.04** release VM (default `administrator@192.168.163.156`), syncs from `/mnt/hgfs/peps`, builds the `linux-x64` zip **and** a `.deb` installer (`fakeroot` required), and refuses hosts that are not 20.04 / launchers needing glibc newer than 2.31. Day-to-day `RECOMPILENOW` sync can stay on a newer Ubuntu VM (e.g. 154).
 
 ```powershell
 # optional local default (gitignored):
@@ -128,22 +128,34 @@ Build the published `linux-x64` zip on **Ubuntu 20.04** (not a newer host) so it
 
 ```bash
 sudo apt update
-sudo apt install -y openjdk-17-jdk rsync
+sudo apt install -y openjdk-17-jdk rsync fakeroot
 jpackage --version
 
 # from a sync of the repo (e.g. ~/peps after rsync from /mnt/hgfs/peps)
 ./mvnw -P jpackage -DskipTests verify
+
+# .deb from the verified app-image (dev-release.ps1 does this automatically)
+jpackage --type deb \
+  --app-image target/jpackage/PostgreSQLExplainPlanStudio \
+  --dest target \
+  --name PostgreSQLExplainPlanStudio \
+  --app-version "$(grep -oP '(?<=<jpackage.appVersion>)[^<]+' pom.xml | head -1)" \
+  --linux-package-name postgresql-explain-plan-studio \
+  --linux-shortcut
 ```
 
 Outputs:
 
 - `target/jpackage/PostgreSQLExplainPlanStudio/bin/PostgreSQLExplainPlanStudio`
 - `target/PostgreSQLExplainPlanStudio-<version>-linux-x64.zip`
+- `target/*.deb` (renamed by `dev-release.ps1` to `PostgreSQLExplainPlanStudio-<version>-linux-x64.deb`)
 
 Run the app:
 
 ```bash
 ./target/jpackage/PostgreSQLExplainPlanStudio/bin/PostgreSQLExplainPlanStudio
+# or after installing the .deb:
+# sudo apt install ./PostgreSQLExplainPlanStudio-<version>-linux-x64.deb
 ```
 
 Optional glibc check (should be ≤ 2.31):
