@@ -177,9 +177,11 @@ One JAR works on Intel and Apple Silicon when a JDK is installed. Build on Windo
 
 On the Mac: unzip `target/PostgreSQLExplainPlanStudio-<version>-mac-jar.zip`, then `chmod +x peps.sh && ./peps.sh`.
 
-**macOS — `.app` / DMG (drag into Applications; bundled JRE)**
+**macOS — `.app` (drag into Applications; bundled JRE)**
 
-Must be built **on a Mac** with JDK 17+ (`jpackage`). Prefer a **local** checkout (e.g. `~/peps`), not a VMware HGFS share:
+Must be built **on a Mac** with JDK 17+ (`jpackage`). Prefer a **local** checkout (e.g. `~/peps`), not a VMware HGFS share.
+
+`.\scripts\dev-release.ps1` does this over SSH to the Mac VM (default `macosx@192.168.18.35`, override with `-MacSsh` / `$env:PEPS_MAC_SSH` / `scripts/dev-release.local.ps1`). Manual build:
 
 ```bash
 chmod +x scripts/pack-mac-app.sh
@@ -189,10 +191,10 @@ chmod +x scripts/pack-mac-app.sh
 Outputs:
 
 - `target/jpackage-mac/PostgreSQLExplainPlanStudio.app`
-- `target/PostgreSQLExplainPlanStudio-<version>-mac-x64.dmg` (or `mac-arm64` on Apple Silicon)
-- matching `.zip` of the `.app`
+- `target/PostgreSQLExplainPlanStudio-<version>-mac-x64.zip` (or `mac-arm64`) — unzip and drag the `.app` to Applications
+- matching `.dmg` when built interactively (skipped over SSH to avoid the SetFile / Xcode CLT dialog)
 
-Open the DMG and drag the app into Applications. Unsigned builds may need right-click → Open the first time. Signing/notarization is still deferred.
+Unsigned builds may need right-click → Open the first time. Signing/notarization is still deferred.
 
 ## License
 

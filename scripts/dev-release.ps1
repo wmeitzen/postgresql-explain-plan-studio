@@ -1,23 +1,26 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-  Prompt for a release version, build Windows + Ubuntu jpackage packages, and publish a GitHub release.
+  Prompt for a release version, build Windows + Ubuntu + macOS packages, and publish a GitHub release.
 
 .DESCRIPTION
   1) Bumps version, commits/tags/pushes (unless -SkipGit)
   2) Builds Windows zip (+ .exe installer when WiX is available) on this machine
   3) SSHs to the Ubuntu VM, syncs from the VMware share into ~/peps, runs jpackage
      (app-image zip + .deb), and copies both Linux artifacts back
-  4) Creates/uploads the GitHub release (private repos OK when `gh auth login` is done)
+  4) Builds macOS JAR zip on Windows; SSHs to the Mac VM, runs pack-mac-app.sh,
+     and copies the .app zip (and .dmg if produced) back
+  5) Creates/uploads the GitHub release (private repos OK when `gh auth login` is done)
 
   Default Ubuntu SSH target: administrator@192.168.163.156 (Ubuntu 20.04 release VM).
-  Day-to-day RECOMPILENOW sync stays on the newer VM (e.g. 154); Linux jpackage
+  Default Mac SSH target: macosx@192.168.18.35 (Catalina release VM).
+  Day-to-day RECOMPILENOW sync stays on the newer Ubuntu VM (e.g. 154); Linux jpackage
   must build on 20.04 so the zip runs on Ubuntu 20.04+ desktop.
-  Override with -UbuntuSsh, $env:PEPS_UBUNTU_SSH, or scripts/dev-release.local.ps1
-  ($PepsUbuntuSsh / $PepsLastVersion). After each confirmed run, the chosen SSH
-  target and release version are saved to scripts/dev-release.local.ps1 (gitignored).
-  The version prompt defaults to the next patch after pom.xml (e.g. 0.0.13 → 0.0.14);
-  the SSH target still defaults to the last saved / env value.
+  Override with -UbuntuSsh / -MacSsh, $env:PEPS_UBUNTU_SSH / $env:PEPS_MAC_SSH, or
+  scripts/dev-release.local.ps1 ($PepsUbuntuSsh / $PepsMacSsh / $PepsLastVersion).
+  After each confirmed run, chosen SSH targets and release version are saved there
+  (gitignored). The version prompt defaults to the next patch after pom.xml
+  (e.g. 0.0.13 → 0.0.14); SSH targets still default to the last saved / env value.
 
   Existing git tags / GitHub releases for the same version are overwritten.
 
@@ -33,11 +36,23 @@
 .PARAMETER UbuntuHostRepo
   Path on the VM to the Windows share checkout (default: /mnt/hgfs/peps)
 
+.PARAMETER MacSsh
+  SSH target for the macOS release VM (default: macosx@192.168.18.35)
+
+.PARAMETER MacLocalRepo
+  Path on the Mac for the local build tree (default: ~/peps)
+
+.PARAMETER MacHostRepo
+  Optional path on the Mac to a Windows share checkout (auto-detected if empty)
+
 .PARAMETER SkipBuild
-  Skip both OS builds; upload existing zip/.exe/.deb assets already in target\
+  Skip OS builds; upload existing assets already in target\
 
 .PARAMETER SkipUbuntu
-  Build/upload Windows only
+  Skip Ubuntu zip/.deb
+
+.PARAMETER SkipMacApp
+  Skip macOS .app zip/DMG remote build (still builds mac-jar.zip unless -SkipBuild)
 
 .PARAMETER SkipGit
   Do not commit, tag, or push
@@ -45,25 +60,31 @@
 .EXAMPLE
   .\scripts\dev-release.ps1
   .\scripts\dev-release.ps1 -Version 0.0.9 -UbuntuSsh administrator@192.168.56.101
+  .\scripts\dev-release.ps1 -MacSsh macosx@192.168.18.35
 #>
 param(
 	[string]$Version,
 	[string]$UbuntuSsh,
 	[string]$UbuntuLocalRepo = "~/peps",
 	[string]$UbuntuHostRepo = "/mnt/hgfs/peps",
+	[string]$MacSsh,
+	[string]$MacLocalRepo = "~/peps",
+	[string]$MacHostRepo = "",
 	[switch]$SkipBuild,
 	[switch]$SkipUbuntu,
+	[switch]$SkipMacApp,
 	[switch]$SkipGit
 )
 
 $ErrorActionPreference = "Stop"
 
-# TEMPORARY — Mac-only release iteration: skip Windows/Linux builds; ship mac-jar.zip.
+# TEMPORARY — Mac-only release iteration: skip Windows/Linux builds; ship mac-jar + .app.
 # Flip to $false (or remove) when restoring full multi-OS releases.
 $MacOnlyRelease = $true
 if ($MacOnlyRelease) {
 	$SkipUbuntu = $true
 	Write-Host "[dev-release] TEMPORARY Mac-only mode: Windows jpackage + Ubuntu zip/.deb are skipped."
+	Write-Host "[dev-release] Mac assets: JAR zip (Windows) + .app zip/DMG (SSH to Mac VM)."
 }
 
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
@@ -71,8 +92,10 @@ Set-Location $RepoRoot
 
 # Optional: scripts/dev-release.local.ps1 (gitignored) remembers last choices:
 #   $PepsUbuntuSsh = "user@host"
+#   $PepsMacSsh = "user@host"
 #   $PepsLastVersion = "0.0.10"
 $PepsUbuntuSsh = $null
+$PepsMacSsh = $null
 $PepsLastVersion = $null
 $localConfig = Join-Path $PSScriptRoot "dev-release.local.ps1"
 if (Test-Path $localConfig) {
@@ -188,6 +211,8 @@ function Update-ReadmeDownloads([string]$NewVersion) {
 	$linuxIcon = '<img src="docs/readme-icons/linux.svg" width="16" height="16" alt="Linux" />'
 	$macIcon = '<img src="docs/readme-icons/apple.svg" width="16" height="16" alt="macOS" />'
 	$macJar = "PostgreSQLExplainPlanStudio-$NewVersion-mac-jar.zip"
+	# Catalina Intel release VM produces mac-x64; arm64 can be added later if built.
+	$macAppZip = "PostgreSQLExplainPlanStudio-$NewVersion-mac-x64.zip"
 	$downloadBlock = @"
 ## Download
 
@@ -197,6 +222,7 @@ function Update-ReadmeDownloads([string]$NewVersion) {
 - $linuxIcon Linux ``.deb``: [$linuxDeb]($base/$linuxDeb)
 
   To install the ``.deb`` on Linux: ``sudo apt install ./$linuxDeb``
+- $macIcon macOS app: [$macAppZip]($base/$macAppZip) — unzip and drag ``PostgreSQLExplainPlanStudio.app`` to Applications (bundled JRE)
 - $macIcon macOS (JAR): [$macJar]($base/$macJar) — unzip, ``chmod +x peps.sh``, install JDK 17+, then ``./peps.sh``
 
 All [releases](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases).
@@ -235,6 +261,16 @@ function Get-DefaultUbuntuSsh {
 	return "administrator@192.168.163.156"
 }
 
+function Get-DefaultMacSsh {
+	if (-not [string]::IsNullOrWhiteSpace($env:PEPS_MAC_SSH)) {
+		return $env:PEPS_MAC_SSH.Trim()
+	}
+	if (-not [string]::IsNullOrWhiteSpace($PepsMacSsh)) {
+		return $PepsMacSsh.Trim()
+	}
+	return "macosx@192.168.18.35"
+}
+
 function Get-NextPatchVersion {
 	param([string]$Version)
 	if ([string]::IsNullOrWhiteSpace($Version)) {
@@ -258,12 +294,18 @@ function Get-DefaultReleaseVersion {
 function Save-DevReleaseLocalConfig {
 	param(
 		[string]$UbuntuSshTarget,
+		[string]$MacSshTarget,
 		[string]$LastVersion
 	)
 	$ssh = if (-not [string]::IsNullOrWhiteSpace($UbuntuSshTarget)) {
 		$UbuntuSshTarget.Trim()
 	} else {
 		Get-DefaultUbuntuSsh
+	}
+	$mac = if (-not [string]::IsNullOrWhiteSpace($MacSshTarget)) {
+		$MacSshTarget.Trim()
+	} else {
+		Get-DefaultMacSsh
 	}
 	$ver = if (-not [string]::IsNullOrWhiteSpace($LastVersion)) {
 		$LastVersion.Trim()
@@ -273,7 +315,8 @@ function Save-DevReleaseLocalConfig {
 	$lines = @(
 		"# Local defaults for scripts/dev-release.ps1 (gitignored).",
 		"# Written automatically when you confirm a release run.",
-		"`$PepsUbuntuSsh = `"$ssh`""
+		"`$PepsUbuntuSsh = `"$ssh`"",
+		"`$PepsMacSsh = `"$mac`""
 	)
 	if (-not [string]::IsNullOrWhiteSpace($ver)) {
 		$lines += "`$PepsLastVersion = `"$ver`""
@@ -288,6 +331,19 @@ function Resolve-UbuntuSshTarget {
 	}
 	$defaultTarget = Get-DefaultUbuntuSsh
 	$entered = Read-Host "Ubuntu SSH target (user@host) [$defaultTarget]"
+	if ([string]::IsNullOrWhiteSpace($entered)) {
+		return $defaultTarget
+	}
+	return $entered.Trim()
+}
+
+function Resolve-MacSshTarget {
+	param([string]$Explicit)
+	if (-not [string]::IsNullOrWhiteSpace($Explicit)) {
+		return $Explicit.Trim()
+	}
+	$defaultTarget = Get-DefaultMacSsh
+	$entered = Read-Host "Mac SSH target (user@host) [$defaultTarget]"
 	if ([string]::IsNullOrWhiteSpace($entered)) {
 		return $defaultTarget
 	}
@@ -622,6 +678,222 @@ echo "Built `$DEB_ABS"
 	}
 }
 
+function Build-MacAppPackage {
+	param(
+		[string]$SshTarget,
+		[string]$HostRepo,
+		[string]$LocalRepo,
+		[string]$AppVersion,
+		[string]$ReleaseTag,
+		[string]$DestDir
+	)
+
+	if (-not (Get-Command ssh.exe -ErrorAction SilentlyContinue) -or
+		-not (Get-Command scp.exe -ErrorAction SilentlyContinue)) {
+		throw "OpenSSH client (ssh/scp) not found. Install 'OpenSSH Client' optional feature on Windows."
+	}
+
+	Write-Status "Building macOS .app on $SshTarget …"
+
+	$keyPath = Ensure-PepsSshKey
+	$sshKeyOpts = @(
+		"-i", $keyPath,
+		"-o", "IdentitiesOnly=yes",
+		"-o", "ConnectTimeout=20",
+		"-o", "StrictHostKeyChecking=accept-new"
+	)
+	$sshBatch = $sshKeyOpts + @("-o", "BatchMode=yes", "-o", "PreferredAuthentications=publickey")
+	$sshPassword = @(
+		"-o", "ConnectTimeout=20",
+		"-o", "StrictHostKeyChecking=accept-new",
+		"-o", "PubkeyAuthentication=no",
+		"-o", "PreferredAuthentications=password,keyboard-interactive",
+		"-o", "NumberOfPasswordPrompts=3"
+	)
+
+	Write-Status "Checking key-based SSH to $SshTarget…"
+	$probe = Invoke-SshDirect -ArgumentList ($sshBatch + @($SshTarget, "echo SSH_OK"))
+	if ($probe -ne 0) {
+		Install-PepsSshKeyOnRemote -SshTarget $SshTarget -KeyPath $keyPath -PasswordSshOpts $sshPassword
+		$probe = Invoke-SshDirect -ArgumentList ($sshBatch + @($SshTarget, "echo SSH_OK"))
+		if ($probe -ne 0) {
+			throw "SSH key installed but key login still fails for $SshTarget (exit $probe). On the Mac check Remote Login (System Preferences → Sharing) and ~/.ssh/authorized_keys."
+		}
+	}
+	Write-Status "SSH key auth OK for Mac — no more password prompts for this release"
+
+	$remoteScriptPath = Join-Path $env:TEMP "peps-mac-jpackage.sh"
+	$remoteZipPathFile = "/tmp/peps-mac-zip-path.txt"
+	$remoteDmgPathFile = "/tmp/peps-mac-dmg-path.txt"
+	$remoteArchFile = "/tmp/peps-mac-arch.txt"
+	$hostRepoArg = if ($null -eq $HostRepo) { "" } else { $HostRepo }
+	$remoteScript = @"
+set -euo pipefail
+HOST_REPO='$hostRepoArg'
+LOCAL_REPO='$LocalRepo'
+APP_VERSION='$AppVersion'
+RELEASE_TAG='$ReleaseTag'
+ZIP_PATH_FILE='$remoteZipPathFile'
+DMG_PATH_FILE='$remoteDmgPathFile'
+ARCH_FILE='$remoteArchFile'
+case "`$LOCAL_REPO" in
+  "~") LOCAL_REPO="`$HOME" ;;
+  "~/"*) LOCAL_REPO="`$HOME/`${LOCAL_REPO#~/}" ;;
+esac
+rm -f "`$ZIP_PATH_FILE" "`$DMG_PATH_FILE" "`$ARCH_FILE"
+
+if [[ "`$(uname -s)" != "Darwin" ]]; then
+  echo "Refusing macOS jpackage on non-Darwin host: `$(uname -s)" >&2
+  exit 1
+fi
+
+if [[ -z "`${HOST_REPO}" || ! -f "`${HOST_REPO}/pom.xml" ]]; then
+  for candidate in \
+    "/Volumes/peps" \
+    "/Volumes/VMware Shared Folders/peps" \
+    "/mnt/hgfs/peps" \
+    "/mnt/hgfs/PEPS"
+  do
+    if [[ -f "`${candidate}/pom.xml" ]]; then
+      HOST_REPO="`$candidate"
+      break
+    fi
+  done
+fi
+
+mkdir -p "`$LOCAL_REPO"
+if [[ -n "`${HOST_REPO}" && -f "`${HOST_REPO}/pom.xml" ]]; then
+  echo "Syncing from host share: `$HOST_REPO -> `$LOCAL_REPO"
+  rsync -a --delete \
+    --exclude '.git/' \
+    --exclude 'target/' \
+    --exclude '*.sqlite' \
+    --exclude '.idea/' \
+    "`$HOST_REPO/" "`$LOCAL_REPO/"
+elif [[ -d "`$LOCAL_REPO/.git" ]]; then
+  echo "No HGFS share with pom.xml; checking out `$RELEASE_TAG in `$LOCAL_REPO"
+  cd "`$LOCAL_REPO"
+  git fetch --tags origin
+  git checkout -f "`$RELEASE_TAG"
+else
+  echo "Need a VMware share with pom.xml or a git checkout at `$LOCAL_REPO" >&2
+  echo "Tried HOST_REPO='`${HOST_REPO:-}' and git at `$LOCAL_REPO" >&2
+  exit 1
+fi
+
+cd "`$LOCAL_REPO"
+if ! command -v java >/dev/null 2>&1 || ! command -v jpackage >/dev/null 2>&1; then
+  if [[ -x /usr/libexec/java_home ]]; then
+    export JAVA_HOME="`$(/usr/libexec/java_home -v 17 2>/dev/null || /usr/libexec/java_home 2>/dev/null || true)"
+    if [[ -n "`${JAVA_HOME:-}" ]]; then
+      export PATH="`$JAVA_HOME/bin:`$PATH"
+    fi
+  fi
+fi
+if ! command -v jpackage >/dev/null 2>&1; then
+  echo "JDK 17+ with jpackage is required on the Mac (Temurin 17.0.8 recommended for Catalina)." >&2
+  exit 1
+fi
+
+chmod +x mvnw scripts/pack-mac-app.sh 2>/dev/null || true
+./scripts/pack-mac-app.sh
+
+ARCH_RAW="`$(uname -m)"
+case "`$ARCH_RAW" in
+  x86_64) ARCH_LABEL="x64" ;;
+  arm64|aarch64) ARCH_LABEL="arm64" ;;
+  *) ARCH_LABEL="`$ARCH_RAW" ;;
+esac
+ZIP_ABS="`$(pwd)/target/PostgreSQLExplainPlanStudio-`${APP_VERSION}-mac-`${ARCH_LABEL}.zip"
+DMG_ABS="`$(pwd)/target/PostgreSQLExplainPlanStudio-`${APP_VERSION}-mac-`${ARCH_LABEL}.dmg"
+test -f "`$ZIP_ABS"
+printf '%s\n' "`$ZIP_ABS" > "`$ZIP_PATH_FILE"
+printf '%s\n' "`$ARCH_LABEL" > "`$ARCH_FILE"
+if [[ -f "`$DMG_ABS" ]]; then
+  printf '%s\n' "`$DMG_ABS" > "`$DMG_PATH_FILE"
+  echo "Built `$DMG_ABS"
+else
+  : > "`$DMG_PATH_FILE"
+  echo "No DMG (expected over SSH); .app zip is `$ZIP_ABS"
+fi
+echo "Built `$ZIP_ABS"
+"@
+	[System.IO.File]::WriteAllText($remoteScriptPath, ($remoteScript -replace "`r`n", "`n"))
+
+	try {
+		Write-Status "Uploading build script and running pack-mac-app.sh on Mac…"
+		$remoteTmp = "/tmp/peps-mac-jpackage.sh"
+		$up = Invoke-ScpDirect -ArgumentList ($sshBatch + @($remoteScriptPath, "${SshTarget}:$remoteTmp"))
+		if ($up -ne 0) { throw "scp of Mac build script failed (exit $up)" }
+
+		$build = Invoke-SshDirect -ArgumentList ($sshBatch + @($SshTarget, "bash $remoteTmp"))
+		if ($build -ne 0) {
+			throw "Mac remote pack-mac-app.sh failed (exit $build). Check SSH reachability, JDK 17 on the Mac, and that ~/peps is a share sync or git clone."
+		}
+
+		function Get-RemotePathFromFile([string]$RemoteFile, [string]$Label, [switch]$AllowEmpty) {
+			$pathOutFile = Join-Path $env:TEMP ("peps-remote-mac-" + $Label + "-path.txt")
+			Remove-Item -Force $pathOutFile -ErrorAction SilentlyContinue
+			$prev = $ErrorActionPreference
+			$ErrorActionPreference = "SilentlyContinue"
+			try {
+				& ssh.exe @sshBatch $SshTarget "cat $RemoteFile" | Set-Content -Path $pathOutFile
+				$pathCode = $LASTEXITCODE
+			} finally {
+				$ErrorActionPreference = $prev
+			}
+			$raw = if (Test-Path $pathOutFile) { (Get-Content $pathOutFile -Raw) } else { "" }
+			$trimmed = if ($null -eq $raw) { "" } else { $raw.Trim() -replace "`r", "" -replace "`n", "" }
+			if ($pathCode -ne 0) {
+				throw "Could not read remote Mac $Label path from $RemoteFile"
+			}
+			if (-not $AllowEmpty -and [string]::IsNullOrWhiteSpace($trimmed)) {
+				throw "Empty remote Mac $Label path from $RemoteFile"
+			}
+			return $trimmed
+		}
+
+		$resolvedZip = Get-RemotePathFromFile -RemoteFile $remoteZipPathFile -Label "zip"
+		$resolvedDmg = Get-RemotePathFromFile -RemoteFile $remoteDmgPathFile -Label "dmg" -AllowEmpty
+		$archLabel = Get-RemotePathFromFile -RemoteFile $remoteArchFile -Label "arch"
+		if ([string]::IsNullOrWhiteSpace($archLabel)) { $archLabel = "x64" }
+
+		$destZipName = "PostgreSQLExplainPlanStudio-$AppVersion-mac-$archLabel.zip"
+		$destDmgName = "PostgreSQLExplainPlanStudio-$AppVersion-mac-$archLabel.dmg"
+		$destZip = Join-Path $DestDir $destZipName
+		$destDmg = Join-Path $DestDir $destDmgName
+
+		Write-Status "Copying ${SshTarget}:$resolvedZip → $destZip"
+		New-Item -ItemType Directory -Force -Path $DestDir | Out-Null
+		$copyZip = Invoke-ScpDirect -ArgumentList ($sshBatch + @("${SshTarget}:$resolvedZip", $destZip))
+		if ($copyZip -ne 0) {
+			throw "scp of Mac .app zip failed (exit $copyZip)"
+		}
+		if (-not (Test-Path $destZip)) {
+			throw "Mac .app zip was not copied to $destZip"
+		}
+
+		$copiedDmg = $null
+		if (-not [string]::IsNullOrWhiteSpace($resolvedDmg)) {
+			Write-Status "Copying ${SshTarget}:$resolvedDmg → $destDmg"
+			$copyDmg = Invoke-ScpDirect -ArgumentList ($sshBatch + @("${SshTarget}:$resolvedDmg", $destDmg))
+			if ($copyDmg -ne 0) {
+				Write-Warning "scp of Mac DMG failed (exit $copyDmg); continuing with .app zip only"
+			} elseif (Test-Path $destDmg) {
+				$copiedDmg = $destDmg
+			}
+		}
+
+		return [pscustomobject]@{
+			Arch    = $archLabel
+			AppZip  = $destZip
+			Dmg     = $copiedDmg
+		}
+	} finally {
+		Remove-Item -Force $remoteScriptPath -ErrorAction SilentlyContinue
+	}
+}
+
 # --- version ---
 $current = Get-CurrentPomVersion
 $Version = Resolve-ReleaseVersion -Explicit $Version -PomVersion $current
@@ -638,11 +910,17 @@ $WindowsExeName = "PostgreSQLExplainPlanStudio-$Version-windows-x64-installer.ex
 $LinuxZipName = "PostgreSQLExplainPlanStudio-$Version-linux-x64.zip"
 $LinuxDebName = "PostgreSQLExplainPlanStudio-$Version-linux-x64.deb"
 $MacJarName = "PostgreSQLExplainPlanStudio-$Version-mac-jar.zip"
+# Default Intel Catalina names; Build-MacAppPackage may produce mac-arm64 instead.
+$MacAppZipName = "PostgreSQLExplainPlanStudio-$Version-mac-x64.zip"
+$MacDmgName = "PostgreSQLExplainPlanStudio-$Version-mac-x64.dmg"
 $WindowsZip = Join-Path $RepoRoot "target\$WindowsZipName"
 $WindowsExe = Join-Path $RepoRoot "target\$WindowsExeName"
 $LinuxZip = Join-Path $RepoRoot "target\$LinuxZipName"
 $LinuxDeb = Join-Path $RepoRoot "target\$LinuxDebName"
 $MacJar = Join-Path $RepoRoot "target\$MacJarName"
+$MacAppZip = Join-Path $RepoRoot "target\$MacAppZipName"
+$MacDmg = Join-Path $RepoRoot "target\$MacDmgName"
+$script:MacAppBuildResult = $null
 
 Write-Status "Preparing release $Tag"
 Test-GhAuth
@@ -665,17 +943,28 @@ if (-not $SkipUbuntu -and -not $SkipBuild) {
 	$UbuntuSsh = Get-DefaultUbuntuSsh
 }
 
+if (-not $SkipMacApp -and -not $SkipBuild) {
+	$MacSsh = Resolve-MacSshTarget -Explicit $MacSsh
+	Write-Status "Mac SSH target: $MacSsh"
+} elseif (-not [string]::IsNullOrWhiteSpace($MacSsh)) {
+	$MacSsh = $MacSsh.Trim()
+} else {
+	$MacSsh = Get-DefaultMacSsh
+}
+
 Write-Host ""
 Write-Host "This will:"
 Write-Host "  - $(if ($SkipGit) { 'Skip git commit/tag/push' } else { "Commit/tag/push $Tag" })"
 if ($MacOnlyRelease) {
 	Write-Host "  - $(if ($SkipBuild) { 'Skip Mac JAR zip build' } else { 'Build macOS JAR zip (pack-mac-jar.ps1)' })  [TEMPORARY Mac-only]"
+	Write-Host "  - $(if ($SkipBuild -or $SkipMacApp) { 'Skip Mac .app build' } else { "Build macOS .app zip/DMG on $MacSsh" })  [TEMPORARY Mac-only]"
 	Write-Host "  - Skip Windows jpackage  [TEMPORARY]"
 	Write-Host "  - Skip Ubuntu zip/.deb  [TEMPORARY]"
 } else {
 	Write-Host "  - $(if ($SkipBuild) { 'Skip Windows build' } else { 'Build Windows jpackage zip (+ .exe installer if WiX is available)' })"
 	Write-Host "  - $(if ($SkipBuild -or $SkipUbuntu) { 'Skip Ubuntu build' } else { "Build Ubuntu jpackage zip + .deb on $UbuntuSsh" })"
 	Write-Host "  - $(if ($SkipBuild) { 'Skip Mac JAR zip' } else { 'Build macOS JAR zip (pack-mac-jar.ps1)' })"
+	Write-Host "  - $(if ($SkipBuild -or $SkipMacApp) { 'Skip Mac .app build' } else { "Build macOS .app zip/DMG on $MacSsh" })"
 }
 Write-Host "  - Upload available release assets to GitHub release $Tag"
 $confirm = Read-Host "Continue? [Y/n]"
@@ -684,17 +973,19 @@ if ($confirm -match '^[Nn]') {
 	exit 1
 }
 
-Save-DevReleaseLocalConfig -UbuntuSshTarget $UbuntuSsh -LastVersion $Version
+Save-DevReleaseLocalConfig -UbuntuSshTarget $UbuntuSsh -MacSshTarget $MacSsh -LastVersion $Version
 
 $progressSteps = @()
 if (-not $SkipGit) { $progressSteps += "Commit, tag, and push $Tag" }
 if (-not $SkipBuild) {
 	if ($MacOnlyRelease) {
 		$progressSteps += "Build macOS JAR zip"
+		if (-not $SkipMacApp) { $progressSteps += "Build macOS .app zip/DMG" }
 	} else {
 		$progressSteps += "Build Windows jpackage packages"
 		if (-not $SkipUbuntu) { $progressSteps += "Build Ubuntu zip + .deb" }
 		$progressSteps += "Build macOS JAR zip"
+		if (-not $SkipMacApp) { $progressSteps += "Build macOS .app zip/DMG" }
 	}
 }
 $progressSteps += "Collect release assets"
@@ -736,7 +1027,6 @@ try {
 
 	if (-not $SkipBuild) {
 		if ($MacOnlyRelease) {
-			# TEMPORARY Mac-only: shaded jar + packaging/mac launcher zip (no jpackage .app yet).
 			Update-ReleaseProgress "Build macOS JAR zip"
 			$packMac = Join-Path $PSScriptRoot "pack-mac-jar.ps1"
 			& $packMac
@@ -745,6 +1035,20 @@ try {
 			}
 			if (-not (Test-Path $MacJar)) {
 				throw "Missing Mac JAR zip: $MacJar"
+			}
+
+			if (-not $SkipMacApp) {
+				Update-ReleaseProgress "Build macOS .app zip/DMG"
+				$script:MacAppBuildResult = Build-MacAppPackage -SshTarget $MacSsh `
+					-HostRepo $MacHostRepo -LocalRepo $MacLocalRepo `
+					-AppVersion $Version -ReleaseTag $Tag `
+					-DestDir (Join-Path $RepoRoot "target")
+				$MacAppZip = $script:MacAppBuildResult.AppZip
+				$MacAppZipName = Split-Path $MacAppZip -Leaf
+				if ($script:MacAppBuildResult.Dmg) {
+					$MacDmg = $script:MacAppBuildResult.Dmg
+					$MacDmgName = Split-Path $MacDmg -Leaf
+				}
 			}
 		} else {
 			Update-ReleaseProgress "Build Windows jpackage packages"
@@ -777,6 +1081,20 @@ try {
 			if (-not (Test-Path $MacJar)) {
 				throw "Missing Mac JAR zip: $MacJar"
 			}
+
+			if (-not $SkipMacApp) {
+				Update-ReleaseProgress "Build macOS .app zip/DMG"
+				$script:MacAppBuildResult = Build-MacAppPackage -SshTarget $MacSsh `
+					-HostRepo $MacHostRepo -LocalRepo $MacLocalRepo `
+					-AppVersion $Version -ReleaseTag $Tag `
+					-DestDir (Join-Path $RepoRoot "target")
+				$MacAppZip = $script:MacAppBuildResult.AppZip
+				$MacAppZipName = Split-Path $MacAppZip -Leaf
+				if ($script:MacAppBuildResult.Dmg) {
+					$MacDmg = $script:MacAppBuildResult.Dmg
+					$MacDmgName = Split-Path $MacDmg -Leaf
+				}
+			}
 		}
 	}
 
@@ -789,6 +1107,8 @@ try {
 		if (Test-Path $LinuxDeb) { $assets += $LinuxDeb }
 	}
 	if (Test-Path $MacJar) { $assets += $MacJar }
+	if (Test-Path $MacAppZip) { $assets += $MacAppZip }
+	if (Test-Path $MacDmg) { $assets += $MacDmg }
 	if ($assets.Count -eq 0) {
 		throw "No release assets found in target\ for version $Version"
 	}
@@ -809,9 +1129,23 @@ try {
 	if (-not (Test-Path $MacJar)) {
 		throw "Mac JAR zip missing: $MacJar"
 	}
+	if (-not $SkipMacApp -and -not $SkipBuild -and -not (Test-Path $MacAppZip)) {
+		throw "Mac .app zip missing: $MacAppZip"
+	}
 
 	Write-Host "Assets to publish:"
 	$assets | ForEach-Object { Write-Host "  $_" }
+
+	$macAppNotes = if (Test-Path $MacAppZip) {
+		$dmgLine = if (Test-Path $MacDmg) {
+			"- DMG (optional): ``$MacDmgName`` — open and drag ``PostgreSQLExplainPlanStudio.app`` to Applications`n"
+		} else { "" }
+		@"
+### macOS app (bundled JRE)
+- App zip: ``$MacAppZipName`` — unzip and drag ``PostgreSQLExplainPlanStudio.app`` to Applications
+$dmgLine- First launch of an unsigned build: right-click the app → Open → Open
+"@
+	} else { "" }
 
 	$title = "v$Version"
 	if ($MacOnlyRelease) {
@@ -820,6 +1154,7 @@ try {
 
 TEMPORARY Mac-only release iteration (Windows/Linux assets not rebuilt this run).
 
+$macAppNotes
 ### macOS (JAR)
 - Asset: ``$MacJarName``
 - Requires JDK 17+ on the Mac
@@ -840,7 +1175,7 @@ TEMPORARY Mac-only release iteration (Windows/Linux assets not rebuilt this run)
 		$notes = @"
 ## PostgreSQL Explain Plan Studio v$Version
 
-Bundled Java runtime included (Windows/Linux). macOS JAR zip requires a system JDK 17+.
+Bundled Java runtime included (Windows/Linux/macOS app). macOS JAR zip requires a system JDK 17+.
 
 User data (SQLite plans) lives outside the app install tree:
 - Windows: ``%APPDATA%\PostgreSQLExplainPlanStudio\``
@@ -855,6 +1190,7 @@ $exeNotes
 - Portable: ``$LinuxZipName`` — unzip and run ``PostgreSQLExplainPlanStudio/bin/PostgreSQLExplainPlanStudio``
 - Upgrades: replace the app / reinstall the ``.deb``; leave the data directory above alone
 
+$macAppNotes
 ### macOS (JAR)
 - Asset: ``$MacJarName``
 - Unzip, ``chmod +x peps.sh``, install JDK 17+, then ``./peps.sh``

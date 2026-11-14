@@ -14,10 +14,13 @@ PostgreSQL Explain Plan Studio — macOS packaging
 
    Outputs:
      target/jpackage-mac/PostgreSQLExplainPlanStudio.app
-     target/PostgreSQLExplainPlanStudio-<ver>-mac-<arch>.dmg
-     target/PostgreSQLExplainPlanStudio-<ver>-mac-<arch>.zip
+     target/PostgreSQLExplainPlanStudio-<ver>-mac-<arch>.zip  (always)
+     target/PostgreSQLExplainPlanStudio-<ver>-mac-<arch>.dmg  (skipped over SSH)
 
-   Install: open the .dmg and drag the .app into Applications.
+   Install: unzip the .zip (or open the .dmg) and drag the .app into Applications.
+
+   Or from Windows: .\scripts\dev-release.ps1 SSHs to the Mac VM, runs pack-mac-app.sh,
+   and uploads the .app zip (+ DMG if present) with the GitHub release.
 
    First launch of an unsigned build: right-click the app → Open → Open.
    Signing/notarization can remove that Gatekeeper step later.

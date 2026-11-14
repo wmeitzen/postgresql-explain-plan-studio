@@ -176,49 +176,68 @@ log "Info.plist names:"
 /usr/libexec/PlistBuddy -c "Print :CFBundleName" "${INFO_PLIST}" || true
 /usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" "${INFO_PLIST}" || true
 
-log "jpackage DMG..."
-# Build DMG from the app-image so we do not re-bundle the runtime.
-# May briefly open a Finder window; SetFile may prompt for Xcode CLT (Cancel is OK if DMG still appears).
-rm -f "${JPACKAGE_DEST}"/*.dmg "${DMG_PATH}"
-jpackage \
-  --type dmg \
-  --app-image "${APP_BUNDLE}" \
-  --name "${APP_NAME}" \
-  --app-version "${MAC_APP_VERSION}" \
-  --vendor "William Meitzen" \
-  --description "${DISPLAY_NAME}" \
-  --dest "${JPACKAGE_DEST}" \
-  --mac-package-identifier "com.williammeitzen.peps" \
-  --mac-package-name "${DISPLAY_NAME}"
-
-shopt -s nullglob
-dmgs=("${JPACKAGE_DEST}"/*.dmg)
-shopt -u nullglob
-if [[ ${#dmgs[@]} -ne 1 ]]; then
-  echo "Expected exactly one .dmg from jpackage; found ${#dmgs[@]}" >&2
-  printf '  %s\n' "${dmgs[@]}" >&2
-  exit 1
+# DMG: skip over SSH / when PEPS_SKIP_MAC_DMG=1 — jpackage calls SetFile, which pops a
+# GUI "install Command Line Tools" dialog and can hang headless remote builds.
+SKIP_DMG=0
+if [[ "${PEPS_SKIP_MAC_DMG:-0}" == "1" || -n "${SSH_CONNECTION:-}" ]]; then
+  SKIP_DMG=1
+  log "Skipping DMG (SSH or PEPS_SKIP_MAC_DMG=1). Shipping .app zip instead."
 fi
-mv -f "${dmgs[0]}" "$DMG_PATH"
 
-# Optional zip of the .app (ditto may prompt for Xcode CLT on bare VMs).
+rm -f "${JPACKAGE_DEST}"/*.dmg "${DMG_PATH}"
+if [[ "$SKIP_DMG" -eq 0 ]]; then
+  log "jpackage DMG..."
+  # May briefly open a Finder window; SetFile may prompt for Xcode CLT (Cancel is OK if DMG appears).
+  if jpackage \
+    --type dmg \
+    --app-image "${APP_BUNDLE}" \
+    --name "${APP_NAME}" \
+    --app-version "${MAC_APP_VERSION}" \
+    --vendor "William Meitzen" \
+    --description "${DISPLAY_NAME}" \
+    --dest "${JPACKAGE_DEST}" \
+    --mac-package-identifier "com.williammeitzen.peps" \
+    --mac-package-name "${DISPLAY_NAME}"
+  then
+    shopt -s nullglob
+    dmgs=("${JPACKAGE_DEST}"/*.dmg)
+    shopt -u nullglob
+    if [[ ${#dmgs[@]} -eq 1 ]]; then
+      mv -f "${dmgs[0]}" "$DMG_PATH"
+    else
+      echo "WARNING: expected one .dmg from jpackage; found ${#dmgs[@]}. Continuing with .app zip." >&2
+    fi
+  else
+    echo "WARNING: jpackage DMG failed (often SetFile / Xcode CLT). Continuing with .app zip." >&2
+  fi
+fi
+
+# Zip of the .app — required for remote/dev-release when DMG is skipped.
 # Use ${ZIP_NAME} with braces — macOS bash 3.2 + set -u mishandles "$ZIP_NAME…" (Unicode ellipsis).
-log "Zipping .app -> ${ZIP_NAME} (optional)..."
+log "Zipping .app -> ${ZIP_NAME}..."
 rm -f "${ZIP_PATH}"
 if ditto -c -k --sequesterRsrc --keepParent \
     "${JPACKAGE_DEST}/${APP_NAME}.app" "${ZIP_PATH}" 2>/dev/null; then
   log "Wrote ${ZIP_PATH}"
+elif (
+  cd "${JPACKAGE_DEST}" && zip -qry "${ZIP_PATH}" "${APP_NAME}.app"
+); then
+  log "Wrote ${ZIP_PATH} (via zip)"
 else
-  echo "WARNING: could not zip .app (often needs Xcode Command Line Tools / ditto)." >&2
-  echo "The .app and .dmg are still usable without the zip." >&2
+  echo "Could not zip .app (ditto/zip failed)." >&2
+  exit 1
 fi
 
 log "Done."
 echo "  App:  ${APP_BUNDLE}"
-echo "  DMG:  ${DMG_PATH}"
-if [[ -f "${ZIP_PATH}" ]]; then
-  echo "  ZIP:  ${ZIP_PATH}"
+if [[ -f "${DMG_PATH}" ]]; then
+  echo "  DMG:  ${DMG_PATH}"
 fi
-echo "Install: open \"${DMG_PATH}\" and drag ${APP_NAME}.app to Applications."
+echo "  ZIP:  ${ZIP_PATH}"
+if [[ -f "${DMG_PATH}" ]]; then
+  echo "Install: open \"${DMG_PATH}\" and drag ${APP_NAME}.app to Applications."
+else
+  echo "Install: unzip \"${ZIP_PATH}\" and drag ${APP_NAME}.app to Applications."
+fi
 echo "Finder/Dock label: ${DISPLAY_NAME} (bundle folder stays ${APP_NAME}.app)."
 echo "Note: unsigned builds may need right-click -> Open the first time (Gatekeeper)."
