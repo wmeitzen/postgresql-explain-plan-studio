@@ -57,6 +57,9 @@
 .PARAMETER SkipGit
   Do not commit, tag, or push
 
+.PARAMETER Yes
+  Skip the interactive "Continue?" confirmation (for non-interactive shells)
+
 .EXAMPLE
   .\scripts\dev-release.ps1
   .\scripts\dev-release.ps1 -Version 0.0.9 -UbuntuSsh administrator@192.168.56.101
@@ -73,7 +76,8 @@ param(
 	[switch]$SkipBuild,
 	[switch]$SkipUbuntu,
 	[switch]$SkipMacApp,
-	[switch]$SkipGit
+	[switch]$SkipGit,
+	[switch]$Yes
 )
 
 $ErrorActionPreference = "Stop"
@@ -736,9 +740,10 @@ RELEASE_TAG='$ReleaseTag'
 ZIP_PATH_FILE='$remoteZipPathFile'
 DMG_PATH_FILE='$remoteDmgPathFile'
 ARCH_FILE='$remoteArchFile'
+# Expand leading ~ without bash `${var#…}` (PowerShell here-strings corrupt that form).
 case "`$LOCAL_REPO" in
   "~") LOCAL_REPO="`$HOME" ;;
-  "~/"*) LOCAL_REPO="`$HOME/`${LOCAL_REPO#~/}" ;;
+  "~/"*) LOCAL_REPO="`$HOME/`$(echo "`$LOCAL_REPO" | sed 's|^~/||')" ;;
 esac
 rm -f "`$ZIP_PATH_FILE" "`$DMG_PATH_FILE" "`$ARCH_FILE"
 
@@ -967,10 +972,14 @@ if ($MacOnlyRelease) {
 	Write-Host "  - $(if ($SkipBuild -or $SkipMacApp) { 'Skip Mac .app build' } else { "Build macOS .app zip/DMG on $MacSsh" })"
 }
 Write-Host "  - Upload available release assets to GitHub release $Tag"
-$confirm = Read-Host "Continue? [Y/n]"
-if ($confirm -match '^[Nn]') {
-	Write-Status "Aborted."
-	exit 1
+if (-not $Yes) {
+	$confirm = Read-Host "Continue? [Y/n]"
+	if ($confirm -match '^[Nn]') {
+		Write-Status "Aborted."
+		exit 1
+	}
+} else {
+	Write-Status "Continuing without prompt (-Yes)"
 }
 
 Save-DevReleaseLocalConfig -UbuntuSshTarget $UbuntuSsh -MacSshTarget $MacSsh -LastVersion $Version
