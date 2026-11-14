@@ -11,6 +11,7 @@ Graphical viewer for PostgreSQL `EXPLAIN` plans.
 
   To install the `.deb` on Linux: `sudo apt install ./PostgreSQLExplainPlanStudio-0.0.23-linux-x64.deb`
 - <img src="docs/readme-icons/apple.svg" width="16" height="16" alt="macOS" /> macOS app: [PostgreSQLExplainPlanStudio-0.0.23-mac-x64.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.23-mac-x64.zip)
+  
   To install the `x64.zip` on macOS:
   - Unzip file
   - Drag `PostgreSQLExplainPlanStudio.app` to Applications
