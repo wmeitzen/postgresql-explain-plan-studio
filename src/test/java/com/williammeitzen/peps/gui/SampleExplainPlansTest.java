@@ -16,6 +16,8 @@ public class SampleExplainPlansTest {
 		assertEquals(PlanFormat.JSON, ExplainTextPlanConverter.sniff(json));
 		String resolved = ExplainTextPlanConverter.resolveToJsonArrayString(json);
 		assertTrue(resolved != null && resolved.contains("\"Node Type\""));
+		assertTrue(json.contains("all_cellline"));
+		assertTrue(json.contains("\"Execution Time\": 1283.680"));
 		assertTrue(json.length() > 4000);
 	}
 
@@ -25,6 +27,8 @@ public class SampleExplainPlansTest {
 		assertEquals(PlanFormat.TEXT, ExplainTextPlanConverter.sniff(text));
 		String resolved = ExplainTextPlanConverter.resolveToJsonArrayString(text);
 		assertTrue(resolved != null && resolved.contains("Nested Loop"));
+		assertTrue(text.contains("all_cellline"));
+		assertTrue(text.contains("Execution Time: 1197.208 ms"));
 		assertTrue(text.length() > 2000);
 	}
 }

@@ -399,11 +399,36 @@ public class FormPanel extends JPanel {
 			if (documentsEmptyPanel != null) {
 				documentsEmptyPanel.refreshChrome();
 			}
+			SwingUtilities.invokeLater(this::showNewPlanGuideArrow);
 		} else {
+			HollowGuideArrowOverlay.dismiss();
 			cards.show(documentsHost, DOCUMENTS_CARD_TABS);
 		}
 		documentsHost.revalidate();
 		documentsHost.repaint();
+	}
+
+	/** Animate a hollow arrow from “New blank plan” to the Plans green plus. */
+	private void showNewPlanGuideArrow() {
+		if (documentsEmptyPanel == null || addPlanBtn == null) {
+			HollowGuideArrowOverlay.dismiss();
+			return;
+		}
+		if (plansMapper != null && !plansMapper.isEmpty()) {
+			HollowGuideArrowOverlay.dismiss();
+			return;
+		}
+		JButton blank = documentsEmptyPanel.getNewBlankPlanButton();
+		if (blank == null || !blank.isShowing() || !addPlanBtn.isShowing()) {
+			HollowGuideArrowOverlay.dismiss();
+			return;
+		}
+		HollowGuideArrowOverlay.show(blank, addPlanBtn);
+	}
+
+	/** Plans toolbar Add Plan button (green plus). */
+	public JButton getAddPlanButton() {
+		return addPlanBtn;
 	}
 
 	/** Empty-state / toolbar: create a blank plan. */
@@ -412,16 +437,14 @@ public class FormPanel extends JPanel {
 		refreshDocumentsEmptyState();
 	}
 
-	/** Empty-state: create a plan filled with a large sample JSON EXPLAIN. */
+	/** Empty-state: create a plan filled with a large sample JSON EXPLAIN (plan text only). */
 	public void addSampleJsonPlan() {
-		addPlanWithContent("Sample JSON plan", SampleExplainPlans.JSON_EXPLAIN_SQL,
-				SampleExplainPlans.jsonPlanText());
+		addPlanWithContent("Sample JSON plan", null, SampleExplainPlans.jsonPlanText());
 	}
 
-	/** Empty-state: create a plan filled with a large sample text EXPLAIN. */
+	/** Empty-state: create a plan filled with a large sample text EXPLAIN (plan text only). */
 	public void addSampleTextPlan() {
-		addPlanWithContent("Sample text plan", SampleExplainPlans.TEXT_EXPLAIN_SQL,
-				SampleExplainPlans.textPlanText());
+		addPlanWithContent("Sample text plan", null, SampleExplainPlans.textPlanText());
 	}
 
 	// ------------------------------------------------------------------

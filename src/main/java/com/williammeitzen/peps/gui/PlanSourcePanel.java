@@ -79,7 +79,7 @@ public class PlanSourcePanel extends JPanel {
 	private JButton showPlanGraphButton;
 	private JPanel showPlanGraphButtonRow;
 	private PulsingArrowCue showDiagramCue;
-	/** Set by Get started samples; applied when this panel is (re)shown in Documents. */
+	/** Set by Get Started samples; applied when this panel is (re)shown in Documents. */
 	private boolean diagramCuePending;
 	private JLabel planFolderLabel;
 	private JComboBox<FormPanel.FolderChoice> planFolderCombo;
@@ -1186,7 +1186,7 @@ public class PlanSourcePanel extends JPanel {
 	}
 
 	/**
-	 * Pulse a “Next” arrow beside Show Plan Diagram (used after Get started sample plans).
+	 * Pulse a “Next” arrow beside Show Plan Diagram (used after Get Started sample plans).
 	 */
 	public void showShowDiagramCue() {
 		if (showDiagramCue == null || showPlanGraphButton == null) {

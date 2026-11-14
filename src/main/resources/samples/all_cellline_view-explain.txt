@@ -1,0 +1,151 @@
+Nested Loop Left Join  (cost=1307.61..161474.38 rows=962031 width=366) (actual time=15.916..1165.990 rows=962031.00 loops=1)
+  Output: c._cellline_key, c.cellline, c._cellline_type_key, c._strain_key, c._derivation_key, c.ismutant, c._createdby_key, c._modifiedby_key, c.creation_date, c.modification_date, vt.term, s1.strain, d._creator_key, vt1.term, p._cellline_key, p.cellline, d.name, d._derivationtype_key, d._vector_key, vt2.term, d._vectortype_key, vt3.term, p._strain_key, s2.strain, u1.login, u2.login
+  Inner Unique: true
+  Buffers: shared hit=2636 read=10112
+  ->  Nested Loop Left Join  (cost=1307.18..137396.85 rows=962031 width=334) (actual time=15.907..990.155 rows=962031.00 loops=1)
+        Output: c._cellline_key, c.cellline, c._cellline_type_key, c._strain_key, c._derivation_key, c.ismutant, c._createdby_key, c._modifiedby_key, c.creation_date, c.modification_date, vt.term, s1.strain, u1.login, u2.login, d._creator_key, d.name, d._derivationtype_key, d._vector_key, d._vectortype_key, vt1.term, vt2.term, vt3.term, p._cellline_key, p.cellline, p._strain_key
+        Inner Unique: true
+        Buffers: shared hit=2332 read=10112
+        ->  Nested Loop Left Join  (cost=1306.75..111736.81 rows=962031 width=319) (actual time=15.899..817.013 rows=962031.00 loops=1)
+              Output: c._cellline_key, c.cellline, c._cellline_type_key, c._strain_key, c._derivation_key, c.ismutant, c._createdby_key, c._modifiedby_key, c.creation_date, c.modification_date, vt.term, s1.strain, u1.login, u2.login, d._creator_key, d.name, d._derivationtype_key, d._vector_key, d._vectortype_key, d._parentcellline_key, vt1.term, vt2.term, vt3.term
+              Inner Unique: true
+              Buffers: shared hit=1476 read=10112
+              ->  Hash Join  (cost=1306.32..87653.61 rows=962031 width=289) (actual time=15.889..649.766 rows=962031.00 loops=1)
+                    Output: c._cellline_key, c.cellline, c._cellline_type_key, c._strain_key, c._derivation_key, c.ismutant, c._createdby_key, c._modifiedby_key, c.creation_date, c.modification_date, vt.term, s1.strain, u1.login, u2.login, d._creator_key, d.name, d._derivationtype_key, d._vector_key, d._vectortype_key, d._parentcellline_key, vt1.term, vt2.term
+                    Inner Unique: true
+                    Hash Cond: (c._modifiedby_key = u2._user_key)
+                    Buffers: shared hit=1452 read=10112
+                    ->  Hash Join  (cost=1296.49..85077.13 rows=962031 width=278) (actual time=2.520..561.278 rows=962031.00 loops=1)
+                          Output: c._cellline_key, c.cellline, c._cellline_type_key, c._strain_key, c._derivation_key, c.ismutant, c._createdby_key, c._modifiedby_key, c.creation_date, c.modification_date, vt.term, s1.strain, u1.login, d._creator_key, d.name, d._derivationtype_key, d._vector_key, d._vectortype_key, d._parentcellline_key, vt1.term, vt2.term
+                          Inner Unique: true
+                          Hash Cond: (c._createdby_key = u1._user_key)
+                          Buffers: shared hit=1448 read=10112
+                          ->  Nested Loop  (cost=1286.66..82500.65 rows=962031 width=267) (actual time=2.474..483.709 rows=962031.00 loops=1)
+                                Output: c._cellline_key, c.cellline, c._cellline_type_key, c._strain_key, c._derivation_key, c.ismutant, c._createdby_key, c._modifiedby_key, c.creation_date, c.modification_date, vt.term, s1.strain, d._creator_key, d.name, d._derivationtype_key, d._vector_key, d._vectortype_key, d._parentcellline_key, vt1.term, vt2.term
+                                Inner Unique: true
+                                Buffers: shared hit=1444 read=10112
+                                ->  Nested Loop  (cost=1286.23..58423.13 rows=962031 width=235) (actual time=2.459..322.037 rows=962031.00 loops=1)
+                                      Output: c._cellline_key, c.cellline, c._cellline_type_key, c._strain_key, c._derivation_key, c.ismutant, c._createdby_key, c._modifiedby_key, c.creation_date, c.modification_date, vt.term, d._creator_key, d.name, d._derivationtype_key, d._vector_key, d._vectortype_key, d._parentcellline_key, vt1.term, vt2.term
+                                      Inner Unique: true
+                                      Buffers: shared hit=1048 read=10112
+                                      ->  Hash Left Join  (cost=1285.80..34371.46 rows=962031 width=205) (actual time=2.446..164.727 rows=962031.00 loops=1)
+                                            Output: c._cellline_key, c.cellline, c._cellline_type_key, c._strain_key, c._derivation_key, c.ismutant, c._createdby_key, c._modifiedby_key, c.creation_date, c.modification_date, d._creator_key, d.name, d._derivationtype_key, d._vector_key, d._vectortype_key, d._parentcellline_key, vt1.term, vt2.term
+                                            Hash Cond: (c._derivation_key = d._derivation_key)
+                                            Buffers: shared hit=1040 read=10112
+                                            ->  Seq Scan on mgd.all_cellline c  (cost=0.00..19860.31 rows=962031 width=53) (actual time=0.003..42.794 rows=962031.00 loops=1)
+                                                  Output: c._cellline_key, c.cellline, c._cellline_type_key, c._strain_key, c._derivation_key, c.ismutant, c._createdby_key, c._modifiedby_key, c.creation_date, c.modification_date
+                                                  Buffers: shared hit=128 read=10112
+                                            ->  Hash  (cost=1246.29..1246.29 rows=3161 width=156) (actual time=2.419..2.421 rows=3161.00 loops=1)
+                                                  Output: d._creator_key, d.name, d._derivationtype_key, d._vector_key, d._vectortype_key, d._derivation_key, d._parentcellline_key, vt1.term, vt2.term
+                                                  Buckets: 4096  Batches: 1  Memory Usage: 523kB
+                                                  Buffers: shared hit=912
+                                                  ->  Nested Loop Left Join  (cost=0.86..1246.29 rows=3161 width=156) (actual time=0.035..1.958 rows=3161.00 loops=1)
+                                                        Output: d._creator_key, d.name, d._derivationtype_key, d._vector_key, d._vectortype_key, d._derivation_key, d._parentcellline_key, vt1.term, vt2.term
+                                                        Inner Unique: true
+                                                        Buffers: shared hit=912
+                                                        ->  Nested Loop Left Join  (cost=0.43..406.55 rows=3161 width=126) (actual time=0.023..1.002 rows=3161.00 loops=1)
+                                                              Output: d._creator_key, d.name, d._derivationtype_key, d._vector_key, d._vectortype_key, d._derivation_key, d._parentcellline_key, vt1.term
+                                                              Inner Unique: true
+                                                              Buffers: shared hit=260
+                                                              ->  Seq Scan on mgd.all_cellline_derivation d  (cost=0.00..95.61 rows=3161 width=96) (actual time=0.002..0.113 rows=3161.00 loops=1)
+                                                                    Output: d._derivation_key, d.name, d.description, d._vector_key, d._vectortype_key, d._parentcellline_key, d._derivationtype_key, d._creator_key, d._refs_key, d._createdby_key, d._modifiedby_key, d.creation_date, d.modification_date
+                                                                    Buffers: shared hit=64
+                                                              ->  Memoize  (cost=0.43..4.65 rows=1 width=34) (actual time=0.000..0.000 rows=1.00 loops=3161)
+                                                                    Output: vt1.term, vt1._term_key
+                                                                    Cache Key: d._creator_key
+                                                                    Cache Mode: logical
+                                                                    Hits: 3112  Misses: 49  Evictions: 0  Overflows: 0  Memory Usage: 6kB
+                                                                    Buffers: shared hit=196
+                                                                    ->  Index Scan using voc_term_pkey on mgd.voc_term vt1  (cost=0.42..4.64 rows=1 width=34) (actual time=0.002..0.002 rows=1.00 loops=49)
+                                                                          Output: vt1.term, vt1._term_key
+                                                                          Index Cond: (vt1._term_key = d._creator_key)
+                                                                          Index Searches: 49
+                                                                          Buffers: shared hit=196
+                                                        ->  Memoize  (cost=0.43..4.65 rows=1 width=34) (actual time=0.000..0.000 rows=1.00 loops=3161)
+                                                              Output: vt2.term, vt2._term_key
+                                                              Cache Key: d._vector_key
+                                                              Cache Mode: logical
+                                                              Hits: 2998  Misses: 163  Evictions: 0  Overflows: 0  Memory Usage: 19kB
+                                                              Buffers: shared hit=652
+                                                              ->  Index Scan using voc_term_pkey on mgd.voc_term vt2  (cost=0.42..4.64 rows=1 width=34) (actual time=0.001..0.001 rows=1.00 loops=163)
+                                                                    Output: vt2.term, vt2._term_key
+                                                                    Index Cond: (vt2._term_key = d._vector_key)
+                                                                    Index Searches: 163
+                                                                    Buffers: shared hit=652
+                                      ->  Memoize  (cost=0.43..0.48 rows=1 width=34) (actual time=0.000..0.000 rows=1.00 loops=962031)
+                                            Output: vt.term, vt._term_key
+                                            Cache Key: c._cellline_type_key
+                                            Cache Mode: logical
+                                            Hits: 962029  Misses: 2  Evictions: 0  Overflows: 0  Memory Usage: 1kB
+                                            Buffers: shared hit=8
+                                            ->  Index Scan using voc_term_pkey on mgd.voc_term vt  (cost=0.42..0.47 rows=1 width=34) (actual time=0.006..0.006 rows=1.00 loops=2)
+                                                  Output: vt.term, vt._term_key
+                                                  Index Cond: (vt._term_key = c._cellline_type_key)
+                                                  Index Searches: 2
+                                                  Buffers: shared hit=8
+                                ->  Memoize  (cost=0.43..0.46 rows=1 width=36) (actual time=0.000..0.000 rows=1.00 loops=962031)
+                                      Output: s1.strain, s1._strain_key
+                                      Cache Key: c._strain_key
+                                      Cache Mode: logical
+                                      Hits: 961932  Misses: 99  Evictions: 0  Overflows: 0  Memory Usage: 13kB
+                                      Buffers: shared hit=396
+                                      ->  Index Scan using prb_strain_pkey on mgd.prb_strain s1  (cost=0.42..0.45 rows=1 width=36) (actual time=0.002..0.002 rows=1.00 loops=99)
+                                            Output: s1.strain, s1._strain_key
+                                            Index Cond: (s1._strain_key = c._strain_key)
+                                            Index Searches: 99
+                                            Buffers: shared hit=396
+                          ->  Hash  (cost=6.59..6.59 rows=259 width=15) (actual time=0.038..0.038 rows=259.00 loops=1)
+                                Output: u1.login, u1._user_key
+                                Buckets: 1024  Batches: 1  Memory Usage: 21kB
+                                Buffers: shared hit=4
+                                ->  Seq Scan on mgd.mgi_user u1  (cost=0.00..6.59 rows=259 width=15) (actual time=0.009..0.019 rows=259.00 loops=1)
+                                      Output: u1.login, u1._user_key
+                                      Buffers: shared hit=4
+                    ->  Hash  (cost=6.59..6.59 rows=259 width=15) (actual time=13.360..13.360 rows=259.00 loops=1)
+                          Output: u2.login, u2._user_key
+                          Buckets: 1024  Batches: 1  Memory Usage: 21kB
+                          Buffers: shared hit=4
+                          ->  Seq Scan on mgd.mgi_user u2  (cost=0.00..6.59 rows=259 width=15) (actual time=13.298..13.329 rows=259.00 loops=1)
+                                Output: u2.login, u2._user_key
+                                Buffers: shared hit=4
+              ->  Memoize  (cost=0.43..4.65 rows=1 width=34) (actual time=0.000..0.000 rows=1.00 loops=962031)
+                    Output: vt3.term, vt3._term_key
+                    Cache Key: d._vectortype_key
+                    Cache Mode: logical
+                    Hits: 962024  Misses: 7  Evictions: 0  Overflows: 0  Memory Usage: 1kB
+                    Buffers: shared hit=24
+                    ->  Index Scan using voc_term_pkey on mgd.voc_term vt3  (cost=0.42..4.64 rows=1 width=34) (actual time=0.003..0.003 rows=0.86 loops=7)
+                          Output: vt3.term, vt3._term_key
+                          Index Cond: (vt3._term_key = d._vectortype_key)
+                          Index Searches: 6
+                          Buffers: shared hit=24
+        ->  Memoize  (cost=0.43..6.42 rows=1 width=19) (actual time=0.000..0.000 rows=1.00 loops=962031)
+              Output: p._cellline_key, p.cellline, p._strain_key
+              Cache Key: d._parentcellline_key
+              Cache Mode: logical
+              Hits: 961816  Misses: 215  Evictions: 0  Overflows: 0  Memory Usage: 25kB
+              Buffers: shared hit=856
+              ->  Index Scan using all_cellline_pkey on mgd.all_cellline p  (cost=0.42..6.41 rows=1 width=19) (actual time=0.002..0.002 rows=1.00 loops=215)
+                    Output: p._cellline_key, p.cellline, p._strain_key
+                    Index Cond: (p._cellline_key = d._parentcellline_key)
+                    Index Searches: 214
+                    Buffers: shared hit=856
+  ->  Memoize  (cost=0.43..0.46 rows=1 width=36) (actual time=0.000..0.000 rows=1.00 loops=962031)
+        Output: s2.strain, s2._strain_key
+        Cache Key: p._strain_key
+        Cache Mode: logical
+        Hits: 961954  Misses: 77  Evictions: 0  Overflows: 0  Memory Usage: 10kB
+        Buffers: shared hit=304
+        ->  Index Scan using prb_strain_pkey on mgd.prb_strain s2  (cost=0.42..0.45 rows=1 width=36) (actual time=0.001..0.001 rows=0.99 loops=77)
+              Output: s2.strain, s2._strain_key
+              Index Cond: (s2._strain_key = p._strain_key)
+              Index Searches: 76
+              Buffers: shared hit=304
+Planning:
+  Buffers: shared hit=79
+Planning Time: 2.024 ms
+JIT:
+  Functions: 96
+  Options: Inlining false, Optimization false, Expressions true, Deforming true
+  Timing: Generation 1.340 ms (Deform 0.538 ms), Inlining 0.000 ms, Optimization 0.553 ms, Emission 12.814 ms, Total 14.707 ms
+Execution Time: 1197.208 ms

@@ -31,6 +31,7 @@ import javax.swing.UIManager;
 public class DocumentsEmptyPanel extends JPanel {
 
 	private final FormPanel formPanel;
+	private final JButton newBlankPlanButton;
 
 	public DocumentsEmptyPanel(FormPanel formPanel) {
 		this.formPanel = formPanel;
@@ -42,7 +43,7 @@ public class DocumentsEmptyPanel extends JPanel {
 		column.setLayout(new BoxLayout(column, BoxLayout.Y_AXIS));
 		column.setBorder(BorderFactory.createEmptyBorder(24, 32, 24, 32));
 
-		JLabel title = new JLabel("Get started", SwingConstants.CENTER);
+		JLabel title = new JLabel("Get Started", SwingConstants.CENTER);
 		title.setAlignmentX(CENTER_ALIGNMENT);
 		title.setFont(title.getFont().deriveFont(Font.BOLD, 22f));
 		column.add(title);
@@ -56,11 +57,12 @@ public class DocumentsEmptyPanel extends JPanel {
 		column.add(subtitle);
 		column.add(Box.createVerticalStrut(28));
 
-		column.add(actionButton(
+		newBlankPlanButton = actionButton(
 				createLargePlusIcon(),
 				"New blank plan",
 				"Add an empty plan. Paste EXPLAIN output or run a query from Plan Source.",
-				() -> formPanel.addBlankPlan()));
+				() -> formPanel.addBlankPlan());
+		column.add(newBlankPlanButton);
 		column.add(Box.createVerticalStrut(14));
 		column.add(actionButton(
 				createJsonIcon(),
@@ -81,6 +83,11 @@ public class DocumentsEmptyPanel extends JPanel {
 		gbc.weighty = 1;
 		add(column, gbc);
 		refreshChrome();
+	}
+
+	/** Card used as the arrow source for the Plans “Add Plan” guide. */
+	public JButton getNewBlankPlanButton() {
+		return newBlankPlanButton;
 	}
 
 	/** Re-apply colors after a theme change. */
