@@ -229,7 +229,7 @@ function Update-ReadmeDownloads([string]$NewVersion) {
 
   To install the ``x64.zip`` on macOS:
   - Unzip file
-  - Drag ``PostgreSQLExplainPlanStudio.app`` to Applications
+  - Drag ``PostgreSQL Explain Plan Studio.app`` to Applications
   - No separate Java install needed (JRE is bundled)
   - First launch of an unsigned build: right-click the app → Open → Open
 - $macIcon macOS (JAR): [$macJar]($base/$macJar)
@@ -1166,11 +1166,11 @@ try {
 
 	$macAppNotes = if (Test-Path $MacAppZip) {
 		$dmgLine = if (Test-Path $MacDmg) {
-			"- DMG (optional): ``$MacDmgName`` — open and drag ``PostgreSQLExplainPlanStudio.app`` to Applications`n"
+			"- DMG (optional): ``$MacDmgName`` — open and drag ``PostgreSQL Explain Plan Studio.app`` to Applications`n"
 		} else { "" }
 		@"
 ### macOS app (bundled JRE)
-- App zip: ``$MacAppZipName`` — unzip and drag ``PostgreSQLExplainPlanStudio.app`` to Applications
+- App zip: ``$MacAppZipName`` — unzip and drag ``PostgreSQL Explain Plan Studio.app`` to Applications
 $dmgLine- First launch of an unsigned build: right-click the app → Open → Open
 "@
 	} else { "" }

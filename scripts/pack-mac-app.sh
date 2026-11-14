@@ -10,9 +10,9 @@
 #   ./scripts/pack-mac-app.sh --skip-build   # reuse existing shaded jar
 #
 # Outputs (under target/):
-#   PostgreSQLExplainPlanStudio.app/   (also under target/jpackage-mac/)
+#   PostgreSQL Explain Plan Studio.app/   (under target/jpackage-mac/; spaces OK for Finder)
 #   PostgreSQLExplainPlanStudio-<ver>-mac-<arch>.dmg
-#   PostgreSQLExplainPlanStudio-<ver>-mac-<arch>.zip   (.app inside)
+#   PostgreSQLExplainPlanStudio-<ver>-mac-<arch>.zip   (.app inside; zip filename stays unspaced)
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -83,6 +83,7 @@ case "$ARCH_RAW" in
   *) ARCH_LABEL="$ARCH_RAW" ;;
 esac
 
+# Artifact / jpackage --name stay unspaced (paths, download URLs). Finder label uses DISPLAY_NAME.app.
 APP_NAME="PostgreSQLExplainPlanStudio"
 DISPLAY_NAME="PostgreSQL Explain Plan Studio"
 MAIN_CLASS="com.williammeitzen.peps.PostgreSQLExplainPlanStudio"
@@ -153,14 +154,17 @@ jpackage \
 # main() already sets apple.awt.application.name before AWT.
 # jpackage may warn that mac-package-name is >16 characters — that is OK.
 
-APP_BUNDLE="$JPACKAGE_DEST/${APP_NAME}.app"
-if [[ ! -d "$APP_BUNDLE" ]]; then
-  echo "jpackage did not create $APP_BUNDLE" >&2
+# jpackage creates an unspaced .app; rename so Finder matches QuickTime-style labels.
+JPACKAGE_BUNDLE="${JPACKAGE_DEST}/${APP_NAME}.app"
+APP_BUNDLE="${JPACKAGE_DEST}/${DISPLAY_NAME}.app"
+if [[ ! -d "${JPACKAGE_BUNDLE}" ]]; then
+  echo "jpackage did not create ${JPACKAGE_BUNDLE}" >&2
   exit 1
 fi
+rm -rf "${APP_BUNDLE}"
+mv "${JPACKAGE_BUNDLE}" "${APP_BUNDLE}"
+log "Renamed bundle -> ${DISPLAY_NAME}.app (Finder label)"
 
-# Keep bundle path as PostgreSQLExplainPlanStudio.app (no spaces).
-# Finder/Dock + menu bar use the spaced display name.
 INFO_PLIST="${APP_BUNDLE}/Contents/Info.plist"
 if [[ ! -f "${INFO_PLIST}" ]]; then
   echo "Missing Info.plist at ${INFO_PLIST}" >&2
@@ -217,10 +221,10 @@ fi
 log "Zipping .app -> ${ZIP_NAME}..."
 rm -f "${ZIP_PATH}"
 if ditto -c -k --sequesterRsrc --keepParent \
-    "${JPACKAGE_DEST}/${APP_NAME}.app" "${ZIP_PATH}" 2>/dev/null; then
+    "${APP_BUNDLE}" "${ZIP_PATH}" 2>/dev/null; then
   log "Wrote ${ZIP_PATH}"
 elif (
-  cd "${JPACKAGE_DEST}" && zip -qry "${ZIP_PATH}" "${APP_NAME}.app"
+  cd "${JPACKAGE_DEST}" && zip -qry "${ZIP_PATH}" "${DISPLAY_NAME}.app"
 ); then
   log "Wrote ${ZIP_PATH} (via zip)"
 else
@@ -235,9 +239,9 @@ if [[ -f "${DMG_PATH}" ]]; then
 fi
 echo "  ZIP:  ${ZIP_PATH}"
 if [[ -f "${DMG_PATH}" ]]; then
-  echo "Install: open \"${DMG_PATH}\" and drag ${APP_NAME}.app to Applications."
+  echo "Install: open \"${DMG_PATH}\" and drag \"${DISPLAY_NAME}.app\" to Applications."
 else
-  echo "Install: unzip \"${ZIP_PATH}\" and drag ${APP_NAME}.app to Applications."
+  echo "Install: unzip \"${ZIP_PATH}\" and drag \"${DISPLAY_NAME}.app\" to Applications."
 fi
-echo "Finder/Dock label: ${DISPLAY_NAME} (bundle folder stays ${APP_NAME}.app)."
+echo "Finder label: ${DISPLAY_NAME}.app (download zip filename stays ${ZIP_NAME})."
 echo "Note: unsigned builds may need right-click -> Open the first time (Gatekeeper)."

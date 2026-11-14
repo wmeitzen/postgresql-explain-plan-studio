@@ -14,7 +14,7 @@ Graphical viewer for PostgreSQL `EXPLAIN` plans.
 
   To install the `x64.zip` on macOS:
   - Unzip file
-  - Drag `PostgreSQLExplainPlanStudio.app` to Applications
+  - Drag `PostgreSQL Explain Plan Studio.app` to Applications
   - No separate Java install needed (JRE is bundled)
   - First launch of an unsigned build: right-click the app ? Open ? Open
 - <img src="docs/readme-icons/apple.svg" width="16" height="16" alt="macOS" /> macOS (JAR): [PostgreSQLExplainPlanStudio-0.0.24-mac-jar.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.24-mac-jar.zip)
@@ -205,8 +205,8 @@ chmod +x scripts/pack-mac-app.sh
 
 Outputs:
 
-- `target/jpackage-mac/PostgreSQLExplainPlanStudio.app`
-- `target/PostgreSQLExplainPlanStudio-<version>-mac-x64.zip` (or `mac-arm64`) â€” unzip and drag the `.app` to Applications
+- `target/jpackage-mac/PostgreSQL Explain Plan Studio.app`
+- `target/PostgreSQLExplainPlanStudio-<version>-mac-x64.zip` (or `mac-arm64`) — unzip and drag the `.app` to Applications
 - matching `.dmg` when built interactively (skipped over SSH to avoid the SetFile / Xcode CLT dialog)
 
 Unsigned builds may need right-click â†’ Open the first time. Signing/notarization is still deferred.
