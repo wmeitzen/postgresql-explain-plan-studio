@@ -23,6 +23,7 @@ import javax.swing.BorderFactory;
 import javax.swing.border.EmptyBorder;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
+import javax.swing.table.JTableHeader;
 
 /**
  * Property/Value table with Expand all above and Notes underneath in the same
@@ -90,16 +91,26 @@ public class OperatorDetailsPanel extends JPanel {
 		notesBlock.add(notesHeading, BorderLayout.NORTH);
 		notesBlock.add(notesArea, BorderLayout.CENTER);
 
-		tableWithHeader = new JPanel(new BorderLayout());
-		tableWithHeader.add(propertiesPanel.getTableHeader(), BorderLayout.NORTH);
-		tableWithHeader.add(propertiesPanel, BorderLayout.CENTER);
+		// BoxLayout (not BorderLayout.CENTER) so the grid keeps its column preferred
+		// widths — BorderLayout stretches the table and made the Property/Value
+		// divider feel capped by the other column.
+		tableWithHeader = new JPanel();
+		tableWithHeader.setLayout(new BoxLayout(tableWithHeader, BoxLayout.Y_AXIS));
+		tableWithHeader.setOpaque(false);
+		JTableHeader header = propertiesPanel.getTableHeader();
+		header.setAlignmentX(LEFT_ALIGNMENT);
+		propertiesPanel.setAlignmentX(LEFT_ALIGNMENT);
+		tableWithHeader.add(header);
+		tableWithHeader.add(propertiesPanel);
 		tableWithHeader.setAlignmentX(LEFT_ALIGNMENT);
 
-		propertiesBlock = new JPanel(new BorderLayout());
+		propertiesBlock = new JPanel();
+		propertiesBlock.setLayout(new BoxLayout(propertiesBlock, BoxLayout.Y_AXIS));
+		propertiesBlock.setOpaque(false);
 		propertiesBlock.setAlignmentX(LEFT_ALIGNMENT);
-		propertiesBlock.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
-		propertiesBlock.add(expandAllBar, BorderLayout.NORTH);
-		propertiesBlock.add(tableWithHeader, BorderLayout.CENTER);
+		expandAllBar.setAlignmentX(LEFT_ALIGNMENT);
+		propertiesBlock.add(expandAllBar);
+		propertiesBlock.add(tableWithHeader);
 
 		// Stack grid then Notes directly underneath (avoid BorderLayout.SOUTH gap)
 		columnView = new JPanel();

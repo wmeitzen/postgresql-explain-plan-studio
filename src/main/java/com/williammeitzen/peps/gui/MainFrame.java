@@ -124,11 +124,9 @@ public class MainFrame extends JFrame {
 		
 		addWindowListener(new WindowAdapter() {
  			public void windowClosing(WindowEvent e) {
- 				//System.out.println("Window is closing");
-  				//controller.disconnect(); // disconnect from db
- 				// Suggested by Purcell to prevent some errors during the exit process
- 				// I've never seen an error during the exit process; including it anyway
- 				// Write application dimensions to config
+ 				// Write application dimensions to config, then exit the JVM.
+ 				// dispose() alone often leaves AWT / Docking Frames threads alive on macOS
+ 				// (Dock icon sticks; shell never returns to the prompt after java -jar).
  				Dimension dimApplicationSize = getSize();
  				Integer intWidth = dimApplicationSize.width;
  				Integer intHeight = dimApplicationSize.height;
@@ -139,8 +137,9 @@ public class MainFrame extends JFrame {
  				if (dockingLayout != null) {
  					dockingLayout.saveLayout();
  				}
+ 				HollowGuideArrowOverlay.dismiss();
  				dispose();
- 				System.gc();
+ 				System.exit(0);
 			}
 		});
 

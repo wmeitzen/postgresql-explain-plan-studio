@@ -58,6 +58,11 @@ cp -f "$jar" "$RUN_JAR"
 log "Starting peps-dev.jar (copy of $(basename "$jar"); safe while RECOMPILENOW rebuilds)"
 JAVA_ARGS=()
 if [[ "$(uname -s)" == "Darwin" ]]; then
+  # Without -Xdock:icon, macOS shows the Java Duke icon for java -jar launches.
+  DOCK_ICON="$REPO_ROOT/src/main/resources/images/app-icon.png"
   JAVA_ARGS+=(-Xdock:name="PostgreSQL Explain Plan Studio")
+  if [[ -f "$DOCK_ICON" ]]; then
+    JAVA_ARGS+=(-Xdock:icon="$DOCK_ICON")
+  fi
 fi
 exec java "${JAVA_ARGS[@]}" -jar "$RUN_JAR"
