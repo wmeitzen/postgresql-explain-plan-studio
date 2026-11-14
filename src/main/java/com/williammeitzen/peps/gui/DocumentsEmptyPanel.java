@@ -6,7 +6,6 @@ import java.awt.Color;
 import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.Font;
-import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
@@ -66,13 +65,13 @@ public class DocumentsEmptyPanel extends JPanel {
 		column.add(actionButton(
 				createJsonIcon(),
 				"Sample JSON plan",
-				"Create a plan with a large JSON EXPLAIN of select * from all_cellline_view.",
+				"Show an example JSON plan.",
 				() -> formPanel.addSampleJsonPlan()));
 		column.add(Box.createVerticalStrut(14));
 		column.add(actionButton(
 				createTextIcon(),
 				"Sample text plan",
-				"Create a plan with a large text EXPLAIN of select * from all_cellline_view.",
+				"Show an example text plan.",
 				() -> formPanel.addSampleTextPlan()));
 
 		GridBagConstraints gbc = new GridBagConstraints();
@@ -112,20 +111,24 @@ public class DocumentsEmptyPanel extends JPanel {
 		JButton button = new JButton();
 		button.setAlignmentX(CENTER_ALIGNMENT);
 		button.setLayout(new BorderLayout(16, 0));
-		button.setIcon(icon);
-		button.setHorizontalAlignment(SwingConstants.LEFT);
 		button.setFocusPainted(false);
 		button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		button.setMargin(new Insets(14, 18, 14, 18));
 		button.setMaximumSize(new Dimension(520, 88));
 		button.setPreferredSize(new Dimension(520, 88));
+		// Icon as WEST content (not setIcon) so CENTER text never paints over it.
+		JLabel iconLabel = new JLabel(icon);
+		iconLabel.setOpaque(false);
+		button.add(iconLabel, BorderLayout.WEST);
 
 		JPanel text = new JPanel();
 		text.setOpaque(false);
 		text.setLayout(new BoxLayout(text, BoxLayout.Y_AXIS));
 		JLabel head = new JLabel(heading);
+		head.setAlignmentX(LEFT_ALIGNMENT);
 		head.setFont(head.getFont().deriveFont(Font.BOLD, 15f));
 		JLabel desc = new JLabel("<html><body style='width:360px'>" + description + "</body></html>");
+		desc.setAlignmentX(LEFT_ALIGNMENT);
 		desc.setFont(desc.getFont().deriveFont(Font.PLAIN, 12f));
 		text.add(head);
 		text.add(Box.createVerticalStrut(4));

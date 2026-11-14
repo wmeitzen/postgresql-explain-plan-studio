@@ -659,7 +659,13 @@ public class FormPanel extends JPanel {
 		insertTreeNode(targetFolder, node, insertIndex);
 		refreshDocumentsEmptyState();
 		// Selection listener builds the Plan Source / Compare / Diagram tabs.
+		if (planText != null) {
+			newPlanSourcePanel.requestShowDiagramCue();
+		}
 		selectTreeNode(node);
+		if (planText != null) {
+			SwingUtilities.invokeLater(newPlanSourcePanel::showShowDiagramCue);
+		}
 	}
 
 	private void addFolder() {

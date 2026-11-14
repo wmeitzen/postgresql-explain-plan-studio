@@ -5,6 +5,7 @@ import java.awt.Color;
 import java.awt.Component;
 import java.awt.Container;
 import java.awt.Dimension;
+import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
@@ -76,6 +77,10 @@ public class PlanSourcePanel extends JPanel {
 	//private JRadioButton planSourceFromPEGRadio;
 	private int idExplainPlan;
 	private JButton showPlanGraphButton;
+	private JPanel showPlanGraphButtonRow;
+	private PulsingArrowCue showDiagramCue;
+	/** Set by Get started samples; applied when this panel is (re)shown in Documents. */
+	private boolean diagramCuePending;
 	private JLabel planFolderLabel;
 	private JComboBox<FormPanel.FolderChoice> planFolderCombo;
 	private JButton planFolderSaveBtn;
@@ -419,8 +424,17 @@ public class PlanSourcePanel extends JPanel {
 
 		showPlanGraphButton = new JButton("Show JSON Plan Diagram");
 		showPlanGraphButton.setEnabled(false);
+		showDiagramCue = new PulsingArrowCue();
+		showPlanGraphButtonRow = new JPanel(new BorderLayout(12, 0));
+		showPlanGraphButtonRow.setOpaque(false);
+		JPanel showBtnWrap = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+		showBtnWrap.setOpaque(false);
+		showBtnWrap.add(showPlanGraphButton);
+		showPlanGraphButtonRow.add(showBtnWrap, BorderLayout.WEST);
+		showPlanGraphButtonRow.add(showDiagramCue, BorderLayout.CENTER);
 		showPlanGraphButton.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
+				clearShowDiagramCue();
 				if (bolShowTiming == true) { System.out.println("before PlanSourcePanel.showPlanGraphButton.addActionListener(): " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
 				if (!canOpenPlanDiagramTab()) {
 					return;
@@ -698,7 +712,7 @@ public class PlanSourcePanel extends JPanel {
 		jsonAreaGbc.fill = GridBagConstraints.BOTH;
 		panel.add(jsonPlanTextAreaScrollPane, jsonAreaGbc);
 
-		panel.add(showPlanGraphButton, fullWidthGbc(row++, new Insets(4, 8, 4, 8)));
+		panel.add(showPlanGraphButtonRow, fullWidthGbc(row++, new Insets(4, 8, 4, 8)));
 
 		connectModeOnlyComponents = new Component[] {
 				sectionHeaderServer,
@@ -1150,6 +1164,65 @@ public class PlanSourcePanel extends JPanel {
 					"Plan field is empty or not recognized as JSON or text EXPLAIN.");
 		}
 		return resolved;
+	}
+
+	/**
+	 * Remember to show the diagram cue once this Plan Source panel is on screen
+	 * (tabs are rebuilt after tree selection, which can drop an early cue).
+	 */
+	public void requestShowDiagramCue() {
+		diagramCuePending = true;
+		if (isDisplayable()) {
+			showShowDiagramCue();
+		}
+	}
+
+	@Override
+	public void addNotify() {
+		super.addNotify();
+		if (diagramCuePending) {
+			SwingUtilities.invokeLater(this::showShowDiagramCue);
+		}
+	}
+
+	/**
+	 * Pulse a “Next” arrow beside Show Plan Diagram (used after Get started sample plans).
+	 */
+	public void showShowDiagramCue() {
+		if (showDiagramCue == null || showPlanGraphButton == null) {
+			return;
+		}
+		diagramCuePending = true;
+		setShowPlanGraphButton(hasUsableJsonPlan());
+		Runnable apply = () -> {
+			if (!diagramCuePending || showDiagramCue == null) {
+				return;
+			}
+			showDiagramCue.startPulse();
+			if (showPlanGraphButtonRow != null) {
+				showPlanGraphButtonRow.revalidate();
+				showPlanGraphButtonRow.repaint();
+				showPlanGraphButtonRow.scrollRectToVisible(showPlanGraphButtonRow.getBounds());
+			}
+			revalidate();
+			repaint();
+			showPlanGraphButton.requestFocusInWindow();
+		};
+		SwingUtilities.invokeLater(apply);
+		// Second pass after Documents tab layout settles.
+		Timer showCueTimer = new Timer(300, e -> {
+			((Timer) e.getSource()).stop();
+			apply.run();
+		});
+		showCueTimer.setRepeats(false);
+		showCueTimer.start();
+	}
+
+	public void clearShowDiagramCue() {
+		diagramCuePending = false;
+		if (showDiagramCue != null) {
+			showDiagramCue.stopPulse();
+		}
 	}
 
 	/** Show an execute/connection error in the JSON plan field and pulse the border once. */
