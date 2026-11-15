@@ -6751,7 +6751,8 @@ order by id_explain_plan_property;
 
 	/**
 	 * Notes for the properties panel: explain scaled diagram totals such as
-	 * "~591 rows removed by filter" versus the raw EXPLAIN property value.
+	 * "~591 rows removed by filter" versus the raw EXPLAIN property value,
+	 * plus shared parallel-leader/worker expectation lines when workers exist.
 	 */
 	public String getOperatorNotes(int intIDExplainPlanProperty) {
 		if (idExplainPlan == null || intIDExplainPlanProperty < 0) {
@@ -6767,6 +6768,12 @@ order by id_explain_plan_property;
 				+ ", ancestor_workers_planned\n"
 				+ ", ancestor_workers_launched\n"
 				+ ", exact_actual_worker_count\n"
+				+ ", difference_time_ms\n"
+				+ ", total_actual_rows\n"
+				+ ", actual_data_size_bytes\n"
+				+ ", parallel_leader_difference_time_highlight\n"
+				+ ", parallel_leader_actual_rows_highlight\n"
+				+ ", parallel_leader_actual_data_size_highlight\n"
 				+ ", rows_removed_by_filter\n"
 				+ ", total_rows_removed_by_filter\n"
 				+ ", total_rows_removed_by_filter_is_exact\n"
@@ -6797,7 +6804,94 @@ order by id_explain_plan_property;
 				"removed by index recheck", "Rows Removed by Index Recheck",
 				"rows_removed_by_index_recheck", "total_rows_removed_by_index_recheck",
 				"total_rows_removed_by_index_recheck_is_exact");
+		appendParallelParticipantExpectationNotes(notes, row, intIDExplainPlanProperty);
 		return notes.toString().trim();
+	}
+
+	/**
+	 * Shared expectation lines only for metrics that are currently out of
+	 * balance (red on the diagram) for the PL or any worker. Shown only when
+	 * workers are expanded. Exclusive operator time is omitted.
+	 */
+	private void appendParallelParticipantExpectationNotes(StringBuilder notes, JsonObject row,
+			int intIDExplainPlanProperty) {
+		JsonObject expandedRow = Database.row(
+				"select count(*) as found\n"
+						+ "from explain_plan_operator_show_workers\n"
+						+ "where id_explain_plan = " + idExplainPlan + "\n"
+						+ "and id_explain_plan_property = " + intIDExplainPlanProperty + "\n");
+		if (expandedRow == null || parseAnnotationInt(expandedRow.get("found")) == null
+				|| parseAnnotationInt(expandedRow.get("found")).intValue() <= 0) {
+			return;
+		}
+		JsonObject countRow = Database.row(
+				"select count(*) as worker_count\n"
+						+ ", max(coalesce(actual_data_size_highlight_1, 0)) as mass_highlight\n"
+						+ ", max(coalesce(actual_rows_highlight_1, 0)) as rows_highlight\n"
+						+ ", max(coalesce(difference_time_highlight_1, 0)) as time_diff_highlight\n"
+						+ "from explain_plan_operator_workers\n"
+						+ "where id_explain_plan = " + idExplainPlan + "\n"
+						+ "and id_explain_plan_property = " + intIDExplainPlanProperty + "\n");
+		Integer workerCount = countRow == null ? null : parseAnnotationInt(countRow.get("worker_count"));
+		if (workerCount == null || workerCount.intValue() <= 0) {
+			return;
+		}
+
+		boolean massOutOfBalance = isHighlightFlag(row.get("parallel_leader_actual_data_size_highlight"))
+				|| isHighlightFlag(countRow.get("mass_highlight"));
+		boolean rowsOutOfBalance = isHighlightFlag(row.get("parallel_leader_actual_rows_highlight"))
+				|| isHighlightFlag(countRow.get("rows_highlight"));
+		boolean timeDiffOutOfBalance = isHighlightFlag(row.get("parallel_leader_difference_time_highlight"))
+				|| isHighlightFlag(countRow.get("time_diff_highlight"));
+		if (!massOutOfBalance && !rowsOutOfBalance && !timeDiffOutOfBalance) {
+			return;
+		}
+
+		double evenSplitPct = 100.0 / (workerCount.intValue() + 1);
+		Double actualMassBytes = toDouble(row.get("actual_data_size_bytes"));
+		Double totalActualRows = toDouble(row.get("total_actual_rows"));
+		Double differenceTimeMs = toDouble(row.get("difference_time_ms"));
+
+		StringBuilder block = new StringBuilder();
+		if (massOutOfBalance && actualMassBytes != null) {
+			double expectedMass = actualMassBytes.doubleValue() * evenSplitPct / 100.0;
+			block.append("Actual Mass is expected to be near ")
+					.append(formatExpectationPercent(evenSplitPct))
+					.append(" (")
+					.append(Utils.bytesExtraPrecision(expectedMass))
+					.append(")\n");
+		}
+		if (rowsOutOfBalance && totalActualRows != null) {
+			double expectedRows = totalActualRows.doubleValue() * evenSplitPct / 100.0;
+			block.append("Actual Rows are expected to be near ")
+					.append(formatExpectationPercent(evenSplitPct))
+					.append(" (")
+					.append(Utils.unitsExtraPrecision(expectedRows))
+					.append(")\n");
+		}
+		if (timeDiffOutOfBalance && differenceTimeMs != null) {
+			block.append("Time Diff is expected to be near 100%")
+					.append(" (")
+					.append(Utils.elapsed_time_ms_extraPrecision(differenceTimeMs.doubleValue()))
+					.append(")\n");
+		}
+		if (block.length() == 0) {
+			return;
+		}
+		if (notes.length() > 0) {
+			notes.append("\n");
+		}
+		notes.append(block);
+	}
+
+	private static String formatExpectationPercent(double percent) {
+		if (!Double.isFinite(percent)) {
+			return "0%";
+		}
+		if (Math.abs(percent - Math.rint(percent)) < 0.05) {
+			return String.valueOf(Math.round(percent)) + "%";
+		}
+		return String.format(java.util.Locale.US, "%.1f%%", percent);
 	}
 
 	private void appendRowsRemovedNote(StringBuilder notes, JsonObject row, int operatorId,
@@ -7262,6 +7356,309 @@ order by id_explain_plan_property;
 		//return null;
 	}
 
+	/** Calculated Fields grid rows plus matching diagram red-highlight flags. */
+	public static final class OperatorCalculatedProperties {
+		public final Object[][] rows;
+		public final boolean[] highlights;
+
+		public OperatorCalculatedProperties(Object[][] rows, boolean[] highlights) {
+			this.rows = rows != null ? rows : new Object[0][2];
+			this.highlights = highlights != null ? highlights : new boolean[this.rows.length];
+		}
+	}
+
+	private static final class CalculatedRowsBuilder {
+		private final ArrayList<Object[]> rows = new ArrayList<>();
+		private final ArrayList<Boolean> highlights = new ArrayList<>();
+
+		void add(String name, String value, boolean highlight) {
+			rows.add(new Object[] { name, value });
+			highlights.add(Boolean.valueOf(highlight));
+		}
+
+		void blank() {
+			if (rows.isEmpty()) {
+				return;
+			}
+			Object[] last = rows.get(rows.size() - 1);
+			if (last[0] == null && last[1] == null) {
+				return;
+			}
+			rows.add(new Object[] { null, null });
+			highlights.add(Boolean.FALSE);
+		}
+
+		OperatorCalculatedProperties build() {
+			if (rows.isEmpty()) {
+				return new OperatorCalculatedProperties(new Object[0][2], new boolean[0]);
+			}
+			Object[][] out = new Object[rows.size()][2];
+			boolean[] flags = new boolean[rows.size()];
+			for (int i = 0; i < rows.size(); i++) {
+				out[i] = rows.get(i);
+				flags[i] = highlights.get(i).booleanValue();
+			}
+			return new OperatorCalculatedProperties(out, flags);
+		}
+	}
+
+	/**
+	 * PEPS-derived metrics for the Properties panel (below EXPLAIN keys),
+	 * including parallel-leader and per-worker breakdowns when present.
+	 * Participant mass / rows / time-diff rows carry diagram red-highlight
+	 * flags. Ratios use {@code N:1} / {@code 1:N}, {@code 1:1 (equal)}, or
+	 * {@code ∞} when the estimated side is zero.
+	 */
+	public OperatorCalculatedProperties getOperatorCalculatedProperties(int intIDExplainPlanProperty) {
+		if (idExplainPlan == null) {
+			return new OperatorCalculatedProperties(new Object[0][2], new boolean[0]);
+		}
+		String strSQL = "select\n"
+				+ "  EPOA.node_type\n"
+				+ ", EPOA.total_cost\n"
+				+ ", EPOA.exclusive_time_ms\n"
+				+ ", EPOA.difference_time_ms\n"
+				+ ", EPOA.total_actual_rows\n"
+				+ ", EPOA.total_estimated_rows\n"
+				+ ", EPOA.actual_data_size_bytes\n"
+				+ ", EPOA.estimated_data_size_bytes\n"
+				+ ", EPOA.parallel_leader_exclusive_time_ms\n"
+				+ ", EPOA.parallel_leader_difference_time_ms\n"
+				+ ", EPOA.parallel_leader_actual_rows\n"
+				+ ", EPOA.parallel_leader_actual_data_size_bytes\n"
+				+ ", EPOA.parallel_leader_difference_time_highlight\n"
+				+ ", EPOA.parallel_leader_actual_rows_highlight\n"
+				+ ", EPOA.parallel_leader_actual_data_size_highlight\n"
+				+ ", EPGV.sum_total_costs\n"
+				+ ", EPGV.execution_time_ms\n"
+				+ "from explain_plan_operator_annotations as EPOA\n"
+				+ "left join explain_plan_generated_values as EPGV\n"
+				+ "  on EPGV.id_explain_plan = EPOA.id_explain_plan\n"
+				+ "where EPOA.id_explain_plan = " + idExplainPlan + "\n"
+				+ "and EPOA.id_explain_plan_property = " + intIDExplainPlanProperty + "\n";
+		JsonObject row = Database.row(strSQL);
+		if (row == null) {
+			return new OperatorCalculatedProperties(new Object[0][2], new boolean[0]);
+		}
+		String nodeType = blankIfNullish(row.getString("node_type"));
+		Double exclusiveTimeMs = toDouble(row.get("exclusive_time_ms"));
+		Double differenceTimeMs = toDouble(row.get("difference_time_ms"));
+		Double totalActualRows = toDouble(row.get("total_actual_rows"));
+		Double actualDataSizeBytes = toDouble(row.get("actual_data_size_bytes"));
+		Double sumTotalCosts = toDouble(row.get("sum_total_costs"));
+		Double executionTimeMs = toDouble(row.get("execution_time_ms"));
+
+		CalculatedRowsBuilder rows = new CalculatedRowsBuilder();
+		appendCalculatedPercent(rows, "Cost %", toDouble(row.get("total_cost")), sumTotalCosts, false);
+		appendCalculatedElapsed(rows, "Operator time", exclusiveTimeMs, false);
+		appendCalculatedPercent(rows, "Operator time %", exclusiveTimeMs, executionTimeMs, false);
+		appendCalculatedElapsed(rows, "Time difference", differenceTimeMs, false);
+		appendCalculatedPercent(rows, "Time difference %", differenceTimeMs, executionTimeMs, false);
+		appendCalculatedRatio(rows, "Actual vs estimated rows ratio",
+				totalActualRows, toDouble(row.get("total_estimated_rows")));
+		appendCalculatedRatio(rows, "Actual vs estimated mass ratio",
+				actualDataSizeBytes, toDouble(row.get("estimated_data_size_bytes")));
+
+		appendCalculatedParticipant(rows, calculatedParticipantLabel(nodeType, "parallel leader"),
+				toDouble(row.get("parallel_leader_exclusive_time_ms")), exclusiveTimeMs, false,
+				toDouble(row.get("parallel_leader_difference_time_ms")), differenceTimeMs,
+				isHighlightFlag(row.get("parallel_leader_difference_time_highlight")),
+				toDouble(row.get("parallel_leader_actual_rows")), totalActualRows,
+				isHighlightFlag(row.get("parallel_leader_actual_rows_highlight")),
+				toDouble(row.get("parallel_leader_actual_data_size_bytes")), actualDataSizeBytes,
+				isHighlightFlag(row.get("parallel_leader_actual_data_size_highlight")));
+
+		strSQL = "select\n"
+				+ "  worker_number\n"
+				+ ", exclusive_time_ms\n"
+				+ ", difference_time_ms\n"
+				+ ", actual_rows\n"
+				+ ", actual_data_size_bytes\n"
+				+ ", difference_time_highlight_1\n"
+				+ ", actual_rows_highlight_1\n"
+				+ ", actual_data_size_highlight_1\n"
+				+ "from explain_plan_operator_workers\n"
+				+ "where id_explain_plan = " + idExplainPlan + "\n"
+				+ "and id_explain_plan_property = " + intIDExplainPlanProperty + "\n"
+				+ "order by worker_number\n";
+		JsonArray workerRows = Database.rows(strSQL);
+		if (workerRows != null) {
+			for (int i = 0; i < workerRows.size(); i++) {
+				JsonObject worker = (JsonObject) workerRows.get(i);
+				Object workerNumber = worker.get("worker_number");
+				String workerSuffix = "Worker #" + (workerNumber == null ? "?" : String.valueOf(workerNumber));
+				appendCalculatedParticipant(rows, calculatedParticipantLabel(nodeType, workerSuffix),
+						toDouble(worker.get("exclusive_time_ms")), exclusiveTimeMs, false,
+						toDouble(worker.get("difference_time_ms")), differenceTimeMs,
+						isHighlightFlag(worker.get("difference_time_highlight_1")),
+						toDouble(worker.get("actual_rows")), totalActualRows,
+						isHighlightFlag(worker.get("actual_rows_highlight_1")),
+						toDouble(worker.get("actual_data_size_bytes")), actualDataSizeBytes,
+						isHighlightFlag(worker.get("actual_data_size_highlight_1")));
+			}
+		}
+
+		return rows.build();
+	}
+
+	private static boolean isHighlightFlag(Object raw) {
+		Integer flag = parseAnnotationInt(raw);
+		return flag != null && flag.intValue() == 1;
+	}
+
+	private static String calculatedParticipantLabel(String nodeType, String role) {
+		if (nodeType == null || nodeType.isEmpty()) {
+			return role.substring(0, 1).toUpperCase(java.util.Locale.ROOT) + role.substring(1);
+		}
+		return nodeType + " " + role;
+	}
+
+	private static void appendCalculatedParticipant(CalculatedRowsBuilder rows, String sectionName,
+			Double operatorTimeMs, Double operatorTimeDenomMs, boolean operatorTimeHighlight,
+			Double timeDiffMs, Double timeDiffDenomMs, boolean timeDiffHighlight,
+			Double actualRows, Double actualRowsDenom, boolean actualRowsHighlight,
+			Double actualMassBytes, Double actualMassDenomBytes, boolean actualMassHighlight) {
+		if (operatorTimeMs == null && timeDiffMs == null && actualRows == null && actualMassBytes == null) {
+			return;
+		}
+		rows.blank();
+		rows.add(sectionName, "", false);
+		appendCalculatedElapsed(rows, "  Operator time", operatorTimeMs, operatorTimeHighlight);
+		appendCalculatedPercent(rows, "  Operator time %", operatorTimeMs, operatorTimeDenomMs, operatorTimeHighlight);
+		appendCalculatedElapsed(rows, "  Time difference", timeDiffMs, timeDiffHighlight);
+		appendCalculatedPercent(rows, "  Time difference %", timeDiffMs, timeDiffDenomMs, timeDiffHighlight);
+		appendCalculatedRows(rows, "  Actual rows", actualRows, actualRowsHighlight);
+		appendCalculatedPercent(rows, "  Of total rows %", actualRows, actualRowsDenom, actualRowsHighlight);
+		appendCalculatedBytes(rows, "  Actual mass", actualMassBytes, actualMassHighlight);
+		appendCalculatedPercent(rows, "  Of total mass %", actualMassBytes, actualMassDenomBytes, actualMassHighlight);
+	}
+
+	private static void appendCalculatedElapsed(CalculatedRowsBuilder rows, String name, Double milliseconds,
+			boolean highlight) {
+		if (milliseconds == null) {
+			return;
+		}
+		rows.add(name, Utils.elapsed_time_ms_extraPrecision(milliseconds.doubleValue()), highlight);
+	}
+
+	private static void appendCalculatedRows(CalculatedRowsBuilder rows, String name, Double rowCount,
+			boolean highlight) {
+		if (rowCount == null) {
+			return;
+		}
+		rows.add(name, Utils.unitsExtraPrecision(rowCount.doubleValue()), highlight);
+	}
+
+	private static void appendCalculatedBytes(CalculatedRowsBuilder rows, String name, Double byteCount,
+			boolean highlight) {
+		if (byteCount == null) {
+			return;
+		}
+		rows.add(name, Utils.bytesExtraPrecision(byteCount.doubleValue()), highlight);
+	}
+
+	/**
+	 * Percent of {@code numerator/denominator}, with one extra digit vs diagram
+	 * labels. Exact 100% / 0% stay whole; otherwise {@code <10%} gets two
+	 * decimals and larger values get one.
+	 */
+	private static void appendCalculatedPercent(CalculatedRowsBuilder rows, String name,
+			Double numerator, Double denominator, boolean highlight) {
+		String text = formatCalculatedPercent(numerator, denominator);
+		if (text == null) {
+			return;
+		}
+		rows.add(name, text, highlight);
+	}
+
+	private static String formatCalculatedPercent(Double numerator, Double denominator) {
+		if (numerator == null || denominator == null) {
+			return null;
+		}
+		if (denominator.doubleValue() == 0.0) {
+			return "0%";
+		}
+		double pct = numerator.doubleValue() / denominator.doubleValue() * 100.0;
+		if (!Double.isFinite(pct)) {
+			return null;
+		}
+		if (Math.abs(pct - 100.0) < 1e-9) {
+			return "100%";
+		}
+		if (Math.abs(pct) < 1e-9) {
+			return "0%";
+		}
+		if (Math.abs(pct) < 10.0) {
+			return String.format(java.util.Locale.US, "%.2f%%", pct);
+		}
+		return String.format(java.util.Locale.US, "%.1f%%", pct);
+	}
+
+	private static void appendCalculatedRatio(CalculatedRowsBuilder rows, String name, Double numerator, Double denominator) {
+		if (numerator == null || denominator == null) {
+			return;
+		}
+		String formatted = formatCalculatedRatio(numerator.doubleValue(), denominator.doubleValue());
+		if (formatted == null) {
+			return;
+		}
+		rows.add(name, formatted, false);
+	}
+
+	/**
+	 * Format actual:estimated as {@code N:1}, {@code 1:N}, {@code 1:1 (equal)},
+	 * or {@code ∞} when estimated is zero.
+	 */
+	private static String formatCalculatedRatio(double numerator, double denominator) {
+		if (Double.isNaN(numerator) || Double.isNaN(denominator)) {
+			return null;
+		}
+		if (denominator == 0.0) {
+			return "∞";
+		}
+		long actual = Math.round(Math.abs(numerator));
+		long estimated = Math.round(Math.abs(denominator));
+		if (actual == 0L && estimated == 0L) {
+			return "1:1 (equal)";
+		}
+		if (actual == 0L) {
+			return "0:1";
+		}
+		if (actual == estimated) {
+			return "1:1 (equal)";
+		}
+		if (actual > estimated) {
+			long n = Math.max(1L, Math.round((double) actual / (double) estimated));
+			if (n == 1L) {
+				return "1:1 (equal)";
+			}
+			return n + ":1";
+		}
+		long n = Math.max(1L, Math.round((double) estimated / (double) actual));
+		if (n == 1L) {
+			return "1:1 (equal)";
+		}
+		return "1:" + n;
+	}
+
+	private static Double toDouble(Object value) {
+		if (value == null) {
+			return null;
+		}
+		if (value instanceof Number) {
+			return ((Number) value).doubleValue();
+		}
+		try {
+			String text = String.valueOf(value).trim();
+			if (text.isEmpty() || "null".equalsIgnoreCase(text)) {
+				return null;
+			}
+			return Double.valueOf(text);
+		} catch (NumberFormatException ex) {
+			return null;
+		}
+	}
+
 	public void setIDExplainPlan(String planName) {
 		String strSQL;
 		boolean bolShowSQL = false;
@@ -7553,6 +7950,14 @@ order by id_explain_plan_property;
 						objComponent.repaint();
 						
 						if (bolShowProperties == true) { System.out.println("repainted"); }
+
+						// Expanding/collapsing also selects that operator.
+						selectedOperatorId = intIDExplainPlanProperty;
+						refreshSelectedOperatorProperties();
+						SliderPanel sliderPanel = findSliderPanelInSelectedTab();
+						if (sliderPanel != null) {
+							sliderPanel.showSelectedOperator(selectedOperatorId);
+						}
 
 						repaint();
 						return;

@@ -309,26 +309,42 @@ public class Utils {
 	}
 
 	public static String bytes(double bytes) {
+		return formatBytes(bytes, false);
+	}
+
+	/**
+	 * Like {@link #bytes(double)} with one extra fractional digit when abbreviated
+	 * (kB/MB/…), matching {@link #unitsExtraPrecision(double)}.
+	 */
+	public static String bytesExtraPrecision(double bytes) {
+		return formatBytes(bytes, true);
+	}
+
+	private static String formatBytes(double bytes, boolean extraPrecision) {
 		if (exceedsDisplayCap(bytes)) {
 			return ">999 TB";
 		}
 		int digits = 0;
 		String[] dictionary = { " bytes", "kB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB" };
-        int index = 0;
-        for (index = 0; index < dictionary.length; index++) {
-            if (bytes < 1000) {
-                break;
-            }
-            bytes = bytes / 1024;
-            //bytes = bytes / 1000; // this seems weird
-        }
-        if (index >= dictionary.length) {
-        	return ">999 TB";
-        }
-        if (index > 0 && bytes <= 9) {
-        	digits = 1;
-        }
-        return String.format("%." + digits + "f", bytes) + "" + dictionary[index];
+		int index = 0;
+		for (index = 0; index < dictionary.length; index++) {
+			if (bytes < 1000) {
+				break;
+			}
+			bytes = bytes / 1024;
+			//bytes = bytes / 1000; // this seems weird
+		}
+		if (index >= dictionary.length) {
+			return ">999 TB";
+		}
+		if (index > 0) {
+			if (extraPrecision) {
+				digits = bytes <= 9.95 ? 2 : 1;
+			} else if (bytes <= 9) {
+				digits = 1;
+			}
+		}
+		return String.format("%." + digits + "f", bytes) + "" + dictionary[index];
 	}
 
 	public static String kilobytes(double kilobytes) {
@@ -398,30 +414,47 @@ public class Utils {
 	
 	// need to fix this. 30998 rows returns 30k rows
 	public static String units(double rows) {
+		return formatUnits(rows, false);
+	}
+
+	/**
+	 * Like {@link #units(double)} but with one extra fractional digit when the
+	 * value is abbreviated (k/M/…), e.g. {@code 54.8k rows} instead of
+	 * {@code 55k rows}. Plain row counts stay whole numbers.
+	 */
+	public static String unitsExtraPrecision(double rows) {
+		return formatUnits(rows, true);
+	}
+
+	private static String formatUnits(double rows, boolean extraPrecision) {
 		if (exceedsDisplayCap(rows)) {
 			return ">999T rows";
 		}
 		int digits = 0;
 		String[] dictionary = { " rows", "k rows", "M rows", "B rows", "Tr rows", "Quadr rows", "Quint rows", "Sext rows", "Oct rows", "Noni rows" };
 		String strDictionary;
-        int index = 0;
-        for (index = 0; index < dictionary.length; index++) {
-            if (rows < 1000) {
-                break;
-            }
-            rows = rows / 1000;
-        }
-        if (index >= dictionary.length) {
-        	return ">999T rows";
-        }
-        strDictionary = dictionary[index];
-        if (index == 0 && rows == 1) {
-        	strDictionary = " row";
-        }
-        if (index > 0 && rows < 9.9) {
-        	digits = 1;
-        }
-        return String.format("%." + digits + "f", rows) + "" + strDictionary;
+		int index = 0;
+		for (index = 0; index < dictionary.length; index++) {
+			if (rows < 1000) {
+				break;
+			}
+			rows = rows / 1000;
+		}
+		if (index >= dictionary.length) {
+			return ">999T rows";
+		}
+		strDictionary = dictionary[index];
+		if (index == 0 && rows == 1) {
+			strDictionary = " row";
+		}
+		if (index > 0) {
+			if (extraPrecision) {
+				digits = rows < 9.95 ? 2 : 1;
+			} else if (rows < 9.9) {
+				digits = 1;
+			}
+		}
+		return String.format("%." + digits + "f", rows) + "" + strDictionary;
 	}
 
 	public static String formattedCost(double cost) {
@@ -470,8 +503,25 @@ public class Utils {
 	public static String elapsed_time_ms(double milliseconds) {
 		return elapsed_time_sec(milliseconds / 1000);
 	}
+
+	/**
+	 * Like {@link #elapsed_time_ms(double)} with one extra fractional digit where
+	 * the source timing supports it (ms / sec). Microseconds stay whole — Postgres
+	 * EXPLAIN does not resolve below 1&nbsp;µs.
+	 */
+	public static String elapsed_time_ms_extraPrecision(double milliseconds) {
+		return elapsed_time_sec_extraPrecision(milliseconds / 1000);
+	}
 	
 	public static String elapsed_time_sec(double seconds) {
+		return formatElapsedTimeSec(seconds, false);
+	}
+
+	public static String elapsed_time_sec_extraPrecision(double seconds) {
+		return formatElapsedTimeSec(seconds, true);
+	}
+
+	private static String formatElapsedTimeSec(double seconds, boolean extraPrecision) {
 		if (!Double.isFinite(seconds) || Math.abs(seconds) > 999d * 24d * 60d * 60d) {
 			return seconds < 0 ? ">-999 days" : ">999 days";
 		}
@@ -505,21 +555,22 @@ public class Utils {
 	    } else if (fltAbsSeconds < 10 * Math.pow(10, -6)) {
 	    	strElapsedTime = roundValue(fltAbsSeconds * Math.pow(10, +6), 1) + " \u03bcs";
 	    } else if (fltAbsSeconds < 1000 * Math.pow(10, -6)) {
+			// Postgres EXPLAIN timing resolves to 1 µs — no extra fractional digit.
 	    	strElapsedTime = roundValue(fltAbsSeconds * Math.pow(10, +6), 0) + " \u03bcs";
 	    } else if (fltAbsSeconds < 10 * Math.pow(10, -3)) {
-	    	strElapsedTime = roundValue(fltAbsSeconds * Math.pow(10, +3), 1) + " ms";
+	    	strElapsedTime = roundValue(fltAbsSeconds * Math.pow(10, +3), extraPrecision ? 2 : 1) + " ms";
 	    } else if (fltAbsSeconds < 1000 * Math.pow(10, -3)) {
-	    	strElapsedTime = roundValue(fltAbsSeconds * Math.pow(10, +3), 0) + " ms";
+	    	strElapsedTime = roundValue(fltAbsSeconds * Math.pow(10, +3), extraPrecision ? 1 : 0) + " ms";
 	    } else if (fltAbsSeconds < 10) {
-	    	strElapsedTime = roundValue(fltAbsSeconds, 1) + " sec";
+	    	strElapsedTime = roundValue(fltAbsSeconds, extraPrecision ? 2 : 1) + " sec";
 	    } else if (fltAbsSeconds < 60) {
-	    	strElapsedTime = roundValue(fltAbsSeconds, 0) + " sec";
+	    	strElapsedTime = roundValue(fltAbsSeconds, extraPrecision ? 1 : 0) + " sec";
 	    } else if (fltAbsSeconds < 30 *60) {
-	    	strElapsedTime = (int) elapsedMinutes + " min " + roundValue(elapsedSeconds, 0) + " sec";
+	    	strElapsedTime = (int) elapsedMinutes + " min " + roundValue(elapsedSeconds, extraPrecision ? 1 : 0) + " sec";
 	    } else if (fltAbsSeconds < 60 *60) {
-	    	strElapsedTime = roundValue(elapsedMinutes, 0) + " min";
+	    	strElapsedTime = roundValue(elapsedMinutes, extraPrecision ? 1 : 0) + " min";
 	    } else if (fltAbsSeconds < 24 *60*60) {
-	    	strElapsedTime = (int) elapsedHours + " hr " + roundValue(elapsedMinutes, 0) + " min";
+	    	strElapsedTime = (int) elapsedHours + " hr " + roundValue(elapsedMinutes, extraPrecision ? 1 : 0) + " min";
 	    } else if (fltAbsSeconds < 30 *24*60*60) {
 	    	strElapsedTime = (int) elapsedDays + " days " + (int) elapsedHours + " hr " + roundValue(elapsedMinutes, 0) + " min";
 	    } else {

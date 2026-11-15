@@ -4,6 +4,10 @@ import java.awt.Color;
 import java.awt.Component;
 import java.awt.Container;
 import java.awt.Cursor;
+import java.awt.Font;
+import java.awt.FontMetrics;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
 import java.awt.Rectangle;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
@@ -17,6 +21,7 @@ import javax.swing.DefaultCellEditor;
 import javax.swing.JLabel;
 import javax.swing.JTable;
 import javax.swing.JTextField;
+import javax.swing.UIManager;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.TableColumnModelEvent;
 import javax.swing.event.TableColumnModelListener;
@@ -46,6 +51,10 @@ public class OperationPropertiesPanel extends JTable {
 	/** Remember Property/Value widths across model refreshes (expand all, operator clicks). */
 	private int propertyColumnWidth = DEFAULT_COLUMN_WIDTH;
 	private int valueColumnWidth = DEFAULT_COLUMN_WIDTH;
+	/** Per-row red highlight (matches diagram PL/worker hotspot text). */
+	private boolean[] rowHighlights = null;
+	private static final Color CALCULATED_HIGHLIGHT_BACKGROUND = Color.RED;
+	private static final Color CALCULATED_HIGHLIGHT_FOREGROUND = Color.YELLOW;
 
 	public OperationPropertiesPanel() {
 		super();
@@ -61,15 +70,16 @@ public class OperationPropertiesPanel extends JTable {
 		clearOperatorProperties();
 	}
 
-	/** Clear selection and empty the Property/Value table. */
+	public PlanGraphPanel getPlanGraphPanel() {
+		return planGraphPanel;
+	}
+
+	/** Clear selection and empty the Property/Value table (keeps Expand all preference). */
 	public void clearOperatorProperties() {
 		selectedOperatorPropertyId = Integer.MIN_VALUE;
 		expandedLists.clear();
 		workersExpanded = false;
-		expandAll = false;
-		if (expandAllListener != null) {
-			expandAllListener.accept(false);
-		}
+		rowHighlights = null;
 		if (getModel() instanceof DefaultTableModel) {
 			((DefaultTableModel) getModel()).setDataVector(new Object[0][0], columnNames);
 			applyColumnWidths(propertyColumnWidth, valueColumnWidth);
@@ -351,6 +361,7 @@ public class OperationPropertiesPanel extends JTable {
 			return;
 		}
 		expandAll = false;
+		OperatorDetailsPanel.setExpandAllPreference(false);
 		if (expandAllListener != null) {
 			expandAllListener.accept(false);
 		}
@@ -361,6 +372,7 @@ public class OperationPropertiesPanel extends JTable {
 	}
 
 	public void setExpandAll(boolean expandAll) {
+		OperatorDetailsPanel.setExpandAllPreference(expandAll);
 		if (this.expandAll == expandAll) {
 			return;
 		}
@@ -372,6 +384,24 @@ public class OperationPropertiesPanel extends JTable {
 			workersExpanded = false;
 		}
 		refreshFromGraph();
+	}
+
+	/** Apply the session Expand all preference without requiring a checkbox event. */
+	public void syncExpandAllFromPreference() {
+		boolean pref = OperatorDetailsPanel.isExpandAllPreference();
+		if (this.expandAll == pref) {
+			if (pref) {
+				applyExpandAll();
+			}
+			return;
+		}
+		this.expandAll = pref;
+		if (pref) {
+			applyExpandAll();
+		} else {
+			expandedLists.clear();
+			workersExpanded = false;
+		}
 	}
 
 	public void setNotesListener(Consumer<String> notesListener) {
@@ -407,15 +437,28 @@ public class OperationPropertiesPanel extends JTable {
 	}
 
 	public void setPropertiesDetails(Object[][] data) {
+		setPropertiesDetails(data, null);
+	}
+
+	public void setPropertiesDetails(Object[][] data, boolean[] highlights) {
 		boolean bolShowFunctionName = false;
 		if (bolShowFunctionName == true) { System.out.println("PlanPropertiesPanel.setPropertiesDetails(Object[][] data)"); }
 		rememberColumnWidths();
 		this.data = data;
+		if (highlights != null && data != null && highlights.length == data.length) {
+			this.rowHighlights = highlights.clone();
+		} else {
+			this.rowHighlights = null;
+		}
 		DefaultTableModel model = (DefaultTableModel) this.getModel();
 		model.setDataVector(data, columnNames);
 		this.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
 		applyColumnWidths(propertyColumnWidth, valueColumnWidth);
 		revalidateAncestors();
+	}
+
+	private boolean isRowHighlighted(int row) {
+		return rowHighlights != null && row >= 0 && row < rowHighlights.length && rowHighlights[row];
 	}
 
 	/**
@@ -448,9 +491,121 @@ public class OperationPropertiesPanel extends JTable {
 		return new Dimension(MIN_COLUMN_WIDTH * 2, super.getMinimumSize().height);
 	}
 
+	/**
+	 * Parallel leader / Worker #N section titles span Property+Value so they read
+	 * as one merged header row instead of a label beside an empty cell.
+	 */
+	boolean isCalculatedSectionHeaderRow(int row) {
+		if (row < 0 || row >= getRowCount() || getColumnCount() < 2) {
+			return false;
+		}
+		Object property = getValueAt(row, 0);
+		if (property == null) {
+			return false;
+		}
+		Object value = getValueAt(row, 1);
+		if (value != null && !value.toString().isEmpty()) {
+			return false;
+		}
+		String name = property.toString();
+		return name.endsWith(" parallel leader")
+				|| name.equals("Parallel leader")
+				|| name.contains(" Worker #")
+				|| name.startsWith("Worker #");
+	}
+
+	private Rectangle sectionHeaderSpanRect(int row) {
+		Rectangle propertyRect = super.getCellRect(row, 0, true);
+		Rectangle valueRect = super.getCellRect(row, 1, true);
+		return propertyRect.union(valueRect);
+	}
+
+	@Override
+	public Rectangle getCellRect(int row, int column, boolean includeSpacing) {
+		if (isCalculatedSectionHeaderRow(row) && getColumnCount() >= 2) {
+			// Clicks / focus treat the whole Property+Value band as one cell.
+			if (column == 0 || column == 1) {
+				Rectangle span = super.getCellRect(row, 0, includeSpacing);
+				Rectangle valueRect = super.getCellRect(row, 1, includeSpacing);
+				span.width = valueRect.x + valueRect.width - span.x;
+				return span;
+			}
+		}
+		return super.getCellRect(row, column, includeSpacing);
+	}
+
+	@Override
+	protected void paintComponent(Graphics g) {
+		super.paintComponent(g);
+		if (getColumnCount() < 2 || getRowCount() == 0) {
+			return;
+		}
+		Graphics2D g2 = (Graphics2D) g.create();
+		try {
+			for (int row = 0; row < getRowCount(); row++) {
+				if (!isCalculatedSectionHeaderRow(row)) {
+					continue;
+				}
+				Object property = getValueAt(row, 0);
+				if (property == null) {
+					continue;
+				}
+				Rectangle span = sectionHeaderSpanRect(row);
+				boolean selected = isRowSelected(row);
+				Color background = selected
+						? (getSelectionBackground() != null
+								? getSelectionBackground()
+								: UIManager.getColor("Table.selectionBackground"))
+						: (getBackground() != null ? getBackground() : UIManager.getColor("Table.background"));
+				Color foreground = selected
+						? (getSelectionForeground() != null
+								? getSelectionForeground()
+								: UIManager.getColor("Table.selectionForeground"))
+						: (getForeground() != null ? getForeground() : UIManager.getColor("Table.foreground"));
+				if (background == null) {
+					background = Color.WHITE;
+				}
+				if (foreground == null) {
+					foreground = Color.BLACK;
+				}
+				// Cover both cells and the vertical grid between them.
+				g2.setColor(background);
+				g2.fillRect(span.x, span.y, span.width, span.height);
+				Font base = getFont();
+				Font bold = base == null ? null : base.deriveFont(Font.BOLD);
+				if (bold != null) {
+					g2.setFont(bold);
+				}
+				FontMetrics fm = g2.getFontMetrics();
+				int textX = span.x + 2;
+				int textY = span.y + (span.height + fm.getAscent() - fm.getDescent()) / 2;
+				g2.setColor(foreground);
+				g2.drawString(property.toString(), textX, textY);
+				Color grid = getGridColor();
+				if (grid != null && getShowHorizontalLines()) {
+					g2.setColor(grid);
+					int yBottom = span.y + span.height - 1;
+					g2.drawLine(span.x, yBottom, span.x + span.width - 1, yBottom);
+					if (row == 0 || !isCalculatedSectionHeaderRow(row - 1)) {
+						g2.drawLine(span.x, span.y, span.x + span.width - 1, span.y);
+					}
+				}
+			}
+		} finally {
+			g2.dispose();
+		}
+	}
+
 	@Override
 	public Component prepareRenderer(TableCellRenderer renderer, int row, int column) {
 		Component component = super.prepareRenderer(renderer, row, column);
+		if (isCalculatedSectionHeaderRow(row)) {
+			// Text is painted across both columns in paintComponent.
+			if (component instanceof JLabel) {
+				((JLabel) component).setText("");
+			}
+			return component;
+		}
 		if (column == 1 && component instanceof JLabel) {
 			Object value = getValueAt(row, column);
 			if (value != null) {
@@ -464,6 +619,32 @@ public class OperationPropertiesPanel extends JTable {
 								+ "<i>" + escapeHtml(summary) + "</i></html>");
 					}
 				}
+			}
+		}
+		// Always set colors: renderers are reused, so a prior red row would otherwise stick.
+		if (isRowHighlighted(row)) {
+			component.setBackground(CALCULATED_HIGHLIGHT_BACKGROUND);
+			component.setForeground(CALCULATED_HIGHLIGHT_FOREGROUND);
+			if (component instanceof JLabel) {
+				((JLabel) component).setOpaque(true);
+			}
+		} else if (isCellSelected(row, column)) {
+			Color selBg = getSelectionBackground();
+			Color selFg = getSelectionForeground();
+			if (selBg != null) {
+				component.setBackground(selBg);
+			}
+			if (selFg != null) {
+				component.setForeground(selFg);
+			}
+		} else {
+			Color bg = getBackground();
+			Color fg = getForeground();
+			if (bg != null) {
+				component.setBackground(bg);
+			}
+			if (fg != null) {
+				component.setForeground(fg);
 			}
 		}
 		return component;
