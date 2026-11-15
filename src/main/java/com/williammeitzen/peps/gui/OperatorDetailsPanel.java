@@ -112,17 +112,25 @@ public class OperatorDetailsPanel extends JPanel {
 		propertiesBlock.add(expandAllBar);
 		propertiesBlock.add(tableWithHeader);
 
-		// Stack grid then Notes directly underneath (avoid BorderLayout.SOUTH gap)
+		// Stack grid then Notes; keep content at the top of the scroll view.
 		columnView = new JPanel();
 		columnView.setLayout(new BoxLayout(columnView, BoxLayout.Y_AXIS));
+		columnView.setAlignmentX(LEFT_ALIGNMENT);
+		columnView.setAlignmentY(TOP_ALIGNMENT);
 		columnView.add(propertiesBlock);
 		columnView.add(notesBlock);
 		columnView.add(Box.createVerticalGlue());
 
-		scroll = new JScrollPane(columnView,
+		// JScrollPane centers a short view by default — pin content to the top.
+		JPanel scrollContent = new JPanel(new BorderLayout());
+		scrollContent.setOpaque(false);
+		scrollContent.add(columnView, BorderLayout.NORTH);
+
+		scroll = new JScrollPane(scrollContent,
 				JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
 		scroll.getVerticalScrollBar().setUnitIncrement(WHEEL_UNIT_INCREMENT);
 		scroll.getHorizontalScrollBar().setUnitIncrement(WHEEL_UNIT_INCREMENT);
+		scroll.getViewport().setScrollMode(JViewport.BLIT_SCROLL_MODE);
 		add(scroll, BorderLayout.CENTER);
 		applyThemeSurface();
 
@@ -143,6 +151,30 @@ public class OperatorDetailsPanel extends JPanel {
 			}
 		});
 		setNotesText("");
+		// Empty until an operator is clicked on the diagram.
+		showEmptyState();
+	}
+
+	/** Hide Expand all / grid / notes until an operator is selected. */
+	public void clearOperatorProperties() {
+		propertiesPanel.clearOperatorProperties();
+		expandAllCheckbox.setSelected(false);
+		showEmptyState();
+		scrollToTop();
+	}
+
+	private void showEmptyState() {
+		propertiesBlock.setVisible(false);
+		notesBlock.setVisible(false);
+		setNotesText("");
+		columnView.revalidate();
+		columnView.repaint();
+	}
+
+	private void showPropertiesChrome() {
+		propertiesBlock.setVisible(true);
+		columnView.revalidate();
+		columnView.repaint();
 	}
 
 	/** Match panel/notes surfaces to Light vs Dark (replaces hard-coded light slate). */
@@ -214,7 +246,7 @@ public class OperatorDetailsPanel extends JPanel {
 	private void setNotesText(String text) {
 		String notes = (text == null) ? "" : text.trim();
 		notesArea.setText(notes);
-		notesBlock.setVisible(!notes.isEmpty());
+		notesBlock.setVisible(propertiesBlock.isVisible() && !notes.isEmpty());
 		if (!notes.isEmpty()) {
 			int lines = Math.max(3, notes.split("\n", -1).length + 1);
 			notesArea.setRows(lines);
@@ -239,9 +271,11 @@ public class OperatorDetailsPanel extends JPanel {
 
 	public void setPlanGraphPanel(PlanGraphPanel graphPanel) {
 		propertiesPanel.setPlanGraphPanel(graphPanel);
+		clearOperatorProperties();
 	}
 
 	public void showOperatorProperties(int operatorPropertyId) {
+		showPropertiesChrome();
 		propertiesPanel.showOperatorProperties(operatorPropertyId);
 		scrollToTop();
 	}

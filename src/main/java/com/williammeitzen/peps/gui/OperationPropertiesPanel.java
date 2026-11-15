@@ -58,12 +58,21 @@ public class OperationPropertiesPanel extends JTable {
 
 	public void setPlanGraphPanel(PlanGraphPanel graphPanel) {
 		planGraphPanel = graphPanel;
+		clearOperatorProperties();
+	}
+
+	/** Clear selection and empty the Property/Value table. */
+	public void clearOperatorProperties() {
 		selectedOperatorPropertyId = Integer.MIN_VALUE;
 		expandedLists.clear();
 		workersExpanded = false;
+		expandAll = false;
+		if (expandAllListener != null) {
+			expandAllListener.accept(false);
+		}
 		if (getModel() instanceof DefaultTableModel) {
 			((DefaultTableModel) getModel()).setDataVector(new Object[0][0], columnNames);
-			applyColumnWidths(DEFAULT_COLUMN_WIDTH, DEFAULT_COLUMN_WIDTH);
+			applyColumnWidths(propertyColumnWidth, valueColumnWidth);
 		}
 		if (notesListener != null) {
 			notesListener.accept("");
@@ -94,26 +103,8 @@ public class OperationPropertiesPanel extends JTable {
 		this.setGridColor(new Color(0xD1, 0xD5, 0xDB)); // light grey
 		this.setIntercellSpacing(new java.awt.Dimension(1, 1));
 
-		// Single click enters the value cell so the user can select/copy text.
-		JTextField valueField = new JTextField();
-		DefaultCellEditor valueEditor = new DefaultCellEditor(valueField) {
-			private static final long serialVersionUID = 1L;
-
-			@Override
-			public Component getTableCellEditorComponent(JTable table, Object value, boolean isSelected,
-					int row, int column) {
-				Component c = super.getTableCellEditorComponent(table, value, isSelected, row, column);
-				if (c instanceof JTextField) {
-					JTextField field = (JTextField) c;
-					field.setEditable(true);
-					// Defer select-all so caret placement from the click does not clear it.
-					javax.swing.SwingUtilities.invokeLater(field::selectAll);
-				}
-				return c;
-			}
-		};
-		valueEditor.setClickCountToStart(1);
-		this.getColumnModel().getColumn(1).setCellEditor(valueEditor);
+		// Single click opens a read-only field so the user can select/copy (not type).
+		this.getColumnModel().getColumn(1).setCellEditor(createSelectableValueEditor());
 
 		installColumnResizeSupport();
 
@@ -253,24 +244,32 @@ public class OperationPropertiesPanel extends JTable {
 		valueCol.setPreferredWidth(valueColumnWidth);
 		// Re-attach value editor after setDataVector recreates columns.
 		if (valueCol.getCellEditor() == null) {
-			JTextField valueField = new JTextField();
-			DefaultCellEditor valueEditor = new DefaultCellEditor(valueField) {
-				private static final long serialVersionUID = 1L;
-
-				@Override
-				public Component getTableCellEditorComponent(JTable table, Object value, boolean isSelected,
-						int row, int column) {
-					Component c = super.getTableCellEditorComponent(table, value, isSelected, row, column);
-					if (c instanceof JTextField) {
-						JTextField field = (JTextField) c;
-						javax.swing.SwingUtilities.invokeLater(field::selectAll);
-					}
-					return c;
-				}
-			};
-			valueEditor.setClickCountToStart(1);
-			valueCol.setCellEditor(valueEditor);
+			valueCol.setCellEditor(createSelectableValueEditor());
 		}
+	}
+
+	/** Read-only editor: select/copy allowed, typing ignored. */
+	private static DefaultCellEditor createSelectableValueEditor() {
+		JTextField valueField = new JTextField();
+		valueField.setEditable(false);
+		DefaultCellEditor valueEditor = new DefaultCellEditor(valueField) {
+			private static final long serialVersionUID = 1L;
+
+			@Override
+			public Component getTableCellEditorComponent(JTable table, Object value, boolean isSelected,
+					int row, int column) {
+				Component c = super.getTableCellEditorComponent(table, value, isSelected, row, column);
+				if (c instanceof JTextField) {
+					JTextField field = (JTextField) c;
+					field.setEditable(false);
+					// Defer select-all so caret placement from the click does not clear it.
+					javax.swing.SwingUtilities.invokeLater(field::selectAll);
+				}
+				return c;
+			}
+		};
+		valueEditor.setClickCountToStart(1);
+		return valueEditor;
 	}
 
 	private void revalidateAncestors() {

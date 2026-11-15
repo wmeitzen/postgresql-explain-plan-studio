@@ -7577,10 +7577,18 @@ order by id_explain_plan_property;
 
 	/** Reload Properties for the currently selected operator from SQLite (JSON/text plan data). */
 	private void refreshSelectedOperatorProperties() {
+		OperatorDetailsPanel detailsPanel = findOperatorDetailsPanel(this);
 		if (selectedOperatorId == null) {
+			if (detailsPanel != null) {
+				detailsPanel.clearOperatorProperties();
+			} else {
+				OperationPropertiesPanel propertiesPanel = findOperationPropertiesPanel(this);
+				if (propertiesPanel != null) {
+					propertiesPanel.clearOperatorProperties();
+				}
+			}
 			return;
 		}
-		OperatorDetailsPanel detailsPanel = findOperatorDetailsPanel(this);
 		if (detailsPanel != null) {
 			detailsPanel.showOperatorProperties(selectedOperatorId.intValue());
 			return;
