@@ -148,8 +148,13 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 	
 	private Color PLAN_WIDTH_0_ARROW_FONT_COLOR = new Color(0x33, 0x41, 0x55);
 	
-	private Color HIGHLIGHT_1_FONT_FOREGROUND_COLOR = Color.yellow;
-	private Color HIGHLIGHT_1_FONT_BACKGROUND_COLOR = Color.red;
+	/** Shared hotspot fill for diagram operator text and Calculated Fields rows. */
+	public static final Color HOTSPOT_HIGHLIGHT_BACKGROUND = new Color(0x3B, 0x0A, 0x0A);
+	/** Shared hotspot text on {@link #HOTSPOT_HIGHLIGHT_BACKGROUND}. */
+	public static final Color HOTSPOT_HIGHLIGHT_FOREGROUND = Color.yellow;
+
+	private Color HIGHLIGHT_1_FONT_FOREGROUND_COLOR = HOTSPOT_HIGHLIGHT_FOREGROUND;
+	private Color HIGHLIGHT_1_FONT_BACKGROUND_COLOR = HOTSPOT_HIGHLIGHT_BACKGROUND;
 	private Color HIGHLIGHT_2_FONT_FOREGROUND_COLOR = Color.red;
 	private Color HIGHLIGHT_2_FONT_BACKGROUND_COLOR = Color.yellow;
 

@@ -53,8 +53,6 @@ public class OperationPropertiesPanel extends JTable {
 	private int valueColumnWidth = DEFAULT_COLUMN_WIDTH;
 	/** Per-row red highlight (matches diagram PL/worker hotspot text). */
 	private boolean[] rowHighlights = null;
-	private static final Color CALCULATED_HIGHLIGHT_BACKGROUND = Color.RED;
-	private static final Color CALCULATED_HIGHLIGHT_FOREGROUND = Color.YELLOW;
 
 	public OperationPropertiesPanel() {
 		super();
@@ -623,8 +621,8 @@ public class OperationPropertiesPanel extends JTable {
 		}
 		// Always set colors: renderers are reused, so a prior red row would otherwise stick.
 		if (isRowHighlighted(row)) {
-			component.setBackground(CALCULATED_HIGHLIGHT_BACKGROUND);
-			component.setForeground(CALCULATED_HIGHLIGHT_FOREGROUND);
+			component.setBackground(PlanGraphPanel.HOTSPOT_HIGHLIGHT_BACKGROUND);
+			component.setForeground(PlanGraphPanel.HOTSPOT_HIGHLIGHT_FOREGROUND);
 			if (component instanceof JLabel) {
 				((JLabel) component).setOpaque(true);
 			}
