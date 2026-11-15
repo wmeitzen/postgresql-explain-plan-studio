@@ -148,7 +148,7 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 	
 	private Color PLAN_WIDTH_0_ARROW_FONT_COLOR = new Color(0x33, 0x41, 0x55);
 	
-	/** Shared hotspot fill for diagram operator text and Calculated Fields rows. */
+	/** Shared hotspot fill for diagram operator text and Calculated Properties rows. */
 	public static final Color HOTSPOT_HIGHLIGHT_BACKGROUND = new Color(0x3B, 0x0A, 0x0A);
 	/** Shared hotspot text on {@link #HOTSPOT_HIGHLIGHT_BACKGROUND}. */
 	public static final Color HOTSPOT_HIGHLIGHT_FOREGROUND = Color.yellow;
@@ -6759,9 +6759,28 @@ order by id_explain_plan_property;
 	 * "~591 rows removed by filter" versus the raw EXPLAIN property value,
 	 * plus shared parallel-leader/worker expectation lines when workers exist.
 	 */
-	public String getOperatorNotes(int intIDExplainPlanProperty) {
+	/** General operator Notes plus separate Red Text Notes (out-of-balance expectations). */
+	public static final class OperatorNotes {
+		public final String notes;
+		public final String redTextNotes;
+
+		public OperatorNotes(String notes, String redTextNotes) {
+			this.notes = notes == null ? "" : notes;
+			this.redTextNotes = redTextNotes == null ? "" : redTextNotes;
+		}
+
+		public static OperatorNotes empty() {
+			return new OperatorNotes("", "");
+		}
+
+		public boolean isEmpty() {
+			return notes.isEmpty() && redTextNotes.isEmpty();
+		}
+	}
+
+	public OperatorNotes getOperatorNotes(int intIDExplainPlanProperty) {
 		if (idExplainPlan == null || intIDExplainPlanProperty < 0) {
-			return "";
+			return OperatorNotes.empty();
 		}
 		String strSQL = "select\n"
 				+ "  id_explain_plan_property\n"
@@ -6793,7 +6812,7 @@ order by id_explain_plan_property;
 				+ "and id_explain_plan_property = " + intIDExplainPlanProperty + "\n";
 		JsonObject row = Database.row(strSQL);
 		if (row == null) {
-			return "";
+			return OperatorNotes.empty();
 		}
 
 		StringBuilder notes = new StringBuilder();
@@ -6809,8 +6828,10 @@ order by id_explain_plan_property;
 				"removed by index recheck", "Rows Removed by Index Recheck",
 				"rows_removed_by_index_recheck", "total_rows_removed_by_index_recheck",
 				"total_rows_removed_by_index_recheck_is_exact");
-		appendParallelParticipantExpectationNotes(notes, row, intIDExplainPlanProperty);
-		return notes.toString().trim();
+
+		StringBuilder redTextNotes = new StringBuilder();
+		appendParallelParticipantExpectationNotes(redTextNotes, row, intIDExplainPlanProperty);
+		return new OperatorNotes(notes.toString().trim(), redTextNotes.toString().trim());
 	}
 
 	/**
@@ -7361,7 +7382,7 @@ order by id_explain_plan_property;
 		//return null;
 	}
 
-	/** Calculated Fields grid rows plus matching diagram red-highlight flags. */
+	/** Calculated Properties grid rows plus matching diagram red-highlight flags. */
 	public static final class OperatorCalculatedProperties {
 		public final Object[][] rows;
 		public final boolean[] highlights;

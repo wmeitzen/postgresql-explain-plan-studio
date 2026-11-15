@@ -46,11 +46,13 @@ public class OperationPropertiesPanel extends JTable {
 	private boolean workersExpanded = false;
 	/** When true, expandable lists/Workers stay expanded across operator clicks. */
 	private boolean expandAll = false;
-	private Consumer<String> notesListener = null;
+	private Consumer<PlanGraphPanel.OperatorNotes> notesListener = null;
 	private Consumer<Boolean> expandAllListener = null;
 	/** Remember Property/Value widths across model refreshes (expand all, operator clicks). */
 	private int propertyColumnWidth = DEFAULT_COLUMN_WIDTH;
 	private int valueColumnWidth = DEFAULT_COLUMN_WIDTH;
+	/** Skip width memory while setDataVector recreates columns (avoids saving defaults). */
+	private boolean suppressingColumnWidthMemory = false;
 	/** Per-row red highlight (matches diagram PL/worker hotspot text). */
 	private boolean[] rowHighlights = null;
 
@@ -83,7 +85,7 @@ public class OperationPropertiesPanel extends JTable {
 			applyColumnWidths(propertyColumnWidth, valueColumnWidth);
 		}
 		if (notesListener != null) {
-			notesListener.accept("");
+			notesListener.accept(PlanGraphPanel.OperatorNotes.empty());
 		}
 	}
 
@@ -228,11 +230,19 @@ public class OperationPropertiesPanel extends JTable {
 	}
 
 	private void rememberColumnWidths() {
-		if (getColumnCount() < 2) {
+		if (suppressingColumnWidthMemory || getColumnCount() < 2) {
 			return;
 		}
-		propertyColumnWidth = Math.max(MIN_COLUMN_WIDTH, getColumnModel().getColumn(0).getPreferredWidth());
-		valueColumnWidth = Math.max(MIN_COLUMN_WIDTH, getColumnModel().getColumn(1).getPreferredWidth());
+		// Prefer the visible width; preferredWidth alone can lag or reset during model swaps.
+		propertyColumnWidth = Math.max(MIN_COLUMN_WIDTH, rememberedColumnWidth(0));
+		valueColumnWidth = Math.max(MIN_COLUMN_WIDTH, rememberedColumnWidth(1));
+	}
+
+	private int rememberedColumnWidth(int column) {
+		TableColumn col = getColumnModel().getColumn(column);
+		int visible = col.getWidth();
+		int preferred = col.getPreferredWidth();
+		return visible > MIN_COLUMN_WIDTH ? visible : preferred;
 	}
 
 	private void applyColumnWidths(int propertyWidth, int valueWidth) {
@@ -249,7 +259,9 @@ public class OperationPropertiesPanel extends JTable {
 			col.setResizable(true);
 		}
 		propertyCol.setPreferredWidth(propertyColumnWidth);
+		propertyCol.setWidth(propertyColumnWidth);
 		valueCol.setPreferredWidth(valueColumnWidth);
+		valueCol.setWidth(valueColumnWidth);
 		// Re-attach value editor after setDataVector recreates columns.
 		if (valueCol.getCellEditor() == null) {
 			valueCol.setCellEditor(createSelectableValueEditor());
@@ -402,7 +414,7 @@ public class OperationPropertiesPanel extends JTable {
 		}
 	}
 
-	public void setNotesListener(Consumer<String> notesListener) {
+	public void setNotesListener(Consumer<PlanGraphPanel.OperatorNotes> notesListener) {
 		this.notesListener = notesListener;
 	}
 
@@ -442,6 +454,8 @@ public class OperationPropertiesPanel extends JTable {
 		boolean bolShowFunctionName = false;
 		if (bolShowFunctionName == true) { System.out.println("PlanPropertiesPanel.setPropertiesDetails(Object[][] data)"); }
 		rememberColumnWidths();
+		int keepPropertyWidth = propertyColumnWidth;
+		int keepValueWidth = valueColumnWidth;
 		this.data = data;
 		if (highlights != null && data != null && highlights.length == data.length) {
 			this.rowHighlights = highlights.clone();
@@ -449,9 +463,14 @@ public class OperationPropertiesPanel extends JTable {
 			this.rowHighlights = null;
 		}
 		DefaultTableModel model = (DefaultTableModel) this.getModel();
-		model.setDataVector(data, columnNames);
-		this.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
-		applyColumnWidths(propertyColumnWidth, valueColumnWidth);
+		suppressingColumnWidthMemory = true;
+		try {
+			model.setDataVector(data, columnNames);
+			this.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
+			applyColumnWidths(keepPropertyWidth, keepValueWidth);
+		} finally {
+			suppressingColumnWidthMemory = false;
+		}
 		revalidateAncestors();
 	}
 

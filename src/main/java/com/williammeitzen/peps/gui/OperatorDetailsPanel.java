@@ -25,11 +25,12 @@ import javax.swing.border.EmptyBorder;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
 import javax.swing.table.JTableHeader;
+import javax.swing.text.View;
 
 /**
- * Property/Value table with Expand all / Calculated fields above, optional
- * calculated metrics below a separator, and Notes underneath in the same
- * scroll view (not a separate split pane).
+ * Property/Value table with Expand all / Calculated properties above, optional
+ * calculated metrics below a separator, then Red Text Notes and Notes in the
+ * same scroll view (not a separate split pane).
  */
 public class OperatorDetailsPanel extends JPanel {
 
@@ -49,9 +50,8 @@ public class OperatorDetailsPanel extends JPanel {
 	private final JCheckBox expandAllCheckbox;
 	private final JCheckBox calculatedFieldsCheckbox;
 	private final JLabel calculatedHeading;
-	private final JLabel notesHeading;
-	private final JTextArea notesArea;
-	private final JPanel notesBlock;
+	private final NoteSection redTextNotesSection;
+	private final NoteSection notesSection;
 	private final JPanel tableWithHeader;
 	private final JPanel calculatedTableWithHeader;
 	private final JPanel calculatedBlock;
@@ -98,7 +98,7 @@ public class OperatorDetailsPanel extends JPanel {
 		expandAllCheckbox.addActionListener(e ->
 				propertiesPanel.setExpandAll(expandAllCheckbox.isSelected()));
 
-		calculatedFieldsCheckbox = new JCheckBox("Calculated fields");
+		calculatedFieldsCheckbox = new JCheckBox("Calculated properties");
 		calculatedFieldsCheckbox.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
 		calculatedFieldsCheckbox.setOpaque(false);
 		calculatedFieldsCheckbox.setFocusable(false);
@@ -115,33 +115,14 @@ public class OperatorDetailsPanel extends JPanel {
 		optionsBar.add(expandAllCheckbox);
 		optionsBar.add(calculatedFieldsCheckbox);
 
-		calculatedHeading = new JLabel("Calculated Fields");
+		calculatedHeading = new JLabel("Calculated Properties");
 		calculatedHeading.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 12));
 		calculatedHeading.setBorder(new EmptyBorder(8, 8, 4, 8));
 		calculatedHeading.setOpaque(true);
 		calculatedHeading.setAlignmentX(LEFT_ALIGNMENT);
 
-		notesHeading = new JLabel("Red Text Notes:");
-		notesHeading.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 12));
-		notesHeading.setBorder(new EmptyBorder(8, 8, 2, 8));
-		notesHeading.setOpaque(true);
-
-		notesArea = new JTextArea();
-		notesArea.setEditable(false);
-		notesArea.setFocusable(false);
-		// Wrap to the visible viewport width (not the possibly-wider property grid)
-		notesArea.setLineWrap(true);
-		notesArea.setWrapStyleWord(true);
-		notesArea.setOpaque(true);
-		notesArea.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
-		notesArea.setBorder(new EmptyBorder(0, 8, 8, 8));
-		notesArea.setText("");
-		notesArea.setRows(1);
-
-		notesBlock = new JPanel(new BorderLayout());
-		notesBlock.setAlignmentX(LEFT_ALIGNMENT);
-		notesBlock.add(notesHeading, BorderLayout.NORTH);
-		notesBlock.add(notesArea, BorderLayout.CENTER);
+		redTextNotesSection = new NoteSection("Red Text Notes:");
+		notesSection = new NoteSection("Notes:");
 
 		// BoxLayout (not BorderLayout.CENTER) so the grid keeps its column preferred
 		// widths — BorderLayout stretches the table and made the Property/Value
@@ -171,14 +152,15 @@ public class OperatorDetailsPanel extends JPanel {
 		propertiesBlock.add(optionsBar);
 		propertiesBlock.add(tableWithHeader);
 
-		// Stack EXPLAIN grid, calculated grid, then Notes; keep content at the top.
+		// Stack EXPLAIN grid, calculated grid, Red Text Notes, then Notes.
 		columnView = new JPanel();
 		columnView.setLayout(new BoxLayout(columnView, BoxLayout.Y_AXIS));
 		columnView.setAlignmentX(LEFT_ALIGNMENT);
 		columnView.setAlignmentY(TOP_ALIGNMENT);
 		columnView.add(propertiesBlock);
 		columnView.add(calculatedBlock);
-		columnView.add(notesBlock);
+		columnView.add(redTextNotesSection.block);
+		columnView.add(notesSection.block);
 		columnView.add(Box.createVerticalGlue());
 
 		// JScrollPane centers a short view by default — pin content to the top.
@@ -204,13 +186,13 @@ public class OperatorDetailsPanel extends JPanel {
 			}
 		});
 
-		propertiesPanel.setNotesListener(this::setNotesText);
+		propertiesPanel.setNotesListener(this::setOperatorNotes);
 		propertiesPanel.setExpandAllListener(selected -> {
 			if (expandAllCheckbox.isSelected() != selected) {
 				expandAllCheckbox.setSelected(selected);
 			}
 		});
-		setNotesText("");
+		setOperatorNotes(PlanGraphPanel.OperatorNotes.empty());
 		// Empty until an operator is clicked on the diagram.
 		showEmptyState();
 	}
@@ -243,8 +225,9 @@ public class OperatorDetailsPanel extends JPanel {
 	private void showEmptyState() {
 		propertiesBlock.setVisible(false);
 		calculatedBlock.setVisible(false);
-		notesBlock.setVisible(false);
-		setNotesText("");
+		redTextNotesSection.setVisible(false);
+		notesSection.setVisible(false);
+		setOperatorNotes(PlanGraphPanel.OperatorNotes.empty());
 		columnView.revalidate();
 		columnView.repaint();
 	}
@@ -270,16 +253,11 @@ public class OperatorDetailsPanel extends JPanel {
 						new EmptyBorder(4, 4, 4, 4))));
 		optionsBar.setBackground(surface);
 		calculatedHeading.setBackground(surface);
-		notesHeading.setBackground(surface);
 		if (fg != null) {
 			calculatedHeading.setForeground(fg);
-			notesHeading.setForeground(fg);
 		}
-		notesArea.setBackground(surface);
-		if (fg != null) {
-			notesArea.setForeground(fg);
-		}
-		notesBlock.setBackground(surface);
+		redTextNotesSection.applyTheme(surface, fg);
+		notesSection.applyTheme(surface, fg);
 		propertiesBlock.setBackground(surface);
 		calculatedBlock.setBackground(surface);
 		tableWithHeader.setBackground(surface);
@@ -310,8 +288,9 @@ public class OperatorDetailsPanel extends JPanel {
 	}
 
 	/**
-	 * Constrain Notes to the visible viewport width so wrapping follows the pane,
-	 * not the (possibly wider) Property/Value grid.
+	 * Constrain note sections to the visible viewport width so wrapping follows
+	 * the pane, not the (possibly wider) Property/Value grid. Uses the text View
+	 * preferred span so Mac gets a full wrapped height instead of clipped lines.
 	 */
 	private void updateNotesWrapToViewport() {
 		JViewport viewport = scroll.getViewport();
@@ -322,23 +301,18 @@ public class OperatorDetailsPanel extends JPanel {
 		if (viewportWidth <= 0) {
 			return;
 		}
-		// Leave room for the vertical scrollbar already accounted in extent width
-		notesBlock.setMaximumSize(new Dimension(viewportWidth, Integer.MAX_VALUE));
-		notesBlock.setPreferredSize(null);
-		notesArea.setSize(viewportWidth, Short.MAX_VALUE);
-		int preferredHeight = Math.max(notesArea.getPreferredSize().height, notesArea.getFontMetrics(notesArea.getFont()).getHeight());
-		notesArea.setPreferredSize(new Dimension(viewportWidth, preferredHeight));
-		notesBlock.revalidate();
+		redTextNotesSection.fitToWidth(viewportWidth);
+		notesSection.fitToWidth(viewportWidth);
+		columnView.revalidate();
 	}
 
-	private void setNotesText(String text) {
-		String notes = (text == null) ? "" : text.trim();
-		notesArea.setText(notes);
-		notesBlock.setVisible(propertiesBlock.isVisible() && !notes.isEmpty());
-		if (!notes.isEmpty()) {
-			int lines = Math.max(3, notes.split("\n", -1).length + 1);
-			notesArea.setRows(lines);
-		}
+	private void setOperatorNotes(PlanGraphPanel.OperatorNotes operatorNotes) {
+		PlanGraphPanel.OperatorNotes notes = (operatorNotes == null)
+				? PlanGraphPanel.OperatorNotes.empty()
+				: operatorNotes;
+		boolean showChrome = propertiesBlock.isVisible();
+		redTextNotesSection.setText(notes.redTextNotes, showChrome);
+		notesSection.setText(notes.notes, showChrome);
 		updateNotesWrapToViewport();
 		columnView.revalidate();
 		columnView.repaint();
@@ -394,5 +368,78 @@ public class OperatorDetailsPanel extends JPanel {
 		propertiesPanel.showOperatorProperties(operatorPropertyId);
 		loadCalculatedFields(operatorPropertyId);
 		scrollToTop();
+	}
+
+	/** Heading + wrapped text area that stays viewport-width even when the grid is wider. */
+	private static final class NoteSection {
+		final JPanel block;
+		final JLabel heading;
+		final JTextArea area;
+
+		NoteSection(String title) {
+			heading = new JLabel(title);
+			heading.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 12));
+			heading.setBorder(new EmptyBorder(8, 8, 2, 8));
+			heading.setOpaque(true);
+
+			area = new JTextArea();
+			area.setEditable(false);
+			area.setFocusable(false);
+			area.setLineWrap(true);
+			area.setWrapStyleWord(true);
+			area.setOpaque(true);
+			area.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
+			area.setBorder(new EmptyBorder(0, 8, 8, 8));
+			area.setText("");
+
+			block = new JPanel(new BorderLayout());
+			block.setAlignmentX(LEFT_ALIGNMENT);
+			block.add(heading, BorderLayout.NORTH);
+			block.add(area, BorderLayout.CENTER);
+			block.setVisible(false);
+		}
+
+		void setText(String text, boolean showWhenNonEmpty) {
+			String notes = (text == null) ? "" : text.trim();
+			area.setText(notes);
+			setVisible(showWhenNonEmpty && !notes.isEmpty());
+		}
+
+		void setVisible(boolean visible) {
+			block.setVisible(visible);
+		}
+
+		void applyTheme(Color surface, Color fg) {
+			heading.setBackground(surface);
+			area.setBackground(surface);
+			block.setBackground(surface);
+			if (fg != null) {
+				heading.setForeground(fg);
+				area.setForeground(fg);
+			}
+		}
+
+		void fitToWidth(int viewportWidth) {
+			if (!block.isVisible() || viewportWidth <= 0) {
+				return;
+			}
+			// Cap the section so BoxLayout does not stretch it to the wider property grid.
+			block.setMaximumSize(new Dimension(viewportWidth, Integer.MAX_VALUE));
+			area.setSize(viewportWidth, Short.MAX_VALUE);
+			int textWidth = Math.max(1, viewportWidth
+					- area.getInsets().left - area.getInsets().right);
+			View rootView = area.getUI().getRootView(area);
+			rootView.setSize(textWidth, Float.MAX_VALUE);
+			int textHeight = (int) Math.ceil(rootView.getPreferredSpan(View.Y_AXIS));
+			int totalHeight = textHeight + area.getInsets().top + area.getInsets().bottom;
+			int minLine = area.getFontMetrics(area.getFont()).getHeight()
+					+ area.getInsets().top + area.getInsets().bottom;
+			totalHeight = Math.max(totalHeight, minLine);
+			area.setPreferredSize(new Dimension(viewportWidth, totalHeight));
+			area.setMaximumSize(new Dimension(viewportWidth, Integer.MAX_VALUE));
+			int headingHeight = heading.getPreferredSize().height;
+			block.setPreferredSize(new Dimension(viewportWidth, headingHeight + totalHeight));
+			block.revalidate();
+		}
 	}
 }
