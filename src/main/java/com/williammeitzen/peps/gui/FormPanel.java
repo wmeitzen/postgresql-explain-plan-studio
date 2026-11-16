@@ -14,6 +14,7 @@ import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
+import java.awt.Image;
 import java.awt.Insets;
 import java.awt.Point;
 import java.awt.Rectangle;
@@ -229,6 +230,7 @@ public class FormPanel extends JPanel {
 		// retrieve plans from db
 		strSQL = "select id_explain_plan, plan_name, folder_id, sort_order, server, port, database, username, password, remember_password\n"
 				+ ", auth_type, pre_explain_command, explain_sql_command, post_explain_command, plan_text\n"
+				+ ", anonymize, anonymize_aliases\n"
 				+ "from explain_plans\n"
 				+ "order by sort_order, lower(plan_name), id_explain_plan;\n";
 		jsnRows = Database.rows(strSQL);
@@ -277,9 +279,8 @@ public class FormPanel extends JPanel {
 			
 		    // see if the user chose the Compare Plans tab
 		    tabPaneToLink.addChangeListener(new ChangeListener() {
-	            int COMPARE_PLANS_TAB = 1;
 		        public void stateChanged(ChangeEvent e) {
-		            if (tabPaneToLink.getSelectedIndex() == COMPARE_PLANS_TAB) {
+		            if (tabPaneToLink.getSelectedIndex() == indexOfTabTitle(getPlanStatisticsTabName())) {
 		            	refreshComparePlansTab(statisticsPanel);
 		            }
 		        }
@@ -306,6 +307,10 @@ public class FormPanel extends JPanel {
 			newPlanSourcePanel.setSQLQueryText(jsnRow.getString("explain_sql_command"));
 			newPlanSourcePanel.setPlanSourceFromQueryPostCommandField(jsnRow.getString("post_explain_command"));
 			newPlanSourcePanel.setJsonPlanText(jsnRow.getString("plan_text"));
+			newPlanSourcePanel.setAnonymizeFlags(
+					Utils.objectToBoolean(jsnRow.get("anonymize")),
+					jsnRow.get("anonymize_aliases") == null
+							|| Utils.objectToBoolean(jsnRow.get("anonymize_aliases")));
 
 			newPlanGraphPanel.setIDExplainPlan(newPlanId);
 			
@@ -489,7 +494,15 @@ public class FormPanel extends JPanel {
 
 		if (pEvent != null) {
 
-			tabPaneToLink.addTab(getPlanSourceTabName(selectedPlanName), pEvent.getPlanSourcePanel());
+			PlanSourcePanel sourcePanel = pEvent.getPlanSourcePanel();
+			tabPaneToLink.addTab(getPlanSourceTabName(selectedPlanName, sourcePanel), sourcePanel);
+
+			// Translate sits between Plan Source and Compare Plans, only when Anonymize is on.
+			if (sourcePanel.isAnonymizeEnabled()) {
+				TranslateAnonymizedPanel translatePanel = new TranslateAnonymizedPanel();
+				translatePanel.setPlanSourcePanel(sourcePanel);
+				tabPaneToLink.addTab(getTranslateTabName(), translatePanel);
+			}
 
 			// add "Plan Statistics" tab
 			// by stas
@@ -511,16 +524,18 @@ public class FormPanel extends JPanel {
 
 			// see if the user chose the Compare Plans tab
 			tabPaneToLink.addChangeListener(new ChangeListener() {
-				int COMPARE_PLANS_TAB = 1;
 				public void stateChanged(ChangeEvent e) {
-					if (tabPaneToLink.getSelectedIndex() == COMPARE_PLANS_TAB) {
+					if (tabPaneToLink.getSelectedIndex() == indexOfTabTitle(getPlanStatisticsTabName())) {
 						refreshComparePlansTab(statisticsPanel);
 					}
 				}
 			});
 
-			JPanel diagramTab = createPlanDiagramTab(pEvent.getPlanGraphPanel(), 1000, 500);
-			tabPaneToLink.addTab(getPlanDiagramTabName(selectedPlanName), diagramTab);
+			JPanel diagramTab = createPlanDiagramTab(pEvent.getPlanGraphPanel(), 1000, 500, sourcePanel);
+			tabPaneToLink.addTab(getPlanDiagramTabName(selectedPlanName, sourcePanel), diagramTab);
+
+			sourcePanel.setAnonymizeModeListener(() ->
+					syncAnonymizeChrome(selectedPlanName, sourcePanel, diagramTab));
 
 			updatePlanDiagramTabEnabled();
 
@@ -531,7 +546,7 @@ public class FormPanel extends JPanel {
 				pEvent.getPlanGraphPanel().repaint();
 			}
 
-			pEvent.getPlanSourcePanel().refreshFolderChooser();
+			sourcePanel.refreshFolderChooser();
 		}
 	}
 
@@ -576,17 +591,18 @@ public class FormPanel extends JPanel {
 		PlanStatisticsPanel.setPlanNamesDelimited(delimited.length() == 0 ? "''" : delimited.toString());
 
 		tabPaneToLink.addChangeListener(new ChangeListener() {
-			int COMPARE_PLANS_TAB = 1;
-
 			public void stateChanged(ChangeEvent e) {
-				if (tabPaneToLink.getSelectedIndex() == COMPARE_PLANS_TAB) {
+				if (tabPaneToLink.getSelectedIndex() == indexOfTabTitle(getPlanStatisticsTabName())) {
 					refreshComparePlansTab(statisticsPanel);
 				}
 			}
 		});
 
 		tabPaneToLink.addTab("Plan Diagram", new JPanel());
-		tabPaneToLink.setEnabledAt(2, false);
+		int diagramIdx = indexOfTabContaining("Plan Diagram");
+		if (diagramIdx >= 0) {
+			tabPaneToLink.setEnabledAt(diagramIdx, false);
+		}
 
 		tabPaneToLink.setSelectedIndex(planPaths.isEmpty() ? 0 : 1);
 
@@ -3136,9 +3152,20 @@ public class FormPanel extends JPanel {
 		if (selected < 0 || selected >= tabPaneToLink.getTabCount()) {
 			return null;
 		}
-		Component tab = tabPaneToLink.getComponentAt(selected);
-		if (tab instanceof DiagramDockingPanel) {
-			return (DiagramDockingPanel) tab;
+		return findDiagramDockingPanel(tabPaneToLink.getComponentAt(selected));
+	}
+
+	private static DiagramDockingPanel findDiagramDockingPanel(Component root) {
+		if (root instanceof DiagramDockingPanel) {
+			return (DiagramDockingPanel) root;
+		}
+		if (root instanceof Container) {
+			for (Component child : ((Container) root).getComponents()) {
+				DiagramDockingPanel found = findDiagramDockingPanel(child);
+				if (found != null) {
+					return found;
+				}
+			}
 		}
 		return null;
 	}
@@ -3156,9 +3183,9 @@ public class FormPanel extends JPanel {
 	public void repairDiagramDockingAfterThemeChange() {
 		if (tabPaneToLink != null) {
 			for (int i = 0; i < tabPaneToLink.getTabCount(); i++) {
-				Component tab = tabPaneToLink.getComponentAt(i);
-				if (tab instanceof DiagramDockingPanel) {
-					((DiagramDockingPanel) tab).repairAfterThemeChange();
+				DiagramDockingPanel diagram = findDiagramDockingPanel(tabPaneToLink.getComponentAt(i));
+				if (diagram != null) {
+					diagram.repairAfterThemeChange();
 				}
 			}
 		}
@@ -3201,6 +3228,11 @@ public class FormPanel extends JPanel {
 	private String getPlanSourceTabName(String planName) {
 		return planName + " - Plan Source";
 	}
+
+	private String getPlanSourceTabName(String planName, PlanSourcePanel source) {
+		String base = getPlanSourceTabName(planName);
+		return source != null && source.isAnonymizeEnabled() ? base + " (anonymized)" : base;
+	}
 	
 	private String getPlanStatisticsTabName() {
 		return "Compare Plans";
@@ -3210,13 +3242,87 @@ public class FormPanel extends JPanel {
 		return planName + " - Plan Diagram";
 	}
 
+	private String getPlanDiagramTabName(String planName, PlanSourcePanel source) {
+		String base = getPlanDiagramTabName(planName);
+		return source != null && source.isAnonymizeEnabled() ? base + " (anonymized)" : base;
+	}
+
+	private String getTranslateTabName() {
+		return "Translate";
+	}
+
+	private int indexOfTabTitle(String title) {
+		if (tabPaneToLink == null || title == null) {
+			return -1;
+		}
+		for (int i = 0; i < tabPaneToLink.getTabCount(); i++) {
+			if (title.equals(tabPaneToLink.getTitleAt(i))) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
+	private int indexOfTabContaining(String fragment) {
+		if (tabPaneToLink == null || fragment == null) {
+			return -1;
+		}
+		for (int i = 0; i < tabPaneToLink.getTabCount(); i++) {
+			String title = tabPaneToLink.getTitleAt(i);
+			if (title != null && title.contains(fragment)) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
+	/** Show/hide Translate between Plan Source and Compare Plans; refresh titles/badges. */
+	private void syncAnonymizeChrome(String planName, PlanSourcePanel sourcePanel, JPanel diagramTab) {
+		if (tabPaneToLink == null || sourcePanel == null) {
+			return;
+		}
+		int translateIdx = indexOfTabTitle(getTranslateTabName());
+		boolean wantTranslate = sourcePanel.isAnonymizeEnabled();
+		if (wantTranslate && translateIdx < 0) {
+			TranslateAnonymizedPanel translatePanel = new TranslateAnonymizedPanel();
+			translatePanel.setPlanSourcePanel(sourcePanel);
+			tabPaneToLink.insertTab(getTranslateTabName(), null, translatePanel, null, 1);
+		} else if (!wantTranslate && translateIdx >= 0) {
+			if (tabPaneToLink.getSelectedIndex() == translateIdx) {
+				tabPaneToLink.setSelectedIndex(0);
+			}
+			tabPaneToLink.removeTabAt(translateIdx);
+		} else if (wantTranslate && translateIdx >= 0) {
+			Component c = tabPaneToLink.getComponentAt(translateIdx);
+			if (c instanceof TranslateAnonymizedPanel) {
+				((TranslateAnonymizedPanel) c).setPlanSourcePanel(sourcePanel);
+			}
+		}
+
+		if (tabPaneToLink.getTabCount() > 0) {
+			tabPaneToLink.setTitleAt(0, getPlanSourceTabName(planName, sourcePanel));
+		}
+		int diagramIdx = indexOfTabContaining("Plan Diagram");
+		if (diagramIdx >= 0) {
+			tabPaneToLink.setTitleAt(diagramIdx, getPlanDiagramTabName(planName, sourcePanel));
+		}
+		refreshDiagramAnonymizeBadge(diagramTab, sourcePanel);
+		updatePlanDiagramTabEnabled();
+	}
+
+	/** Index of the Plan Diagram tab for the current documents strip, or -1. */
+	public int getPlanDiagramTabIndex() {
+		return indexOfTabContaining("Plan Diagram");
+	}
+
 	/** Plan Diagram is only meaningful for a single selected plan. */
 	public boolean isSinglePlanSelected() {
 		return planTree != null && getSelectedPlanNodes().size() == 1;
 	}
 
 	public void updatePlanDiagramTabEnabled() {
-		if (tabPaneToLink == null || tabPaneToLink.getTabCount() <= 2) {
+		int diagramIdx = getPlanDiagramTabIndex();
+		if (tabPaneToLink == null || diagramIdx < 0) {
 			return;
 		}
 		PlansTreeNode primaryPlan = getPrimarySelectedPlan();
@@ -3225,13 +3331,15 @@ public class FormPanel extends JPanel {
 		boolean enableDiagram = isSinglePlanSelected()
 				&& source != null
 				&& source.hasUsableJsonPlan();
-		tabPaneToLink.setEnabledAt(2, enableDiagram);
+		tabPaneToLink.setEnabledAt(diagramIdx, enableDiagram);
 		if (source != null) {
 			source.setShowPlanGraphButton(enableDiagram);
 		}
-		if (!enableDiagram && tabPaneToLink.getSelectedIndex() == 2) {
+		if (!enableDiagram && tabPaneToLink.getSelectedIndex() == diagramIdx) {
 			// No JSON → Plan Source; multi-select → Compare Plans
-			tabPaneToLink.setSelectedIndex(isSinglePlanSelected() ? 0 : 1);
+			int compareIdx = indexOfTabTitle(getPlanStatisticsTabName());
+			tabPaneToLink.setSelectedIndex(isSinglePlanSelected() ? 0
+					: (compareIdx >= 0 ? compareIdx : 0));
 		}
 	}
 
@@ -3728,10 +3836,51 @@ public class FormPanel extends JPanel {
 	 */
 	private JPanel createPlanDiagramTab(PlanGraphPanel graphPanel,
 			int horizontalDivider, int verticalDivider) {
+		return createPlanDiagramTab(graphPanel, horizontalDivider, verticalDivider, null);
+	}
+
+	private JPanel createPlanDiagramTab(PlanGraphPanel graphPanel,
+			int horizontalDivider, int verticalDivider, PlanSourcePanel sourcePanel) {
 		DiagramDockingPanel diagram = new DiagramDockingPanel(graphPanel, planDiagramToolbar, DIAGRAM_WHEEL_UNIT_INCREMENT);
 		diagram.setViewMenuSyncHook(this::syncDiagramViewMenuItems);
 		SwingUtilities.invokeLater(this::syncDiagramViewMenuItems);
-		return diagram;
+
+		JPanel wrap = new JPanel(new BorderLayout());
+		wrap.setOpaque(false);
+		wrap.add(diagram, BorderLayout.CENTER);
+
+		JLabel badge = new JLabel(loadAnonymizeSilhouetteIcon());
+		badge.setName("anonymizeBadge");
+		badge.setToolTipText("Showing anonymized text");
+		badge.setVisible(sourcePanel != null && sourcePanel.isAnonymizeEnabled());
+		JPanel badgeCorner = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 8));
+		badgeCorner.setOpaque(false);
+		badgeCorner.add(badge);
+		wrap.add(badgeCorner, BorderLayout.NORTH);
+		wrap.putClientProperty("anonymizeBadge", badge);
+		return wrap;
+	}
+
+	private void refreshDiagramAnonymizeBadge(JPanel diagramTab, PlanSourcePanel sourcePanel) {
+		if (diagramTab == null) {
+			return;
+		}
+		Object badgeObj = diagramTab.getClientProperty("anonymizeBadge");
+		if (badgeObj instanceof JLabel) {
+			((JLabel) badgeObj).setVisible(sourcePanel != null && sourcePanel.isAnonymizeEnabled());
+			diagramTab.revalidate();
+			diagramTab.repaint();
+		}
+	}
+
+	private static ImageIcon loadAnonymizeSilhouetteIcon() {
+		java.net.URL url = FormPanel.class.getResource("/images/anonymize-silhouette.png");
+		if (url == null) {
+			return null;
+		}
+		ImageIcon raw = new ImageIcon(url);
+		Image scaled = raw.getImage().getScaledInstance(28, 28, Image.SCALE_SMOOTH);
+		return new ImageIcon(scaled);
 	}
 
 	/** Plans tree (nested folders, multi-select). */

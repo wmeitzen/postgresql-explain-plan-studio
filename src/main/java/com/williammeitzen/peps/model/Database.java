@@ -28,7 +28,7 @@ import com.williammeitzen.peps.gui.Utils;
 
 public final class Database {
 	
-	private static double SQLITE_DB_SCHEMA_VERSION = 4.12;
+	private static double SQLITE_DB_SCHEMA_VERSION = 4.13;
 	private static Connection objConnection = null;
 	private static Connection objPGConnection = null;
 	
@@ -1095,6 +1095,8 @@ south_1_fontmetrics_width = null;
 		migrateExplainPlansUniqueToFolderScope(dblDBConfigVersion);
 		// After any table rebuild so sort_order is not dropped by the 4.11 migration.
 		ensureExplainPlansColumn("sort_order", "integer not null default 0");
+		ensureExplainPlansColumn("anonymize", "integer not null default 0");
+		ensureExplainPlansColumn("anonymize_aliases", "integer not null default 1");
 		backfillPlanTreeSortOrders(dblDBConfigVersion);
 		Database.dml("create unique index if not exists idx_explain_plans_folder_name\n"
 				+ "on explain_plans (ifnull(folder_id, -1), plan_name);");
@@ -1282,6 +1284,24 @@ south_1_fontmetrics_width = null;
 			ps.executeUpdate();
 		} catch (SQLException ex) {
 			System.out.println("function Database.updateExplainPlanText()");
+			ex.printStackTrace();
+		}
+	}
+
+	/** Persist per-plan Anonymize / Anonymize aliases checkboxes (not scrubbed text). */
+	public static void updateExplainPlanAnonymizeFlags(int idExplainPlan, boolean anonymize,
+			boolean anonymizeAliases) {
+		if (objConnection == null) {
+			return;
+		}
+		String sql = "update explain_plans set anonymize = ?, anonymize_aliases = ? where id_explain_plan = ?";
+		try (PreparedStatement ps = objConnection.prepareStatement(sql)) {
+			ps.setInt(1, anonymize ? 1 : 0);
+			ps.setInt(2, anonymizeAliases ? 1 : 0);
+			ps.setInt(3, idExplainPlan);
+			ps.executeUpdate();
+		} catch (SQLException ex) {
+			System.out.println("function Database.updateExplainPlanAnonymizeFlags()");
 			ex.printStackTrace();
 		}
 	}

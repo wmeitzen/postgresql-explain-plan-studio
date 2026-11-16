@@ -529,7 +529,7 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 
 		// get json text from textbox — rebuild only when plan content changed since last diagram
 		if (strPlanSourceButtonClicked != null && strPlanSourceButtonClicked.equals(PlanSourcePanel.SHOW_JSON_PLAN_DIAGRAM)) {
-			String fingerprint = PlanSourcePanel.normalizeJsonPlanText(objComponent.getJsonPlanText());
+			String fingerprint = PlanSourcePanel.normalizeJsonPlanText(objComponent.getJsonPlanTextForDiagram());
 			
 			if (bolShowRetrievedJsonPlan == true) { System.out.println(fingerprint); }
 			
@@ -542,7 +542,7 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 		}
 
 		if (objComponent.getPlanTextIsDirty() == true) {
-			String fingerprint = PlanSourcePanel.normalizeJsonPlanText(objComponent.getJsonPlanText());
+			String fingerprint = PlanSourcePanel.normalizeJsonPlanText(objComponent.getJsonPlanTextForDiagram());
 			// Stale dirty from editors: skip full rebuild when field content is unchanged (Execute always rebuilds)
 			if (!forceExecuteRebuild && !objComponent.shouldRebuildDiagramFromJson(fingerprint)) {
 				objComponent.setPlanTextIsDirty(false);
@@ -587,7 +587,7 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 			if (bolShowTiming == true) { System.out.println("after delete stuff: " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
 
 			try {
-				String rawField = objComponent.getJsonPlanText();
+				String rawField = objComponent.getJsonPlanTextForDiagram();
 				planText = PlanSourcePanel.resolvePlanFieldToJson(rawField);
 				// For text plans executed this turn, optionally stamp environment onto the
 				// diagram-only JSON (field remains raw text).
@@ -802,7 +802,7 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 		if (rebuiltPlanData) {
 			// Fingerprint the raw plan field (JSON or text), not the diagram-only converted JSON.
 			objComponent.markDiagramRenderedFromJson(
-					PlanSourcePanel.normalizeJsonPlanText(objComponent.getJsonPlanText()));
+					PlanSourcePanel.normalizeJsonPlanText(objComponent.getJsonPlanTextForDiagram()));
 		}
 		objComponent.setPlanTextIsDirty(false);
 		objComponent.setLineThicknessByIsDirty(false);

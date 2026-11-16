@@ -1,0 +1,2 @@
+explain (format json, analyze, timing on, buffers on, verbose on)
+select * from gxd_genotype_summary_view

@@ -9,6 +9,7 @@ import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
+import java.awt.Image;
 import java.awt.Insets;
 import java.awt.Window;
 import java.awt.event.ActionEvent;
@@ -17,7 +18,9 @@ import java.awt.event.FocusAdapter;
 import java.awt.event.FocusEvent;
 import java.awt.event.ItemEvent;
 import java.text.SimpleDateFormat;
+import java.util.Collections;
 import java.util.Date;
+import java.util.Map;
 import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -26,18 +29,22 @@ import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.ButtonGroup;
+import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
+import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JPasswordField;
 import javax.swing.JRadioButton;
 import javax.swing.JScrollPane;
+import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
+import javax.swing.OverlayLayout;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.border.Border;
@@ -47,6 +54,7 @@ import javax.swing.event.DocumentListener;
 import com.williammeitzen.peps.model.Database;
 import com.williammeitzen.peps.model.ExplainTextPlanConverter;
 import com.williammeitzen.peps.model.ExplainTextPlanConverter.ExplainTextPlanConvertException;
+import com.williammeitzen.peps.model.PlanAnonymizer;
 import com.williammeitzen.peps.model.PlanFormat;
 
 public class PlanSourcePanel extends JPanel {
@@ -100,6 +108,28 @@ public class PlanSourcePanel extends JPanel {
 	private JLabel planSourceFromQueryPasswordLabel;
 	private JTextField planSourceFromQueryPasswordField;
 	private JCheckBox planSourceFromQueryRememberPasswordCheckbox;
+
+	private JCheckBox anonymizeCheckbox;
+	private JCheckBox anonymizeAliasesCheckbox;
+	private JLabel anonymizeStatusLabel;
+	private JPanel anonymizeRow;
+	private JLabel preCommandAnonymizeBadge;
+	private JLabel postCommandAnonymizeBadge;
+	private JLabel sqlAnonymizeBadge;
+	private JLabel planAnonymizeBadge;
+	private JComponent preCommandFieldHost;
+	private JComponent postCommandFieldHost;
+	private JComponent sqlFieldHost;
+	private JComponent planFieldHost;
+	/** True while swapping field text for anonymize view (skip dirty/original capture). */
+	private boolean syncingAnonymizeView;
+	/** Originals always persisted; UI may show scrubbed JIT text when anonymize is on. */
+	private String originalPreCommand = "";
+	private String originalPostCommand = "";
+	private String originalSqlCommand = "";
+	private String originalPlanText = "";
+	private PlanAnonymizer.Result cachedAnonymizeResult;
+	private Runnable anonymizeModeListener;
 
 	private JLabel connectByLabel;
 	private JRadioButton connectByHostRadio;
@@ -239,6 +269,35 @@ public class PlanSourcePanel extends JPanel {
 		planSourceFromQueryPasswordField = new JPasswordField(18);
 		planSourceFromQueryRememberPasswordCheckbox = new JCheckBox("Save password");
 
+		anonymizeCheckbox = new JCheckBox("Anonymize");
+		anonymizeAliasesCheckbox = new JCheckBox("Anonymize aliases");
+		anonymizeAliasesCheckbox.setSelected(true);
+		anonymizeAliasesCheckbox.setEnabled(false);
+		anonymizeStatusLabel = new JLabel("");
+		anonymizeStatusLabel.setFont(anonymizeStatusLabel.getFont().deriveFont(Font.ITALIC));
+		preCommandAnonymizeBadge = createAnonymizeBadge();
+		postCommandAnonymizeBadge = createAnonymizeBadge();
+		sqlAnonymizeBadge = createAnonymizeBadge();
+		planAnonymizeBadge = createAnonymizeBadge();
+		anonymizeCheckbox.addItemListener(e -> {
+			if (syncingAnonymizeView) {
+				return;
+			}
+			anonymizeAliasesCheckbox.setEnabled(anonymizeCheckbox.isSelected());
+			applyAnonymizeView(true);
+			persistAnonymizeFlags();
+			notifyAnonymizeModeListener();
+		});
+		anonymizeAliasesCheckbox.addItemListener(e -> {
+			if (syncingAnonymizeView || !anonymizeCheckbox.isSelected()) {
+				return;
+			}
+			cachedAnonymizeResult = null;
+			applyAnonymizeView(true);
+			persistAnonymizeFlags();
+			notifyAnonymizeModeListener();
+		});
+
 		planSourceFromQueryPreCommandLabel = new JLabel("Before EXPLAIN:");
 		planSourceFromQueryPreCommandField = new JTextField(36);
 		planSourceFromQueryPostCommandLabel = new JLabel("After EXPLAIN:");
@@ -246,14 +305,21 @@ public class PlanSourcePanel extends JPanel {
 		
 		planSourceFromQuerySQLLabel = new JLabel("EXPLAIN (with options) and SQL command:");
 		planSourceFromQuerySQLTextArea = new JTextArea(8, 40);
+		planSourceFromQuerySQLTextArea.setLineWrap(true);
+		planSourceFromQuerySQLTextArea.setWrapStyleWord(true);
 		planSourceFromQuerySQLTextArea.setText("\nexplain (analyze, buffers, format json, verbose)\n\nselect \n");
+		originalSqlCommand = planSourceFromQuerySQLTextArea.getText();
 		Utils.installCrossPlatformEditBindings(planSourceFromQuerySQLTextArea);
 		planSourceFromQuerySQLTextAreaScrollPane = new JScrollPane(planSourceFromQuerySQLTextArea);
+		planSourceFromQuerySQLTextAreaScrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
 
 		jsonPlanLabel = new JLabel("Text plan or JSON plan:");
 		jsonPlanTextArea = new JTextArea(8, 40);
+		jsonPlanTextArea.setLineWrap(true);
+		jsonPlanTextArea.setWrapStyleWord(true);
 		Utils.installCrossPlatformEditBindings(jsonPlanTextArea);
 		jsonPlanTextAreaScrollPane = new JScrollPane(jsonPlanTextArea);
+		jsonPlanTextAreaScrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
 		jsonPlanDefaultBorder = jsonPlanTextAreaScrollPane.getBorder();
 
 		DocumentListener hostFieldsListener = new DocumentListener() {
@@ -285,21 +351,15 @@ public class PlanSourcePanel extends JPanel {
 		DocumentListener jsonPlanTextAreaDocumentListener = new DocumentListener() {
 
 			public void insertUpdate(DocumentEvent e) {
-				clearJsonPlanErrorStyle();
-				setPlanTextIsDirty(true);
-				schedulePlanFormatChromeRefresh();
+				onOriginalPlanFieldEdited();
 			}
 
 			public void removeUpdate(DocumentEvent e) {
-				clearJsonPlanErrorStyle();
-				setPlanTextIsDirty(true);
-				schedulePlanFormatChromeRefresh();
+				onOriginalPlanFieldEdited();
 			}
 
 			public void changedUpdate(DocumentEvent e) {
-				clearJsonPlanErrorStyle();
-				setPlanTextIsDirty(true);
-				schedulePlanFormatChromeRefresh();
+				onOriginalPlanFieldEdited();
 			}
 
 		};
@@ -414,8 +474,14 @@ public class PlanSourcePanel extends JPanel {
 						formPanel.setSelectedPlanName(oldPlanNameIndex, strNewPlanName);
 					}
 				}
-				objCurrentPlanTabs.setTitleAt(0, strNewPlanName + " - Plan Source");
-				objCurrentPlanTabs.setTitleAt(2, strNewPlanName + " - Plan Diagram");
+				objCurrentPlanTabs.setTitleAt(0, strNewPlanName + " - Plan Source"
+						+ (isAnonymizeEnabled() ? " (anonymized)" : ""));
+				FormPanel renameForm = findFormPanel();
+				int diagramIdx = renameForm == null ? -1 : renameForm.getPlanDiagramTabIndex();
+				if (diagramIdx >= 0) {
+					objCurrentPlanTabs.setTitleAt(diagramIdx, strNewPlanName + " - Plan Diagram"
+							+ (isAnonymizeEnabled() ? " (anonymized)" : ""));
+				}
 			}
 		});
 
@@ -442,9 +508,7 @@ public class PlanSourcePanel extends JPanel {
 				PlanGraphPanel.setDiagramBusyCursor(PlanSourcePanel.this, true);
 				setPlanSourceButtonClicked(SHOW_JSON_PLAN_DIAGRAM);
 
-				objCurrentPlanTabs.setEnabled(true);
-				objCurrentPlanTabs.setEnabledAt(2, true);
-				objCurrentPlanTabs.setSelectedIndex(2);
+				selectPlanDiagramTab();
 				if (bolShowTiming == true) { System.out.println("after PlanSourcePanel.showPlanGraphButton.addActionListener(): " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
 			}
 		});
@@ -452,18 +516,21 @@ public class PlanSourcePanel extends JPanel {
 		DocumentListener planSourceFromQueryDocumentListener = new DocumentListener() {
 
 			public void insertUpdate(DocumentEvent e) {
-				setPlanTextIsDirty(true);
+				onOriginalCommandFieldsEdited();
 			}
 
 			public void removeUpdate(DocumentEvent e) {
-				setPlanTextIsDirty(true);
+				onOriginalCommandFieldsEdited();
 			}
 
 			public void changedUpdate(DocumentEvent e) {
-				setPlanTextIsDirty(true);
+				onOriginalCommandFieldsEdited();
 			}
 
 		};
+		planSourceFromQueryPreCommandField.getDocument().addDocumentListener(planSourceFromQueryDocumentListener);
+		planSourceFromQueryPostCommandField.getDocument().addDocumentListener(planSourceFromQueryDocumentListener);
+		planSourceFromQuerySQLTextArea.getDocument().addDocumentListener(planSourceFromQueryDocumentListener);
 
 		planSourceFromQueryButton = new JButton("Execute and Show Plan Diagram");
 		planSourceFromQueryButton.addActionListener(new ActionListener() {
@@ -511,9 +578,7 @@ public class PlanSourcePanel extends JPanel {
 					if (formPanel != null) {
 						formPanel.updatePlanDiagramTabEnabled();
 					}
-					objCurrentPlanTabs.setEnabled(true);
-					objCurrentPlanTabs.setEnabledAt(2, true);
-					objCurrentPlanTabs.setSelectedIndex(2);
+					selectPlanDiagramTab();
 				} else if (!isJsonPlanShowingError()) {
 					// Unexpected failure without a DB error string — keep user on Plan Source.
 					showJsonPlanExecutionError("Could not build the plan diagram. Check connection settings and SQL.");
@@ -686,33 +751,57 @@ public class PlanSourcePanel extends JPanel {
 		passwordRow.add(planSourceFromQueryRememberPasswordCheckbox);
 		panel.add(passwordRow, fieldGbc(1, row++, 3));
 
+		anonymizeRow = new JPanel(new BorderLayout(8, 0));
+		anonymizeRow.setOpaque(false);
+		JPanel anonymizeChecks = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+		anonymizeChecks.setOpaque(false);
+		anonymizeChecks.add(anonymizeCheckbox);
+		anonymizeChecks.add(anonymizeAliasesCheckbox);
+		anonymizeChecks.add(anonymizeStatusLabel);
+		anonymizeRow.add(anonymizeChecks, BorderLayout.WEST);
+		panel.add(anonymizeRow, fullWidthGbc(row++, new Insets(8, 8, 4, 8)));
+
 		sectionHeaderCommands = createSectionHeader("Commands");
 		panel.add(sectionHeaderCommands, sectionGbc(row++));
 
+		preCommandFieldHost = wrapWithAnonymizeBadge(planSourceFromQueryPreCommandField, preCommandAnonymizeBadge);
+		postCommandFieldHost = wrapWithAnonymizeBadge(planSourceFromQueryPostCommandField, postCommandAnonymizeBadge);
 		panel.add(planSourceFromQueryPreCommandLabel, labelGbc(0, row));
-		panel.add(planSourceFromQueryPreCommandField, fieldGbc(1, row++, 3));
+		panel.add(preCommandFieldHost, fieldGbc(1, row++, 3));
 
 		panel.add(planSourceFromQueryPostCommandLabel, labelGbc(0, row));
-		panel.add(planSourceFromQueryPostCommandField, fieldGbc(1, row++, 3));
+		panel.add(postCommandFieldHost, fieldGbc(1, row++, 3));
 
-		// Full-width, left-aligned (not indented under the label/field columns).
-		panel.add(planSourceFromQuerySQLLabel, fullWidthGbc(row++, new Insets(10, 8, 2, 8)));
+		sqlFieldHost = wrapWithAnonymizeBadge(planSourceFromQuerySQLTextAreaScrollPane, sqlAnonymizeBadge);
+		planFieldHost = wrapWithAnonymizeBadge(jsonPlanTextAreaScrollPane, planAnonymizeBadge);
 
-		GridBagConstraints sqlAreaGbc = fullWidthGbc(row++, new Insets(0, 8, 4, 8));
-		sqlAreaGbc.weighty = 0.45;
-		sqlAreaGbc.fill = GridBagConstraints.BOTH;
-		panel.add(planSourceFromQuerySQLTextAreaScrollPane, sqlAreaGbc);
+		JPanel sqlBlock = new JPanel(new BorderLayout(0, 4));
+		sqlBlock.setOpaque(false);
+		sqlBlock.add(planSourceFromQuerySQLLabel, BorderLayout.NORTH);
+		sqlBlock.add(sqlFieldHost, BorderLayout.CENTER);
+		JPanel execRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+		execRow.setOpaque(false);
+		execRow.add(planSourceFromQueryButton);
+		sqlBlock.add(execRow, BorderLayout.SOUTH);
+		sqlBlock.setMinimumSize(new Dimension(120, 100));
 
-		panel.add(planSourceFromQueryButton, fullWidthGbc(row++, new Insets(4, 8, 4, 8)));
+		JPanel jsonBlock = new JPanel(new BorderLayout(0, 4));
+		jsonBlock.setOpaque(false);
+		jsonBlock.add(jsonPlanLabel, BorderLayout.NORTH);
+		jsonBlock.add(planFieldHost, BorderLayout.CENTER);
+		jsonBlock.add(showPlanGraphButtonRow, BorderLayout.SOUTH);
+		jsonBlock.setMinimumSize(new Dimension(120, 100));
 
-		panel.add(jsonPlanLabel, fullWidthGbc(row++, new Insets(10, 8, 2, 8)));
+		JSplitPane sqlJsonSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, sqlBlock, jsonBlock);
+		sqlJsonSplit.setResizeWeight(0.5);
+		sqlJsonSplit.setContinuousLayout(true);
+		sqlJsonSplit.setBorder(null);
+		sqlJsonSplit.setDividerSize(8);
 
-		GridBagConstraints jsonAreaGbc = fullWidthGbc(row++, new Insets(0, 8, 4, 8));
-		jsonAreaGbc.weighty = 0.45;
-		jsonAreaGbc.fill = GridBagConstraints.BOTH;
-		panel.add(jsonPlanTextAreaScrollPane, jsonAreaGbc);
-
-		panel.add(showPlanGraphButtonRow, fullWidthGbc(row++, new Insets(4, 8, 4, 8)));
+		GridBagConstraints stackGbc = fullWidthGbc(row++, new Insets(8, 8, 4, 8));
+		stackGbc.weighty = 1.0;
+		stackGbc.fill = GridBagConstraints.BOTH;
+		panel.add(sqlJsonSplit, stackGbc);
 
 		connectModeOnlyComponents = new Component[] {
 				sectionHeaderServer,
@@ -726,9 +815,9 @@ public class PlanSourcePanel extends JPanel {
 				planSourceFromQueryUserLabel, planSourceFromQueryUserField,
 				planSourceFromQueryPasswordLabel, passwordRow,
 				sectionHeaderCommands,
-				planSourceFromQueryPreCommandLabel, planSourceFromQueryPreCommandField,
-				planSourceFromQueryPostCommandLabel, planSourceFromQueryPostCommandField,
-				planSourceFromQuerySQLLabel, planSourceFromQuerySQLTextAreaScrollPane,
+				planSourceFromQueryPreCommandLabel, preCommandFieldHost,
+				planSourceFromQueryPostCommandLabel, postCommandFieldHost,
+				planSourceFromQuerySQLLabel, sqlFieldHost,
 				planSourceFromQueryButton
 		};
 
@@ -916,8 +1005,19 @@ public class PlanSourcePanel extends JPanel {
 	}
 */
 	public String getJsonPlanText() {
-		//return jsonText;
+		if (isAnonymizeEnabled()) {
+			return originalPlanText == null ? "" : originalPlanText;
+		}
 		return jsonPlanTextArea.getText();
+	}
+
+	/** Plan text used to build the diagram (scrubbed when Anonymize is on). */
+	public String getJsonPlanTextForDiagram() {
+		if (!isAnonymizeEnabled()) {
+			return getJsonPlanText();
+		}
+		ensureAnonymizeResult();
+		return cachedAnonymizeResult == null ? getJsonPlanText() : cachedAnonymizeResult.plan;
 	}
 	
 	public void setPlanSourceFromQueryPlanNameField(String strPlanName) {
@@ -1015,9 +1115,12 @@ public class PlanSourcePanel extends JPanel {
 			setPlanSourceFromQueryPlanNameField(finalName);
 			planSourceFromQueryPlanNameField.setText(finalName);
 			if (objCurrentPlanTabs != null && objCurrentPlanTabs.getTabCount() > 0) {
-				objCurrentPlanTabs.setTitleAt(0, finalName + " - Plan Source");
-				if (objCurrentPlanTabs.getTabCount() > 2) {
-					objCurrentPlanTabs.setTitleAt(2, finalName + " - Plan Diagram");
+				objCurrentPlanTabs.setTitleAt(0, finalName + " - Plan Source"
+						+ (isAnonymizeEnabled() ? " (anonymized)" : ""));
+				int diagramIdx = formPanel.getPlanDiagramTabIndex();
+				if (diagramIdx >= 0) {
+					objCurrentPlanTabs.setTitleAt(diagramIdx, finalName + " - Plan Diagram"
+							+ (isAnonymizeEnabled() ? " (anonymized)" : ""));
 				}
 			}
 		}
@@ -1083,20 +1186,47 @@ public class PlanSourcePanel extends JPanel {
 	}
 
 	public void setPlanSourceFromQueryPreCommandField(String strPreCommand) {
-		planSourceFromQueryPreCommandField.setText(strPreCommand);
+		originalPreCommand = strPreCommand == null ? "" : strPreCommand;
+		cachedAnonymizeResult = null;
+		if (isAnonymizeEnabled()) {
+			applyAnonymizeView(false);
+		} else {
+			syncingAnonymizeView = true;
+			try {
+				planSourceFromQueryPreCommandField.setText(originalPreCommand);
+			} finally {
+				syncingAnonymizeView = false;
+			}
+		}
 	}
 
 	public String getPlanSourceFromQueryPreCommandField() {
+		if (isAnonymizeEnabled()) {
+			return originalPreCommand == null ? "" : originalPreCommand;
+		}
 		return planSourceFromQueryPreCommandField.getText();
 	}
 
 	public String getPlanSourceFromQueryPostCommandField() {
+		if (isAnonymizeEnabled()) {
+			return originalPostCommand == null ? "" : originalPostCommand;
+		}
 		return planSourceFromQueryPostCommandField.getText();
 	}
 	
 	public void setJsonPlanText(String planText) {
-		//this.jsonText = planText;
-		jsonPlanTextArea.setText(planText == null ? "" : planText);
+		originalPlanText = planText == null ? "" : planText;
+		cachedAnonymizeResult = null;
+		if (isAnonymizeEnabled()) {
+			applyAnonymizeView(false);
+		} else {
+			syncingAnonymizeView = true;
+			try {
+				jsonPlanTextArea.setText(originalPlanText);
+			} finally {
+				syncingAnonymizeView = false;
+			}
+		}
 		refreshPlanFormatChrome();
 		FormPanel formPanel = findFormPanel();
 		if (formPanel != null) {
@@ -1297,10 +1427,12 @@ public class PlanSourcePanel extends JPanel {
 	}
 
 	private PlanGraphPanel findPlanGraphPanel() {
-		if (objCurrentPlanTabs == null || objCurrentPlanTabs.getTabCount() <= 2) {
+		FormPanel formPanel = findFormPanel();
+		int diagramIdx = formPanel == null ? -1 : formPanel.getPlanDiagramTabIndex();
+		if (objCurrentPlanTabs == null || diagramIdx < 0) {
 			return null;
 		}
-		return findPlanGraphPanelInHierarchy(objCurrentPlanTabs.getComponentAt(2));
+		return findPlanGraphPanelInHierarchy(objCurrentPlanTabs.getComponentAt(diagramIdx));
 	}
 
 	private static PlanGraphPanel findPlanGraphPanelInHierarchy(Component root) {
@@ -1319,19 +1451,40 @@ public class PlanSourcePanel extends JPanel {
 	}
 
 	public void setSQLQueryText(String strQueryText) {
-		//this.queryText = strQueryText;
-		planSourceFromQuerySQLTextArea.setText(strQueryText);
-		//jsonPlanTextArea.setText(strQueryText);
+		originalSqlCommand = strQueryText == null ? "" : strQueryText;
+		cachedAnonymizeResult = null;
+		if (isAnonymizeEnabled()) {
+			applyAnonymizeView(false);
+		} else {
+			syncingAnonymizeView = true;
+			try {
+				planSourceFromQuerySQLTextArea.setText(originalSqlCommand);
+			} finally {
+				syncingAnonymizeView = false;
+			}
+		}
 	}
 
 	public String getSQLQueryText() {
-		//return this.queryText;
+		if (isAnonymizeEnabled()) {
+			return originalSqlCommand == null ? "" : originalSqlCommand;
+		}
 		return planSourceFromQuerySQLTextArea.getText();
 	}
 
 	public void setPlanSourceFromQueryPostCommandField(String postCommand) {
-		//return planSourceFromQueryPostCommandField.getText();
-		planSourceFromQueryPostCommandField.setText(postCommand);
+		originalPostCommand = postCommand == null ? "" : postCommand;
+		cachedAnonymizeResult = null;
+		if (isAnonymizeEnabled()) {
+			applyAnonymizeView(false);
+		} else {
+			syncingAnonymizeView = true;
+			try {
+				planSourceFromQueryPostCommandField.setText(originalPostCommand);
+			} finally {
+				syncingAnonymizeView = false;
+			}
+		}
 	}
 	
 	public String getPlanSourceButtonClicked() {
@@ -1355,11 +1508,10 @@ public class PlanSourcePanel extends JPanel {
 
 	/** Single-plan + diagram tab present — enough to run EXPLAIN against the server. */
 	private boolean canExecuteAgainstServer() {
-		if (objCurrentPlanTabs == null || objCurrentPlanTabs.getTabCount() <= 2) {
-			return false;
-		}
 		FormPanel formPanel = findFormPanel();
-		return formPanel != null && formPanel.isSinglePlanSelected();
+		return formPanel != null
+				&& formPanel.isSinglePlanSelected()
+				&& formPanel.getPlanDiagramTabIndex() >= 0;
 	}
 
 	/** Show JSON Plan Diagram needs usable JSON already in the field. */
@@ -1457,6 +1609,235 @@ public class PlanSourcePanel extends JPanel {
 		return this.workerIsDirty;
 	}
 
-	
+	public boolean isAnonymizeEnabled() {
+		return anonymizeCheckbox != null && anonymizeCheckbox.isSelected();
+	}
+
+	public boolean isAnonymizeAliasesEnabled() {
+		return anonymizeAliasesCheckbox == null || anonymizeAliasesCheckbox.isSelected();
+	}
+
+	public void setAnonymizeFlags(boolean anonymize, boolean anonymizeAliases) {
+		syncingAnonymizeView = true;
+		try {
+			anonymizeCheckbox.setSelected(anonymize);
+			anonymizeAliasesCheckbox.setSelected(anonymizeAliases);
+			anonymizeAliasesCheckbox.setEnabled(anonymize);
+		} finally {
+			syncingAnonymizeView = false;
+		}
+		applyAnonymizeView(false);
+	}
+
+	public void setAnonymizeModeListener(Runnable listener) {
+		this.anonymizeModeListener = listener;
+	}
+
+	public Map<String, String> getAnonymizeReverseMap() {
+		ensureAnonymizeResult();
+		if (cachedAnonymizeResult == null) {
+			return Collections.emptyMap();
+		}
+		return cachedAnonymizeResult.reverseMap;
+	}
+
+	private void notifyAnonymizeModeListener() {
+		if (anonymizeModeListener != null) {
+			anonymizeModeListener.run();
+		}
+	}
+
+	private void onOriginalPlanFieldEdited() {
+		if (syncingAnonymizeView || isAnonymizeEnabled()) {
+			return;
+		}
+		originalPlanText = jsonPlanTextArea.getText();
+		cachedAnonymizeResult = null;
+		clearJsonPlanErrorStyle();
+		setPlanTextIsDirty(true);
+		schedulePlanFormatChromeRefresh();
+	}
+
+	private void onOriginalCommandFieldsEdited() {
+		if (syncingAnonymizeView || isAnonymizeEnabled()) {
+			return;
+		}
+		originalPreCommand = planSourceFromQueryPreCommandField.getText();
+		originalPostCommand = planSourceFromQueryPostCommandField.getText();
+		originalSqlCommand = planSourceFromQuerySQLTextArea.getText();
+		cachedAnonymizeResult = null;
+		setPlanTextIsDirty(true);
+	}
+
+	private void captureOriginalsFromFieldsIfEditable() {
+		// When already showing scrubbed text, fields are non-editable — keep stored originals.
+		if (!planSourceFromQuerySQLTextArea.isEditable() || !jsonPlanTextArea.isEditable()) {
+			return;
+		}
+		originalPreCommand = planSourceFromQueryPreCommandField.getText();
+		originalPostCommand = planSourceFromQueryPostCommandField.getText();
+		originalSqlCommand = planSourceFromQuerySQLTextArea.getText();
+		originalPlanText = jsonPlanTextArea.getText();
+	}
+
+	private void ensureAnonymizeResult() {
+		captureOriginalsFromFieldsIfEditable();
+		if (cachedAnonymizeResult != null) {
+			return;
+		}
+		cachedAnonymizeResult = PlanAnonymizer.anonymize(
+				originalPreCommand,
+				originalPostCommand,
+				originalSqlCommand,
+				originalPlanText,
+				isAnonymizeAliasesEnabled());
+	}
+
+	private void applyAnonymizeView(boolean rebuildDiagramHint) {
+		boolean anonymize = isAnonymizeEnabled();
+		anonymizeAliasesCheckbox.setEnabled(anonymize);
+		setAnonymizeBadgesVisible(anonymize);
+		if (anonymize) {
+			anonymizeStatusLabel.setText("Showing anonymized text");
+			// Capture any pending edits, then scrub immediately into the visible fields.
+			captureOriginalsFromFieldsIfEditable();
+			cachedAnonymizeResult = null;
+			ensureAnonymizeResult();
+			syncingAnonymizeView = true;
+			try {
+				planSourceFromQueryPreCommandField.setText(cachedAnonymizeResult.preCommand);
+				planSourceFromQueryPostCommandField.setText(cachedAnonymizeResult.postCommand);
+				planSourceFromQuerySQLTextArea.setText(cachedAnonymizeResult.sql);
+				jsonPlanTextArea.setText(cachedAnonymizeResult.plan);
+				setCommandFieldsEditable(false);
+			} finally {
+				syncingAnonymizeView = false;
+			}
+		} else {
+			anonymizeStatusLabel.setText("");
+			syncingAnonymizeView = true;
+			try {
+				planSourceFromQueryPreCommandField.setText(originalPreCommand);
+				planSourceFromQueryPostCommandField.setText(originalPostCommand);
+				planSourceFromQuerySQLTextArea.setText(originalSqlCommand);
+				jsonPlanTextArea.setText(originalPlanText);
+				setCommandFieldsEditable(true);
+			} finally {
+				syncingAnonymizeView = false;
+			}
+		}
+		refreshPlanFormatChrome();
+		updatePlanSourceTabTitleAnonymizedSuffix();
+		if (rebuildDiagramHint) {
+			jsonRenderedInDiagram = null;
+			setPlanTextIsDirty(true);
+			FormPanel formPanel = findFormPanel();
+			if (formPanel != null) {
+				formPanel.updatePlanDiagramTabEnabled();
+			}
+		}
+	}
+
+	private void setAnonymizeBadgesVisible(boolean visible) {
+		if (preCommandAnonymizeBadge != null) {
+			preCommandAnonymizeBadge.setVisible(visible);
+		}
+		if (postCommandAnonymizeBadge != null) {
+			postCommandAnonymizeBadge.setVisible(visible);
+		}
+		if (sqlAnonymizeBadge != null) {
+			sqlAnonymizeBadge.setVisible(visible);
+		}
+		if (planAnonymizeBadge != null) {
+			planAnonymizeBadge.setVisible(visible);
+		}
+	}
+
+	private void setCommandFieldsEditable(boolean editable) {
+		planSourceFromQueryPreCommandField.setEditable(editable);
+		planSourceFromQueryPostCommandField.setEditable(editable);
+		planSourceFromQuerySQLTextArea.setEditable(editable);
+		jsonPlanTextArea.setEditable(editable);
+	}
+
+	private void persistAnonymizeFlags() {
+		FormPanel formPanel = findFormPanel();
+		Integer planId = formPanel == null ? null : formPanel.findPlanIdForSource(this);
+		if (planId == null && formPanel != null) {
+			planId = formPanel.getSelectedPlanId();
+		}
+		if (planId == null) {
+			return;
+		}
+		Database.updateExplainPlanAnonymizeFlags(planId.intValue(), isAnonymizeEnabled(),
+				isAnonymizeAliasesEnabled());
+	}
+
+	private void updatePlanSourceTabTitleAnonymizedSuffix() {
+		FormPanel formPanel = findFormPanel();
+		if (formPanel == null || objCurrentPlanTabs == null || objCurrentPlanTabs.getTabCount() == 0) {
+			return;
+		}
+		String name = getPlanSourceFromQueryPlanNameField();
+		if (name == null || name.isBlank()) {
+			name = "Plan";
+		}
+		objCurrentPlanTabs.setTitleAt(0,
+				name + " - Plan Source" + (isAnonymizeEnabled() ? " (anonymized)" : ""));
+		int diagramIdx = formPanel.getPlanDiagramTabIndex();
+		if (diagramIdx >= 0) {
+			objCurrentPlanTabs.setTitleAt(diagramIdx,
+					name + " - Plan Diagram" + (isAnonymizeEnabled() ? " (anonymized)" : ""));
+		}
+	}
+
+	private void selectPlanDiagramTab() {
+		if (objCurrentPlanTabs == null) {
+			return;
+		}
+		FormPanel formPanel = findFormPanel();
+		int diagramIdx = formPanel == null ? -1 : formPanel.getPlanDiagramTabIndex();
+		if (diagramIdx < 0) {
+			return;
+		}
+		objCurrentPlanTabs.setEnabled(true);
+		objCurrentPlanTabs.setEnabledAt(diagramIdx, true);
+		objCurrentPlanTabs.setSelectedIndex(diagramIdx);
+	}
+
+	private static JLabel createAnonymizeBadge() {
+		JLabel badge = new JLabel(loadAnonymizeSilhouetteIcon());
+		badge.setToolTipText("Showing anonymized text");
+		badge.setVisible(false);
+		badge.setOpaque(false);
+		return badge;
+	}
+
+	/** Overlay a top-right anonymize silhouette on a text field / scroll pane. */
+	private static JComponent wrapWithAnonymizeBadge(JComponent content, JLabel badge) {
+		JPanel host = new JPanel();
+		host.setOpaque(false);
+		host.setLayout(new OverlayLayout(host));
+		JPanel badgeRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 2));
+		badgeRow.setOpaque(false);
+		badgeRow.add(badge);
+		badgeRow.setAlignmentX(1f);
+		badgeRow.setAlignmentY(0f);
+		content.setAlignmentX(0f);
+		content.setAlignmentY(0f);
+		host.add(badgeRow);
+		host.add(content);
+		return host;
+	}
+
+	private static ImageIcon loadAnonymizeSilhouetteIcon() {
+		java.net.URL url = PlanSourcePanel.class.getResource("/images/anonymize-silhouette.png");
+		if (url == null) {
+			return null;
+		}
+		ImageIcon raw = new ImageIcon(url);
+		Image scaled = raw.getImage().getScaledInstance(20, 20, Image.SCALE_SMOOTH);
+		return new ImageIcon(scaled);
+	}
 }
 
