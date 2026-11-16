@@ -11,9 +11,12 @@ import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Image;
 import java.awt.Insets;
+import java.awt.Rectangle;
 import java.awt.Window;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
 import java.awt.event.FocusAdapter;
 import java.awt.event.FocusEvent;
 import java.awt.event.ItemEvent;
@@ -41,13 +44,17 @@ import javax.swing.JPasswordField;
 import javax.swing.JRadioButton;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
+import javax.swing.JLayeredPane;
 import javax.swing.JTabbedPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
-import javax.swing.OverlayLayout;
+import javax.swing.JViewport;
+import javax.swing.Scrollable;
+import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.border.Border;
+import javax.swing.border.EmptyBorder;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 
@@ -659,7 +666,8 @@ public class PlanSourcePanel extends JPanel {
 		Dimension size = new Dimension(width, height);
 		scrollPane.setPreferredSize(size);
 		scrollPane.setMinimumSize(new Dimension(Math.min(280, width), 80));
-		scrollPane.setMaximumSize(new Dimension(width, Integer.MAX_VALUE));
+		// Grow with the split / window in both directions (divider + parent resize).
+		scrollPane.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
 		applyWheelUnitIncrement(scrollPane);
 	}
 
@@ -684,7 +692,7 @@ public class PlanSourcePanel extends JPanel {
 		sizeTextArea(planSourceFromQuerySQLTextAreaScrollPane, AREA_WIDTH, AREA_HEIGHT);
 		sizeTextArea(jsonPlanTextAreaScrollPane, AREA_WIDTH, AREA_HEIGHT);
 
-		JPanel panel = new JPanel(new GridBagLayout());
+		WidthTrackingForm panel = new WidthTrackingForm();
 		int row = 0;
 
 		panel.add(createSectionHeader("Plan"), sectionGbc(row++));
@@ -798,10 +806,14 @@ public class PlanSourcePanel extends JPanel {
 		sqlJsonSplit.setBorder(null);
 		sqlJsonSplit.setDividerSize(8);
 
+		// Horizontal divider on the right edge so width can be dragged like height.
+		JSplitPane sizedStack = wrapWithHorizontalWidthSplit(sqlJsonSplit, AREA_WIDTH);
+
 		GridBagConstraints stackGbc = fullWidthGbc(row++, new Insets(8, 8, 4, 8));
+		stackGbc.weightx = 1.0;
 		stackGbc.weighty = 1.0;
 		stackGbc.fill = GridBagConstraints.BOTH;
-		panel.add(sqlJsonSplit, stackGbc);
+		panel.add(sizedStack, stackGbc);
 
 		connectModeOnlyComponents = new Component[] {
 				sectionHeaderServer,
@@ -1805,7 +1817,29 @@ public class PlanSourcePanel extends JPanel {
 		objCurrentPlanTabs.setSelectedIndex(diagramIdx);
 	}
 
-	private static JLabel createAnonymizeBadge() {
+	/**
+	 * Puts {@code content} on the left of a horizontal split with an empty right
+	 * pane, so the user can drag left/right to change width (mirrors vertical
+	 * split resizing for SQL/plan height).
+	 */
+	static JSplitPane wrapWithHorizontalWidthSplit(JComponent content, int initialWidth) {
+		JPanel widthSpacer = new JPanel();
+		widthSpacer.setOpaque(false);
+		widthSpacer.setMinimumSize(new Dimension(24, 40));
+		widthSpacer.setPreferredSize(new Dimension(48, 40));
+
+		content.setMinimumSize(new Dimension(160, 80));
+
+		JSplitPane horizontal = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, content, widthSpacer);
+		horizontal.setResizeWeight(1.0);
+		horizontal.setContinuousLayout(true);
+		horizontal.setBorder(null);
+		horizontal.setDividerSize(8);
+		horizontal.setDividerLocation(Math.max(160, initialWidth));
+		return horizontal;
+	}
+
+	static JLabel createAnonymizeBadge() {
 		JLabel badge = new JLabel(loadAnonymizeSilhouetteIcon());
 		badge.setToolTipText("Showing anonymized text");
 		badge.setVisible(false);
@@ -1813,24 +1847,65 @@ public class PlanSourcePanel extends JPanel {
 		return badge;
 	}
 
-	/** Overlay a top-right anonymize silhouette on a text field / scroll pane. */
-	private static JComponent wrapWithAnonymizeBadge(JComponent content, JLabel badge) {
-		JPanel host = new JPanel();
-		host.setOpaque(false);
-		host.setLayout(new OverlayLayout(host));
-		JPanel badgeRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 2));
-		badgeRow.setOpaque(false);
-		badgeRow.add(badge);
-		badgeRow.setAlignmentX(1f);
-		badgeRow.setAlignmentY(0f);
-		content.setAlignmentX(0f);
-		content.setAlignmentY(0f);
-		host.add(badgeRow);
-		host.add(content);
-		return host;
+	/**
+	 * Overlay a silhouette inside the top-right of a text field / scroll pane.
+	 * Host tracks the content component's preferred/min/max sizes so split panes
+	 * and form layout can still resize the field.
+	 */
+	static JComponent wrapWithAnonymizeBadge(JComponent content, JLabel badge) {
+		JPanel badgeCorner = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+		badgeCorner.setOpaque(false);
+		badgeCorner.setBorder(new EmptyBorder(4, 0, 0, 6));
+		badgeCorner.add(badge);
+
+		JLayeredPane layered = new JLayeredPane() {
+			private static final long serialVersionUID = 1L;
+
+			@Override
+			public Dimension getPreferredSize() {
+				return content.getPreferredSize();
+			}
+
+			@Override
+			public Dimension getMinimumSize() {
+				return content.getMinimumSize();
+			}
+
+			@Override
+			public Dimension getMaximumSize() {
+				return content.getMaximumSize();
+			}
+
+			@Override
+			public boolean isOptimizedDrawingEnabled() {
+				return false;
+			}
+		};
+		layered.setOpaque(false);
+		layered.add(content, JLayeredPane.DEFAULT_LAYER);
+		layered.add(badgeCorner, JLayeredPane.PALETTE_LAYER);
+		layered.addComponentListener(new ComponentAdapter() {
+			@Override
+			public void componentResized(ComponentEvent e) {
+				layoutAnonymizeBadgeOverlay(layered, content, badgeCorner);
+			}
+		});
+		layoutAnonymizeBadgeOverlay(layered, content, badgeCorner);
+		return layered;
 	}
 
-	private static ImageIcon loadAnonymizeSilhouetteIcon() {
+	private static void layoutAnonymizeBadgeOverlay(JLayeredPane layered, JComponent content,
+			JComponent badgeCorner) {
+		int w = Math.max(layered.getWidth(), 0);
+		int h = Math.max(layered.getHeight(), 0);
+		content.setBounds(0, 0, w, h);
+		Dimension badgeSize = badgeCorner.getPreferredSize();
+		int bw = badgeSize.width;
+		int bh = badgeSize.height;
+		badgeCorner.setBounds(Math.max(0, w - bw), 0, bw, bh);
+	}
+
+	static ImageIcon loadAnonymizeSilhouetteIcon() {
 		java.net.URL url = PlanSourcePanel.class.getResource("/images/anonymize-silhouette.png");
 		if (url == null) {
 			return null;
@@ -1838,6 +1913,48 @@ public class PlanSourcePanel extends JPanel {
 		ImageIcon raw = new ImageIcon(url);
 		Image scaled = raw.getImage().getScaledInstance(20, 20, Image.SCALE_SMOOTH);
 		return new ImageIcon(scaled);
+	}
+
+	/**
+	 * Form panel that stretches to the viewport width when there is extra room, so
+	 * SQL/JSON areas can grow horizontally; still scrolls horizontally when narrow.
+	 */
+	private static final class WidthTrackingForm extends JPanel implements Scrollable {
+		private static final long serialVersionUID = 1L;
+
+		WidthTrackingForm() {
+			super(new GridBagLayout());
+		}
+
+		@Override
+		public Dimension getPreferredScrollableViewportSize() {
+			return getPreferredSize();
+		}
+
+		@Override
+		public int getScrollableUnitIncrement(Rectangle visible, int orientation, int direction) {
+			return 16;
+		}
+
+		@Override
+		public int getScrollableBlockIncrement(Rectangle visible, int orientation, int direction) {
+			return orientation == SwingConstants.VERTICAL ? Math.max(visible.height * 9 / 10, 1)
+					: Math.max(visible.width * 9 / 10, 1);
+		}
+
+		@Override
+		public boolean getScrollableTracksViewportWidth() {
+			Container parent = getParent();
+			if (parent instanceof JViewport) {
+				return ((JViewport) parent).getWidth() > getPreferredSize().width;
+			}
+			return false;
+		}
+
+		@Override
+		public boolean getScrollableTracksViewportHeight() {
+			return false;
+		}
 	}
 }
 

@@ -1,24 +1,26 @@
 #!/usr/bin/env bash
-# Sync PEPS sources from the Windows/VMware shared folder into a local Ubuntu
-# work tree, then rebuild the shaded jar when host files change — or when the
-# host repo contains a RECOMPILENOW semaphore (created by Cursor after edits).
+# Sync PEPS sources from the Windows/VMware shared folder into a local
+# work tree (Linux or macOS guest), then rebuild the shaded jar when host
+# files change — or when the host repo contains a RECOMPILENOW semaphore
+# (created by Cursor after edits).
 # On start, syncs and packages once before waiting for changes / RECOMPILENOW.
-# This script deletes RECOMPILENOW on the host after the Ubuntu build so Windows
-# and Ubuntu are not racing over who clears the flag.
+# This script deletes RECOMPILENOW on the host after the guest build so Windows
+# and the guest are not racing over who clears the flag.
 #
-# Why: /mnt/hgfs watches are unreliable; build on a local disk copy (~/peps)
+# Why: shared-folder watches are unreliable; build on a local disk copy (~/peps)
 # while still picking up edits made on the Windows host.
 #
 # Terminal 1 (keep running):
 #   ./scripts/dev-sync-watch.sh
 #   # or, first time / until local copy has this script:
-#   bash /mnt/hgfs/<share>/.../postgresql-explain-plan-studio/scripts/dev-sync-watch.sh
+#   bash /mnt/hgfs/peps/scripts/dev-sync-watch.sh
+#   bash "/Volumes/peps/scripts/dev-sync-watch.sh"
 #
 # Terminal 2:
 #   cd ~/peps && ./scripts/dev-run.sh
 #
 # Optional env:
-#   PEPS_HOST_REPO   Windows repo path as seen in the guest (under /mnt/hgfs/...)
+#   PEPS_HOST_REPO   Host repo path as seen in the guest (/mnt/hgfs/… or /Volumes/…)
 #   PEPS_LOCAL_REPO  Local build tree (default: ~/peps)
 #   PEPS_SYNC_POLL   Seconds between host fingerprint checks (default: 2)
 set -uo pipefail
@@ -26,6 +28,8 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib-dev-lock.sh
 source "$SCRIPT_DIR/lib-dev-lock.sh"
+# shellcheck source=lib-host-share.sh
+source "$SCRIPT_DIR/lib-host-share.sh"
 POLL_SEC="${PEPS_SYNC_POLL:-2}"
 LOCAL_REPO="${PEPS_LOCAL_REPO:-$HOME/peps}"
 HOST_REPO="${PEPS_HOST_REPO:-${1:-}}"
@@ -44,41 +48,34 @@ need_cmd() {
 }
 
 find_host_repo() {
-  local candidate
-  if [[ -n "${HOST_REPO}" ]]; then
-    printf '%s\n' "$HOST_REPO"
-    return 0
-  fi
-  # Prefer an exact project folder under any mounted share.
-  while IFS= read -r candidate; do
-    if [[ -f "$candidate/pom.xml" ]] \
-      && [[ -d "$candidate/src/main/java/com/williammeitzen/peps" ]]; then
-      printf '%s\n' "$candidate"
-      return 0
-    fi
-  done < <(find /mnt/hgfs -maxdepth 8 -type d -name 'postgresql-explain-plan-studio' 2>/dev/null)
+  peps_find_host_repo "${HOST_REPO}"
+}
 
-  # Fallback: share named "peps" that is already the repo root.
-  for candidate in /mnt/hgfs/peps /mnt/hgfs/PEPS; do
-    if [[ -f "$candidate/pom.xml" ]] \
-      && [[ -d "$candidate/src/main/java/com/williammeitzen/peps" ]]; then
-      printf '%s\n' "$candidate"
-      return 0
-    fi
-  done
-  return 1
+file_mtime_size() {
+  local path="$1"
+  # Linux: stat -c; macOS: stat -f
+  stat -c '%Y %s' "$path" 2>/dev/null || stat -f '%m %z' "$path"
 }
 
 fingerprint_sources() {
   local root="$1"
-  # Stable fingerprint of sources the Windows watch also cares about.
-  {
-    find "$root/src" -type f \( -name '*.java' -o -name '*.xml' \) -printf '%P\t%T@\t%s\n' 2>/dev/null
-    if [[ -f "$root/pom.xml" ]]; then
-      printf 'pom.xml\t%s\t%s\n' "$(stat -c '%Y' "$root/pom.xml")" "$(stat -c '%s' "$root/pom.xml")"
-    fi
-    find "$root/scripts" -type f -name '*.sh' -printf 'scripts/%P\t%T@\t%s\n' 2>/dev/null
-  } | sort | md5sum | awk '{print $1}'
+  local listing
+  # Portable fingerprint (GNU find -printf is Linux-only).
+  listing="$(
+    {
+      find "$root/src" -type f \( -name '*.java' -o -name '*.xml' \) 2>/dev/null
+      [[ -f "$root/pom.xml" ]] && printf '%s\n' "$root/pom.xml"
+      find "$root/scripts" -type f -name '*.sh' 2>/dev/null
+    } | sort | while IFS= read -r f; do
+      [[ -n "$f" ]] || continue
+      printf '%s\t%s\n' "${f#"$root"/}" "$(file_mtime_size "$f")"
+    done
+  )"
+  if command -v md5sum >/dev/null 2>&1; then
+    printf '%s' "$listing" | md5sum | awk '{print $1}'
+  else
+    printf '%s' "$listing" | md5 -q
+  fi
 }
 
 sync_from_host() {
@@ -147,18 +144,22 @@ trap 'exit 130' INT TERM
 
 need_cmd java
 need_cmd rsync
-need_cmd md5sum
 need_cmd find
 need_cmd stat
+if ! command -v md5sum >/dev/null 2>&1 && ! command -v md5 >/dev/null 2>&1; then
+  die "Required command not found: md5sum (Linux) or md5 (macOS)"
+fi
 
-HOST_REPO="$(find_host_repo)" || die "Could not find Windows repo under /mnt/hgfs.
-Mount shared folders, then either:
-  export PEPS_HOST_REPO=/mnt/hgfs/<share>/path/to/postgresql-explain-plan-studio
+HOST_REPO="$(find_host_repo)" || die "Could not find the Windows PEPS repo on a VMware share.
+Mount / enable Shared Folders, then either:
+  export PEPS_HOST_REPO=/mnt/hgfs/peps          # Linux
+  export PEPS_HOST_REPO=/Volumes/peps           # macOS Fusion
   ./scripts/dev-sync-watch.sh
 or:
-  ./scripts/dev-sync-watch.sh /mnt/hgfs/<share>/.../postgresql-explain-plan-studio
+  ./scripts/dev-sync-watch.sh \"\$PEPS_HOST_REPO\"
 
-Tip: run  vmware-hgfsclient  and  ls /mnt/hgfs  to see share names."
+Linux tip:  vmware-hgfsclient  &&  ls /mnt/hgfs
+macOS tip:  ls /Volumes  &&  ls \"/Volumes/VMware Shared Folders\""
 
 if [[ ! -f "$HOST_REPO/pom.xml" ]]; then
   die "PEPS_HOST_REPO is not a PEPS checkout: $HOST_REPO"
@@ -169,7 +170,7 @@ host_real="$(readlink -f "$HOST_REPO" 2>/dev/null || printf '%s' "$HOST_REPO")"
 local_real="$(mkdir -p "$LOCAL_REPO"; readlink -f "$LOCAL_REPO" 2>/dev/null || printf '%s' "$LOCAL_REPO")"
 if [[ "$host_real" == "$local_real" ]]; then
   die "Host and local repos are the same path ($local_real).
-Use a local disk copy for PEPS_LOCAL_REPO (default ~/peps), not the hgfs path."
+Use a local disk copy for PEPS_LOCAL_REPO (default ~/peps), not the share path."
 fi
 
 log "Host (Windows share): $HOST_REPO"
@@ -183,7 +184,7 @@ run_build "$LOCAL_REPO" || true
 last_fp="$(fingerprint_sources "$HOST_REPO")"
 last_recompile_stamp=""
 if [[ -f "$HOST_REPO/RECOMPILENOW" ]]; then
-  last_recompile_stamp="$(stat -c '%Y %s' "$HOST_REPO/RECOMPILENOW" 2>/dev/null || true)"
+  last_recompile_stamp="$(file_mtime_size "$HOST_REPO/RECOMPILENOW" 2>/dev/null || true)"
   rm -f "$HOST_REPO/RECOMPILENOW" "$LOCAL_REPO/RECOMPILENOW"
   log "Cleared host RECOMPILENOW after initial build"
 fi
@@ -194,7 +195,7 @@ while true; do
   recompile_now=0
   recompile_stamp=""
   if [[ -f "$HOST_REPO/RECOMPILENOW" ]]; then
-    recompile_stamp="$(stat -c '%Y %s' "$HOST_REPO/RECOMPILENOW" 2>/dev/null || true)"
+    recompile_stamp="$(file_mtime_size "$HOST_REPO/RECOMPILENOW" 2>/dev/null || true)"
     if [[ -n "$recompile_stamp" && "$recompile_stamp" != "$last_recompile_stamp" ]]; then
       recompile_now=1
     fi

@@ -19,8 +19,11 @@ import java.awt.Dimension;
 
 import javax.swing.DefaultCellEditor;
 import javax.swing.JLabel;
+import javax.swing.JScrollBar;
+import javax.swing.JScrollPane;
 import javax.swing.JTable;
 import javax.swing.JTextField;
+import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.TableColumnModelEvent;
@@ -37,6 +40,8 @@ public class OperationPropertiesPanel extends JTable {
 
 	private static final int DEFAULT_COLUMN_WIDTH = 200;
 	private static final int MIN_COLUMN_WIDTH = 40;
+	/** GUI drag/pack cap: about 128 characters wide (content may still be longer). */
+	private static final int MAX_COLUMN_CHARS = 128;
 
 	private PlanGraphPanel planGraphPanel = null;
 	private Object[] columnNames = { "Property", "Value" };
@@ -53,6 +58,12 @@ public class OperationPropertiesPanel extends JTable {
 	private int valueColumnWidth = DEFAULT_COLUMN_WIDTH;
 	/** Skip width memory while setDataVector recreates columns (avoids saving defaults). */
 	private boolean suppressingColumnWidthMemory = false;
+	/** True while a mouse button is down on the table header. */
+	private boolean headerMouseDown = false;
+	/** True while the user is dragging a column border in the header. */
+	private boolean columnResizeDragActive = false;
+	/** Horizontal scroll frozen for the drag so outer JScrollPane autoscroll cannot runaway. */
+	private int frozenHorizontalScrollValue = 0;
 	/** Per-row red highlight (matches diagram PL/worker hotspot text). */
 	private boolean[] rowHighlights = null;
 
@@ -161,19 +172,25 @@ public class OperationPropertiesPanel extends JTable {
 	/**
 	 * Keep both columns freely resizable (no strip of LAF header listeners), remember
 	 * widths, and revalidate ancestors so the outer scroll pane can grow/shrink.
+	 * While dragging past the panel edge, freeze horizontal scroll — otherwise the
+	 * scroll pane autoscrolls, the header moves under the cursor, and width runaway
+	 * continues until the mouse re-enters the panel.
 	 */
 	private void installColumnResizeSupport() {
 		JTableHeader tableHeader = this.getTableHeader();
 		tableHeader.setReorderingAllowed(false);
 
-		// Double-click near a column edge → pack that column to content (does not remove LAF listeners).
 		tableHeader.addMouseListener(new MouseAdapter() {
 			@Override
 			public void mousePressed(MouseEvent evt) {
+				headerMouseDown = true;
+				if (isHeaderResizeCursor(tableHeader)) {
+					beginColumnResizeDrag();
+				}
 				if (evt.getClickCount() <= 1) {
 					return;
 				}
-				if (tableHeader.getCursor() != Cursor.getPredefinedCursor(Cursor.E_RESIZE_CURSOR)) {
+				if (!isHeaderResizeCursor(tableHeader)) {
 					return;
 				}
 				TableColumnModel colModel = getColumnModel();
@@ -196,19 +213,34 @@ public class OperationPropertiesPanel extends JTable {
 					width = Math.max(comp.getPreferredSize().width + 8, width);
 				}
 				TableColumn col = colModel.getColumn(index);
+				int maxWidth = maxColumnWidthPixels();
+				width = Math.min(width, maxWidth);
 				col.setMinWidth(MIN_COLUMN_WIDTH);
-				col.setMaxWidth(Integer.MAX_VALUE);
+				col.setMaxWidth(maxWidth);
 				col.setPreferredWidth(width);
+				col.setWidth(width);
 				rememberColumnWidths();
 				revalidateAncestors();
+			}
+
+			@Override
+			public void mouseReleased(MouseEvent evt) {
+				headerMouseDown = false;
+				endColumnResizeDrag();
 			}
 		});
 
 		getColumnModel().addColumnModelListener(new TableColumnModelListener() {
 			@Override
 			public void columnMarginChanged(ChangeEvent e) {
+				if (headerMouseDown && !columnResizeDragActive) {
+					beginColumnResizeDrag();
+				}
 				rememberColumnWidths();
 				revalidateAncestors();
+				if (columnResizeDragActive) {
+					restoreFrozenHorizontalScroll();
+				}
 			}
 
 			@Override
@@ -229,13 +261,51 @@ public class OperationPropertiesPanel extends JTable {
 		});
 	}
 
+	private static boolean isHeaderResizeCursor(JTableHeader tableHeader) {
+		Cursor cursor = tableHeader.getCursor();
+		return cursor == Cursor.getPredefinedCursor(Cursor.E_RESIZE_CURSOR)
+				|| cursor == Cursor.getPredefinedCursor(Cursor.W_RESIZE_CURSOR);
+	}
+
+	private void beginColumnResizeDrag() {
+		columnResizeDragActive = true;
+		JScrollPane scroll = findEnclosingScrollPane();
+		frozenHorizontalScrollValue = scroll == null ? 0 : scroll.getHorizontalScrollBar().getValue();
+	}
+
+	private void endColumnResizeDrag() {
+		if (!columnResizeDragActive) {
+			return;
+		}
+		columnResizeDragActive = false;
+		rememberColumnWidths();
+		revalidateAncestors();
+	}
+
+	private void restoreFrozenHorizontalScroll() {
+		JScrollPane scroll = findEnclosingScrollPane();
+		if (scroll == null) {
+			return;
+		}
+		JScrollBar bar = scroll.getHorizontalScrollBar();
+		if (bar.getValue() != frozenHorizontalScrollValue) {
+			bar.setValue(frozenHorizontalScrollValue);
+		}
+	}
+
+	private JScrollPane findEnclosingScrollPane() {
+		return (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class, this);
+	}
+
 	private void rememberColumnWidths() {
 		if (suppressingColumnWidthMemory || getColumnCount() < 2) {
 			return;
 		}
+		int maxWidth = maxColumnWidthPixels();
 		// Prefer the visible width; preferredWidth alone can lag or reset during model swaps.
-		propertyColumnWidth = Math.max(MIN_COLUMN_WIDTH, rememberedColumnWidth(0));
-		valueColumnWidth = Math.max(MIN_COLUMN_WIDTH, rememberedColumnWidth(1));
+		propertyColumnWidth = clampColumnWidth(rememberedColumnWidth(0), maxWidth);
+		valueColumnWidth = clampColumnWidth(rememberedColumnWidth(1), maxWidth);
+		enforceColumnMaxWidths(maxWidth);
 	}
 
 	private int rememberedColumnWidth(int column) {
@@ -245,17 +315,45 @@ public class OperationPropertiesPanel extends JTable {
 		return visible > MIN_COLUMN_WIDTH ? visible : preferred;
 	}
 
+	/** Pixel width of roughly {@link #MAX_COLUMN_CHARS} characters in the table font. */
+	private int maxColumnWidthPixels() {
+		FontMetrics fm = getFontMetrics(getFont());
+		int charWidth = Math.max(1, fm.charWidth('W'));
+		return Math.max(MIN_COLUMN_WIDTH, charWidth * MAX_COLUMN_CHARS);
+	}
+
+	private static int clampColumnWidth(int width, int maxWidth) {
+		return Math.max(MIN_COLUMN_WIDTH, Math.min(width, maxWidth));
+	}
+
+	private void enforceColumnMaxWidths(int maxWidth) {
+		if (getColumnCount() < 2) {
+			return;
+		}
+		for (int i = 0; i < getColumnCount(); i++) {
+			TableColumn col = getColumnModel().getColumn(i);
+			col.setMaxWidth(maxWidth);
+			if (col.getWidth() > maxWidth) {
+				col.setWidth(maxWidth);
+			}
+			if (col.getPreferredWidth() > maxWidth) {
+				col.setPreferredWidth(maxWidth);
+			}
+		}
+	}
+
 	private void applyColumnWidths(int propertyWidth, int valueWidth) {
 		if (getColumnCount() < 2) {
 			return;
 		}
-		propertyColumnWidth = Math.max(MIN_COLUMN_WIDTH, propertyWidth);
-		valueColumnWidth = Math.max(MIN_COLUMN_WIDTH, valueWidth);
+		int maxWidth = maxColumnWidthPixels();
+		propertyColumnWidth = clampColumnWidth(propertyWidth, maxWidth);
+		valueColumnWidth = clampColumnWidth(valueWidth, maxWidth);
 		TableColumn propertyCol = getColumnModel().getColumn(0);
 		TableColumn valueCol = getColumnModel().getColumn(1);
 		for (TableColumn col : new TableColumn[] { propertyCol, valueCol }) {
 			col.setMinWidth(MIN_COLUMN_WIDTH);
-			col.setMaxWidth(Integer.MAX_VALUE);
+			col.setMaxWidth(maxWidth);
 			col.setResizable(true);
 		}
 		propertyCol.setPreferredWidth(propertyColumnWidth);

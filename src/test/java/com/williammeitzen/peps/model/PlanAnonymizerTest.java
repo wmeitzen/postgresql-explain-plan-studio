@@ -106,6 +106,39 @@ class PlanAnonymizerTest {
 	}
 
 	@Test
+	void aliasesOffDoesNotMisclassifyJoinAliasesAsColumns() {
+		String sql = "select * from gxd_genotype g_1 join acc_accession a_1 on true";
+		String plan = "["
+				+ "{\"Plan\":{"
+				+ "\"Node Type\":\"Merge Join\","
+				+ "\"Merge Cond\":\"(g_1._genotype_key = a_1._object_key)\","
+				+ "\"Output\":[\"g_1._genotype_key\",\"a_1._object_key\"],"
+				+ "\"Plans\":["
+				+ "{\"Node Type\":\"Seq Scan\",\"Relation Name\":\"gxd_genotype\",\"Alias\":\"g_1\"},"
+				+ "{\"Node Type\":\"Seq Scan\",\"Relation Name\":\"acc_accession\",\"Alias\":\"a_1\"}"
+				+ "]"
+				+ "}}]";
+
+		PlanAnonymizer.Result aliasesOff = PlanAnonymizer.anonymize("", "", sql, plan, false);
+		assertTrue(aliasesOff.plan.contains("g_1"), () -> aliasesOff.plan);
+		assertTrue(aliasesOff.plan.contains("a_1"), () -> aliasesOff.plan);
+		assertTrue(aliasesOff.plan.contains("\"Alias\":\"g_1\""));
+		assertFalse(aliasesOff.plan.contains("_genotype_key"), () -> aliasesOff.plan);
+		assertFalse(aliasesOff.plan.contains("_object_key"), () -> aliasesOff.plan);
+		assertTrue(aliasesOff.plan.contains("column_"));
+		assertFalse(aliasesOff.plan.contains("alias_"));
+		// Must not look like column.column for the join aliases.
+		assertFalse(aliasesOff.plan.matches("(?s).*column_\\w+\\.column_\\w+.*"),
+				() -> "Merge Cond misclassified aliases as columns: " + aliasesOff.plan);
+
+		PlanAnonymizer.Result aliasesOn = PlanAnonymizer.anonymize("", "", sql, plan, true);
+		assertFalse(aliasesOn.plan.contains("g_1"), () -> aliasesOn.plan);
+		assertFalse(aliasesOn.plan.contains("a_1"), () -> aliasesOn.plan);
+		assertTrue(aliasesOn.plan.contains("alias_"));
+		assertTrue(aliasesOn.plan.contains("column_"));
+	}
+
+	@Test
 	void reverseMapRestoresAdviceSql() {
 		PlanAnonymizer.Result result = PlanAnonymizer.anonymize("", "", SAMPLE_SQL, SAMPLE_PLAN, true);
 		String anonTable = null;

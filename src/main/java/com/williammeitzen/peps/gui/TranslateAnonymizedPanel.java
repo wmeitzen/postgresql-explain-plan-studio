@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 
 import javax.swing.BorderFactory;
+import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
@@ -38,6 +39,7 @@ public class TranslateAnonymizedPanel extends JPanel {
 	private final JTextArea outputArea;
 	private final JScrollPane outputScroll;
 	private final JLabel warningLabel;
+	private final JLabel inputAnonymizeBadge;
 	private final Border outputDefaultBorder;
 	private Timer pulseTimer;
 	private boolean showingWarning;
@@ -70,25 +72,39 @@ public class TranslateAnonymizedPanel extends JPanel {
 		JScrollPane inputScroll = new JScrollPane(inputArea);
 		outputScroll = new JScrollPane(outputArea);
 		outputDefaultBorder = outputScroll.getBorder();
+		sizeFlexibleTextArea(inputScroll);
+		sizeFlexibleTextArea(outputScroll);
+
+		inputAnonymizeBadge = PlanSourcePanel.createAnonymizeBadge();
+		inputAnonymizeBadge.setVisible(true);
+		JComponent inputHost = PlanSourcePanel.wrapWithAnonymizeBadge(inputScroll, inputAnonymizeBadge);
 
 		JPanel top = new JPanel(new BorderLayout(0, 4));
 		top.setOpaque(false);
 		top.add(new JLabel("Anonymized text to translate:"), BorderLayout.NORTH);
-		top.add(inputScroll, BorderLayout.CENTER);
+		top.add(inputHost, BorderLayout.CENTER);
+		top.setMinimumSize(new Dimension(120, 100));
+
+		JPanel translatedHeader = new JPanel(new BorderLayout(0, 4));
+		translatedHeader.setOpaque(false);
+		translatedHeader.add(new JLabel("Translated:"), BorderLayout.NORTH);
+		translatedHeader.add(warningLabel, BorderLayout.CENTER);
 
 		JPanel bottom = new JPanel(new BorderLayout(0, 4));
 		bottom.setOpaque(false);
-		bottom.add(new JLabel("Translated:"), BorderLayout.NORTH);
+		bottom.add(translatedHeader, BorderLayout.NORTH);
 		bottom.add(outputScroll, BorderLayout.CENTER);
+		bottom.setMinimumSize(new Dimension(120, 100));
 
 		JSplitPane split = new JSplitPane(JSplitPane.VERTICAL_SPLIT, top, bottom);
 		split.setResizeWeight(0.5);
 		split.setContinuousLayout(true);
 		split.setBorder(null);
+		split.setDividerSize(8);
 
-		add(warningLabel, BorderLayout.NORTH);
-		add(split, BorderLayout.CENTER);
-		setPreferredSize(new Dimension(640, 480));
+		JSplitPane sizedSplit = PlanSourcePanel.wrapWithHorizontalWidthSplit(split, 640);
+
+		add(sizedSplit, BorderLayout.CENTER);
 
 		inputArea.getDocument().addDocumentListener(new DocumentListener() {
 			@Override
@@ -106,6 +122,14 @@ public class TranslateAnonymizedPanel extends JPanel {
 				translateLive();
 			}
 		});
+	}
+
+	private static void sizeFlexibleTextArea(JScrollPane scrollPane) {
+		scrollPane.setPreferredSize(new Dimension(640, 200));
+		scrollPane.setMinimumSize(new Dimension(200, 80));
+		scrollPane.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
+		scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+		scrollPane.getHorizontalScrollBar().setUnitIncrement(16);
 	}
 
 	public void setPlanSourcePanel(PlanSourcePanel planSourcePanel) {

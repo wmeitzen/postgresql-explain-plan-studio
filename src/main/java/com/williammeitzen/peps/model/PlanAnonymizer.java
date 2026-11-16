@@ -318,8 +318,9 @@ public final class PlanAnonymizer {
 				if (relation != null) {
 					registerRelation(stripQuotes(relation));
 				}
-				if (anonymizeAliases && alias != null
-						&& !isSqlKeyword(stripQuotes(alias))) {
+				// Always collect aliases for classification so g_1 / a_1 are not
+				// mistaken for columns when "Anonymize aliases" is off.
+				if (alias != null && !isSqlKeyword(stripQuotes(alias))) {
 					registerAlias(stripQuotes(alias));
 				}
 			}
@@ -401,9 +402,9 @@ public final class PlanAnonymizer {
 				return;
 			}
 			if ("Alias".equalsIgnoreCase(key)) {
-				if (anonymizeAliases) {
-					registerAlias(value);
-				}
+				// Always record aliases so expression scanners do not treat them as columns.
+				// Mapping to alias_* tokens still depends on anonymizeAliases in buildForwardMap.
+				registerAlias(value);
 				return;
 			}
 			if ("Function Name".equalsIgnoreCase(key) || "Table Function Name".equalsIgnoreCase(key)) {
@@ -547,6 +548,16 @@ public final class PlanAnonymizer {
 		}
 
 		Map<String, String> buildForwardMap() {
+			// Expression scans may visit Merge Cond before child Alias fields; drop
+			// anything later proven to be an alias/relation/etc. from the column set.
+			columns.removeAll(aliases);
+			columns.removeAll(schemas);
+			columns.removeAll(relations);
+			columns.removeAll(indexes);
+			columns.removeAll(ctes);
+			columns.removeAll(subplans);
+			columns.removeAll(functions);
+
 			Map<String, String> forward = new LinkedHashMap<>();
 			assignPartitionAware(forward, schemas, "schema");
 			assignPartitionAware(forward, relations, "table");

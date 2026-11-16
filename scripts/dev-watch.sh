@@ -1,29 +1,38 @@
 #!/usr/bin/env bash
-# PEPS dev watcher — one entry point for Ubuntu and for a local-only checkout.
+# PEPS dev watcher — one entry point for Ubuntu/macOS guests and local-only checkouts.
 #
-# Ubuntu + Windows VMware share (usual day-to-day command):
+# Linux/macOS + Windows VMware share (usual day-to-day command):
 #   bash ~/peps/scripts/dev-watch.sh
 #
 # That single command:
-#   1) mounts HGFS if VMware shares are advertised but /mnt/hgfs is empty
+#   1) mounts HGFS on Linux if VMware shares are advertised but /mnt/hgfs is empty
+#      (macOS Fusion shares appear under /Volumes/… — no mount step)
 #   2) re-execs the share copy when ~/peps is stale
 #   3) syncs share → ~/peps
 #   4) initial Maven package (via dev-sync-watch.sh)
 #   5) watches host sources + RECOMPILENOW
 #
-# First boot (no ~/peps yet): mount once, then run from the share:
+# First boot on Linux (no ~/peps yet): mount once, then run from the share:
 #   sudo mkdir -p /mnt/hgfs
 #   sudo vmhgfs-fuse .host:/ /mnt/hgfs -o subtype=vmhgfs-fuse,allow_other
 #   bash /mnt/hgfs/peps/scripts/dev-watch.sh
 #
-# Local-only checkout (no /mnt/hgfs share):
+# First boot on macOS (Fusion Shared Folders already enabled):
+#   bash "/Volumes/peps/scripts/dev-watch.sh"
+#   # or: bash "/Volumes/VMware Shared Folders/peps/scripts/dev-watch.sh"
+#
+# Local-only checkout (no host share):
 #   ./scripts/dev-watch.sh
 #
-# Launch the app with scripts/dev-run.sh (from ~/peps on Ubuntu).
+# Launch the app with scripts/dev-run.sh (from ~/peps).
 set -uo pipefail
 
+_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib-dev-lock.sh
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-dev-lock.sh"
+source "$_SCRIPT_DIR/lib-dev-lock.sh"
+# shellcheck source=lib-host-share.sh
+source "$_SCRIPT_DIR/lib-host-share.sh"
+unset _SCRIPT_DIR
 
 log() {
   printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*"
@@ -89,64 +98,39 @@ Then on Ubuntu:
 }
 
 find_host_repo_path() {
-  local candidate
-  if [[ -n "${PEPS_HOST_REPO:-}" && -f "${PEPS_HOST_REPO}/pom.xml" ]]; then
-    printf '%s\n' "$PEPS_HOST_REPO"
-    return 0
-  fi
-  while IFS= read -r candidate; do
-    if [[ -f "$candidate/pom.xml" ]] \
-      && [[ -d "$candidate/src/main/java/com/williammeitzen/peps" ]]; then
-      printf '%s\n' "$candidate"
-      return 0
-    fi
-  done < <(find /mnt/hgfs -maxdepth 8 -type d -name 'postgresql-explain-plan-studio' 2>/dev/null)
-  for candidate in /mnt/hgfs/peps /mnt/hgfs/PEPS; do
-    if [[ -f "$candidate/pom.xml" ]] \
-      && [[ -d "$candidate/src/main/java/com/williammeitzen/peps" ]]; then
-      printf '%s\n' "$candidate"
-      return 0
-    fi
-  done
-  return 1
+  peps_find_host_repo "${PEPS_HOST_REPO:-}"
 }
 
 # ---------------------------------------------------------------------------
-# From ~/peps: mount HGFS first when VMware advertises shares but /mnt/hgfs
-# is empty, then re-exec the share script if this local copy is stale.
+# From ~/peps: on Linux, mount HGFS when VMware advertises shares but /mnt/hgfs
+# is empty; then re-exec the share script if this local copy is stale.
 # ---------------------------------------------------------------------------
 if [[ "${PEPS_SKIP_HGFS_BOOTSTRAP:-}" != 1 ]]; then
   _here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  case "$_here" in
-    /mnt/hgfs/*) ;;
-    *)
-      if ! hgfs_shares_visible && vmware_shares_advertised; then
-        ensure_hgfs
-      fi
-      ;;
-  esac
+  if ! peps_path_on_host_share "$_here"; then
+    if ! peps_is_darwin && ! hgfs_shares_visible && vmware_shares_advertised; then
+      ensure_hgfs
+    fi
+  fi
   unset _here
 fi
 
 if [[ "${PEPS_SKIP_HOST_REEXEC:-}" != 1 ]]; then
   _here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  case "$_here" in
-    /mnt/hgfs/*) ;;
-    *)
-      _share_watch=""
-      if _host="$(find_host_repo_path 2>/dev/null)"; then
-        if [[ -f "$_host/scripts/dev-watch.sh" ]]; then
-          _share_watch="$_host/scripts/dev-watch.sh"
-        fi
+  if ! peps_path_on_host_share "$_here"; then
+    _share_watch=""
+    if _host="$(find_host_repo_path 2>/dev/null)"; then
+      if [[ -f "$_host/scripts/dev-watch.sh" ]]; then
+        _share_watch="$_host/scripts/dev-watch.sh"
       fi
-      if [[ -n "$_share_watch" ]] \
-        && { [[ "$_share_watch" -nt "${BASH_SOURCE[0]}" ]] || ! cmp -s "$_share_watch" "${BASH_SOURCE[0]}" 2>/dev/null; }; then
-        log "Local watcher is stale — re-execing $_share_watch"
-        exec env PEPS_SKIP_HOST_REEXEC=1 PEPS_SKIP_HGFS_BOOTSTRAP=1 bash "$_share_watch" "$@"
-      fi
-      unset _host _share_watch
-      ;;
-  esac
+    fi
+    if [[ -n "$_share_watch" ]] \
+      && { [[ "$_share_watch" -nt "${BASH_SOURCE[0]}" ]] || ! cmp -s "$_share_watch" "${BASH_SOURCE[0]}" 2>/dev/null; }; then
+      log "Local watcher is stale — re-execing $_share_watch"
+      exec env PEPS_SKIP_HOST_REEXEC=1 PEPS_SKIP_HGFS_BOOTSTRAP=1 bash "$_share_watch" "$@"
+    fi
+    unset _host _share_watch
+  fi
   unset _here
 fi
 
@@ -161,10 +145,7 @@ CLEANED_UP=0
 LAST_BUILT_STAMP=""
 
 on_shared_host() {
-  case "$REPO_ROOT" in
-    /mnt/hgfs/*) return 0 ;;
-    *) return 1 ;;
-  esac
+  peps_path_on_host_share "$REPO_ROOT"
 }
 
 sync_from_host() {
@@ -235,26 +216,33 @@ run_build_locked() {
 }
 
 # ---------------------------------------------------------------------------
-# Ubuntu + Windows share: HGFS → sync to ~/peps → hand off to sync-watch
-# (initial compile happens inside sync-watch).
+# Host share (Linux HGFS or macOS /Volumes): sync → ~/peps → hand off to
+# sync-watch (initial compile happens inside sync-watch).
 # ---------------------------------------------------------------------------
 HOST_REPO=""
 if on_shared_host || [[ -n "${PEPS_HOST_REPO:-}" ]] || find_host_repo_path >/dev/null 2>&1; then
   need_cmd java
   need_cmd rsync
-  ensure_hgfs
-  HOST_REPO="$(find_host_repo_path)" || die "Could not find the Windows PEPS repo under /mnt/hgfs.
-Share the repo in VMware (folder name often \"peps\"), then:
+  if ! peps_is_darwin; then
+    ensure_hgfs
+  fi
+  HOST_REPO="$(find_host_repo_path)" || die "Could not find the Windows PEPS repo on a VMware share.
+Linux: share the repo (often named \"peps\"), then:
   ls /mnt/hgfs
   export PEPS_HOST_REPO=/mnt/hgfs/peps
-  bash /mnt/hgfs/peps/scripts/dev-watch.sh"
+  bash /mnt/hgfs/peps/scripts/dev-watch.sh
+macOS (Fusion Shared Folders):
+  ls /Volumes
+  ls \"/Volumes/VMware Shared Folders\"
+  export PEPS_HOST_REPO=/Volumes/peps
+  bash \"\$PEPS_HOST_REPO/scripts/dev-watch.sh\""
 
   host_real="$(readlink -f "$HOST_REPO" 2>/dev/null || printf '%s' "$HOST_REPO")"
   mkdir -p "$LOCAL_REPO"
   local_real="$(readlink -f "$LOCAL_REPO" 2>/dev/null || printf '%s' "$LOCAL_REPO")"
   if [[ "$host_real" == "$local_real" ]]; then
     die "Host and local repos are the same path ($local_real).
-Keep PEPS_LOCAL_REPO on local disk (default ~/peps), not under /mnt/hgfs."
+Keep PEPS_LOCAL_REPO on local disk (default ~/peps), not under /mnt/hgfs or /Volumes."
   fi
 
   log "Host (Windows share): $HOST_REPO"
@@ -290,7 +278,7 @@ else
   log "Note: $LOCK_FILE is held — a build is in progress"
 fi
 
-log "Local-only mode (no Linux HGFS share detected)."
+log "Local-only mode (no VMware host share detected under /mnt/hgfs or /Volumes)."
 log "Initial build (before watching RECOMPILENOW)…"
 run_build_locked || true
 

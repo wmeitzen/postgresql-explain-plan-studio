@@ -41,6 +41,31 @@ class PlanAnonymizerRealPlanTest {
 		assertTrue(result.plan.contains("table_"));
 	}
 
+	@Test
+	void aliasesOffKeepsJoinAliasesOnSavedGenotypePlan() throws Exception {
+		String sql = readResource("gxd_genotype_summary_view_json_sql.txt");
+		String plan = readResource("gxd_genotype_summary_view_json_plan.txt");
+
+		PlanAnonymizer.Result result = PlanAnonymizer.anonymize("", "", sql, plan, false);
+
+		assertTrue(result.plan.contains("g_1"), "g_1 should remain when aliases off");
+		assertTrue(result.plan.contains("a_1"), "a_1 should remain when aliases off");
+		assertTrue(result.plan.contains("(g_1.") || result.plan.contains("(g_1 "),
+				() -> "Merge Cond should keep alias prefix: " + snippet(result.plan, "Merge Cond"));
+		assertFalse(result.plan.contains("_genotype_key"));
+		assertFalse(result.plan.contains("_object_key"));
+		assertFalse(result.plan.contains("alias_"));
+		assertTrue(result.plan.contains("column_"));
+	}
+
+	private static String snippet(String plan, String marker) {
+		int i = plan.indexOf(marker);
+		if (i < 0) {
+			return "(missing " + marker + ")";
+		}
+		return plan.substring(i, Math.min(i + 120, plan.length()));
+	}
+
 	private static String readResource(String name) throws Exception {
 		try (InputStream in = PlanAnonymizerRealPlanTest.class.getClassLoader().getResourceAsStream(name)) {
 			assertNotNull(in, "missing test resource: " + name);
