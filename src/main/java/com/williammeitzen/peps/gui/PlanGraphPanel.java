@@ -153,6 +153,15 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 	/** Shared hotspot text on {@link #HOTSPOT_HIGHLIGHT_BACKGROUND}. */
 	public static final Color HOTSPOT_HIGHLIGHT_FOREGROUND = Color.yellow;
 
+	/**
+	 * When {@code true}, Execute embeds a PEPS-built {@code "PostgreSQL Environment"}
+	 * object (from {@code version()}, {@code pg_settings}, and the Query text) into
+	 * plan JSON. Keep {@code false} so the plan field is EXPLAIN-only and pasteable
+	 * into external tools (e.g. explain.dalibo.com). Flip to {@code true} to restore
+	 * the legacy inject behavior; Properties still show Environment on older plans.
+	 */
+	private static final boolean EMBED_POSTGRESQL_ENVIRONMENT_IN_PLAN_JSON = false;
+
 	private Color HIGHLIGHT_1_FONT_FOREGROUND_COLOR = HOTSPOT_HIGHLIGHT_FOREGROUND;
 	private Color HIGHLIGHT_1_FONT_BACKGROUND_COLOR = HOTSPOT_HIGHLIGHT_BACKGROUND;
 	private Color HIGHLIGHT_2_FONT_FOREGROUND_COLOR = Color.red;
@@ -442,44 +451,45 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 				return;
 			}
 
-			// get just version string, like 9.6.5 or 12.0, then format it like 9.0605 or 12.0000
-			strSQL = "select version() as pg_version;\n";
-			if (bolShowSQL == true) { System.out.println(strSQL); }
-			jsonPGDatabaseMetadata = Database.pg_row(strSQL);
-			String strPGVersionEnvironment = jsonPGDatabaseMetadata.getString("pg_version");
-			String strPGVersionNumber = jsonPGDatabaseMetadata.getString("pg_version");
-			strPGVersionNumber = strPGVersionNumber.replace("PostgreSQL", "");
-			strPGVersionNumber = strPGVersionNumber.replaceAll("on.+", "");
-			strPGVersionNumber = strPGVersionNumber.replaceAll(" ", "");
-			strPGVersionNumber = strPGVersionNumber.replaceAll("\\(.+", "");
-			strPGVersionNumber = Utils.formatPGVersionNumber(strPGVersionNumber);
+			// Optional PEPS metadata inject (off by default — see EMBED_POSTGRESQL_ENVIRONMENT_IN_PLAN_JSON).
+			if (EMBED_POSTGRESQL_ENVIRONMENT_IN_PLAN_JSON) {
+				// get just version string, like 9.6.5 or 12.0, then format it like 9.0605 or 12.0000
+				strSQL = "select version() as pg_version;\n";
+				if (bolShowSQL == true) { System.out.println(strSQL); }
+				jsonPGDatabaseMetadata = Database.pg_row(strSQL);
+				String strPGVersionEnvironment = jsonPGDatabaseMetadata.getString("pg_version");
+				String strPGVersionNumber = jsonPGDatabaseMetadata.getString("pg_version");
+				strPGVersionNumber = strPGVersionNumber.replace("PostgreSQL", "");
+				strPGVersionNumber = strPGVersionNumber.replaceAll("on.+", "");
+				strPGVersionNumber = strPGVersionNumber.replaceAll(" ", "");
+				strPGVersionNumber = strPGVersionNumber.replaceAll("\\(.+", "");
+				strPGVersionNumber = Utils.formatPGVersionNumber(strPGVersionNumber);
 
-			// get pg query and resource settings
-			strPostgreSQLEnvironment = "\"PostgreSQL Environment\": {\n";
-			strPostgreSQLEnvironment += "\"Version Number\": " + strPGVersionNumber + "\n";
-			strPostgreSQLEnvironment += ", \"Version Environment\": \"" + strPGVersionEnvironment.replace("\"", "\\") + "\"\n"; 
-			strPostgreSQLEnvironment += ", \"Query\": \"" + objComponent.getSQLQueryText().replace("\"", "\\") + "\"\n";
-			strSQL = "select name as setting\n" + 
-					",case\n" + 
-					"  when unit = '8kB' then pg_size_pretty(cast(setting as bigint) * 8192)\n" + 
-					"  else setting || coalesce(' ' || unit, '')\n" + 
-					"end as setting_value\n" + 
-					"from pg_settings\n" + 
-					"where category like 'Query%' or category like 'Resource%'\n" + 
-					"order by name\n" + 
-					"";
-			jsnPGConfigurationSettings = Database.pg_rows(strSQL);
-			if (jsnPGConfigurationSettings != null) {
-				//strSQL = "";
-				for (int intRow = 0; intRow < jsnPGConfigurationSettings.size(); intRow++) {
-					jsnPGConfigurationSetting = (JsonObject) jsnPGConfigurationSettings.get(intRow);
-					strPostgreSQLEnvironment += "\n, \"" + jsnPGConfigurationSetting.getString("setting") + "\": ";
-					strPostgreSQLEnvironment += "\"" + jsnPGConfigurationSetting.getString("setting_value") + "\"";
+				// get pg query and resource settings
+				strPostgreSQLEnvironment = "\"PostgreSQL Environment\": {\n";
+				strPostgreSQLEnvironment += "\"Version Number\": " + strPGVersionNumber + "\n";
+				strPostgreSQLEnvironment += ", \"Version Environment\": \"" + strPGVersionEnvironment.replace("\"", "\\") + "\"\n";
+				strPostgreSQLEnvironment += ", \"Query\": \"" + objComponent.getSQLQueryText().replace("\"", "\\") + "\"\n";
+				strSQL = "select name as setting\n" +
+						",case\n" +
+						"  when unit = '8kB' then pg_size_pretty(cast(setting as bigint) * 8192)\n" +
+						"  else setting || coalesce(' ' || unit, '')\n" +
+						"end as setting_value\n" +
+						"from pg_settings\n" +
+						"where category like 'Query%' or category like 'Resource%'\n" +
+						"order by name\n" +
+						"";
+				jsnPGConfigurationSettings = Database.pg_rows(strSQL);
+				if (jsnPGConfigurationSettings != null) {
+					for (int intRow = 0; intRow < jsnPGConfigurationSettings.size(); intRow++) {
+						jsnPGConfigurationSetting = (JsonObject) jsnPGConfigurationSettings.get(intRow);
+						strPostgreSQLEnvironment += "\n, \"" + jsnPGConfigurationSetting.getString("setting") + "\": ";
+						strPostgreSQLEnvironment += "\"" + jsnPGConfigurationSetting.getString("setting_value") + "\"";
+					}
 				}
+				strPostgreSQLEnvironment += "\n}\n";
 			}
-			
-			strPostgreSQLEnvironment += "\n}\n";
-			
+
 			strSQL = objComponent.getSQLQueryText();
 			//planText = Database.pg_getPlan(strSQL);
 			List<Object> objPGGetPlan = Database.pg_getPlan(strSQL);
@@ -504,12 +514,14 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 			}
 
 			PlanFormat executedFormat = PlanSourcePanel.sniffPlanFormat(rawPlanFromServer);
-			if (executedFormat == PlanFormat.JSON) {
-				// Preserve legacy JSON behavior: embed environment metadata in stored JSON.
+			if (executedFormat == PlanFormat.JSON
+					&& EMBED_POSTGRESQL_ENVIRONMENT_IN_PLAN_JSON
+					&& !strPostgreSQLEnvironment.isEmpty()) {
+				// Legacy: embed PEPS environment metadata in stored JSON.
 				planText = rawPlanFromServer.replace("\"Plan\": {", strPostgreSQLEnvironment + ", \"Plan\": {");
 				objComponent.setJsonPlanText(planText);
 			} else {
-				// Text plans stay raw in the field; convert on the fly for the diagram pipeline.
+				// EXPLAIN-only JSON/text — pasteable into external explain tools.
 				planText = rawPlanFromServer;
 			}
 
@@ -589,9 +601,12 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 			try {
 				String rawField = objComponent.getJsonPlanTextForDiagram();
 				planText = PlanSourcePanel.resolvePlanFieldToJson(rawField);
-				// For text plans executed this turn, optionally stamp environment onto the
+				// Legacy: for text plans executed this turn, stamp environment onto the
 				// diagram-only JSON (field remains raw text).
-				if (forceExecuteRebuild && PlanSourcePanel.sniffPlanFormat(rawField) == PlanFormat.TEXT
+				if (EMBED_POSTGRESQL_ENVIRONMENT_IN_PLAN_JSON
+						&& !strPostgreSQLEnvironment.isEmpty()
+						&& forceExecuteRebuild
+						&& PlanSourcePanel.sniffPlanFormat(rawField) == PlanFormat.TEXT
 						&& planText != null && planText.contains("\"Plan\"")) {
 					planText = planText.replace("\"Plan\":{", strPostgreSQLEnvironment + ", \"Plan\":{");
 					planText = planText.replace("\"Plan\": {", strPostgreSQLEnvironment + ", \"Plan\": {");
