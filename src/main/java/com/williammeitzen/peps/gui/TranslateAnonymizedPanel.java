@@ -78,6 +78,8 @@ public class TranslateAnonymizedPanel extends JPanel {
 		inputAnonymizeBadge = PlanSourcePanel.createAnonymizeBadge();
 		inputAnonymizeBadge.setVisible(true);
 		JComponent inputHost = PlanSourcePanel.wrapWithAnonymizeBadge(inputScroll, inputAnonymizeBadge);
+		// Ensure overlay has non-zero bounds after first layout pass
+		javax.swing.SwingUtilities.invokeLater(() -> PlanSourcePanel.relayoutAnonymizeBadgeHost(inputHost));
 
 		JPanel top = new JPanel(new BorderLayout(0, 4));
 		top.setOpaque(false);

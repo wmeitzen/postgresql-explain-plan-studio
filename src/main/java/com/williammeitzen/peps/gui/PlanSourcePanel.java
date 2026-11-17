@@ -1751,18 +1751,40 @@ public class PlanSourcePanel extends JPanel {
 	}
 
 	private void setAnonymizeBadgesVisible(boolean visible) {
-		if (preCommandAnonymizeBadge != null) {
-			preCommandAnonymizeBadge.setVisible(visible);
+		setAnonymizeBadgeVisible(preCommandAnonymizeBadge, preCommandFieldHost, visible);
+		setAnonymizeBadgeVisible(postCommandAnonymizeBadge, postCommandFieldHost, visible);
+		setAnonymizeBadgeVisible(sqlAnonymizeBadge, sqlFieldHost, visible);
+		setAnonymizeBadgeVisible(planAnonymizeBadge, planFieldHost, visible);
+	}
+
+	/**
+	 * Toggle a field silhouette and re-layout its JLayeredPane overlay. Invisible
+	 * badges report 0 preferred size, so without a re-layout they stay 0×0 after
+	 * Anonymize is turned on.
+	 */
+	private static void setAnonymizeBadgeVisible(JLabel badge, JComponent host, boolean visible) {
+		if (badge != null) {
+			badge.setVisible(visible);
 		}
-		if (postCommandAnonymizeBadge != null) {
-			postCommandAnonymizeBadge.setVisible(visible);
+		relayoutAnonymizeBadgeHost(host);
+	}
+
+	static void relayoutAnonymizeBadgeHost(JComponent host) {
+		if (!(host instanceof JLayeredPane)) {
+			if (host != null) {
+				host.revalidate();
+				host.repaint();
+			}
+			return;
 		}
-		if (sqlAnonymizeBadge != null) {
-			sqlAnonymizeBadge.setVisible(visible);
+		JLayeredPane layered = (JLayeredPane) host;
+		Object contentObj = layered.getClientProperty("anonymizeContent");
+		Object cornerObj = layered.getClientProperty("anonymizeBadgeCorner");
+		if (contentObj instanceof JComponent && cornerObj instanceof JComponent) {
+			layoutAnonymizeBadgeOverlay(layered, (JComponent) contentObj, (JComponent) cornerObj);
 		}
-		if (planAnonymizeBadge != null) {
-			planAnonymizeBadge.setVisible(visible);
-		}
+		layered.revalidate();
+		layered.repaint();
 	}
 
 	private void setCommandFieldsEditable(boolean editable) {
@@ -1853,7 +1875,29 @@ public class PlanSourcePanel extends JPanel {
 	 * and form layout can still resize the field.
 	 */
 	static JComponent wrapWithAnonymizeBadge(JComponent content, JLabel badge) {
-		JPanel badgeCorner = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+		JPanel badgeCorner = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0)) {
+			private static final long serialVersionUID = 1L;
+
+			@Override
+			public Dimension getPreferredSize() {
+				// Keep a real size even while the badge is invisible so the first
+				// layout after Anonymize-on does not leave a 0×0 overlay.
+				Dimension d = super.getPreferredSize();
+				int iw = 20;
+				int ih = 20;
+				if (badge != null && badge.getIcon() != null) {
+					iw = Math.max(iw, badge.getIcon().getIconWidth());
+					ih = Math.max(ih, badge.getIcon().getIconHeight());
+				}
+				EmptyBorder b = null;
+				if (getBorder() instanceof EmptyBorder) {
+					b = (EmptyBorder) getBorder();
+				}
+				int padX = b == null ? 6 : b.getBorderInsets().left + b.getBorderInsets().right;
+				int padY = b == null ? 4 : b.getBorderInsets().top + b.getBorderInsets().bottom;
+				return new Dimension(Math.max(d.width, iw + padX), Math.max(d.height, ih + padY));
+			}
+		};
 		badgeCorner.setOpaque(false);
 		badgeCorner.setBorder(new EmptyBorder(4, 0, 0, 6));
 		badgeCorner.add(badge);
@@ -1882,11 +1926,18 @@ public class PlanSourcePanel extends JPanel {
 			}
 		};
 		layered.setOpaque(false);
+		layered.putClientProperty("anonymizeContent", content);
+		layered.putClientProperty("anonymizeBadgeCorner", badgeCorner);
 		layered.add(content, JLayeredPane.DEFAULT_LAYER);
 		layered.add(badgeCorner, JLayeredPane.PALETTE_LAYER);
 		layered.addComponentListener(new ComponentAdapter() {
 			@Override
 			public void componentResized(ComponentEvent e) {
+				layoutAnonymizeBadgeOverlay(layered, content, badgeCorner);
+			}
+
+			@Override
+			public void componentShown(ComponentEvent e) {
 				layoutAnonymizeBadgeOverlay(layered, content, badgeCorner);
 			}
 		});
@@ -1900,9 +1951,10 @@ public class PlanSourcePanel extends JPanel {
 		int h = Math.max(layered.getHeight(), 0);
 		content.setBounds(0, 0, w, h);
 		Dimension badgeSize = badgeCorner.getPreferredSize();
-		int bw = badgeSize.width;
-		int bh = badgeSize.height;
+		int bw = Math.max(badgeSize.width, 26);
+		int bh = Math.max(badgeSize.height, 24);
 		badgeCorner.setBounds(Math.max(0, w - bw), 0, bw, bh);
+		badgeCorner.revalidate();
 	}
 
 	static ImageIcon loadAnonymizeSilhouetteIcon() {
