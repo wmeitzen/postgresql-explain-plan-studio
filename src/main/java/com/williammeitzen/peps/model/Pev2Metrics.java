@@ -141,6 +141,9 @@ public final class Pev2Metrics {
 		if (planned == 0.0) {
 			return actual == 0.0 ? 1.0 : Double.POSITIVE_INFINITY;
 		}
+		if (actual == 0.0) {
+			return planned == 0.0 ? 1.0 : Double.POSITIVE_INFINITY;
+		}
 		if (actual == planned) {
 			return 1.0;
 		}
@@ -148,6 +151,18 @@ public final class Pev2Metrics {
 			return actual / planned;
 		}
 		return planned / actual;
+	}
+
+	/**
+	 * PEV2 marks estimate mismatch as stronger when factor &gt; 100 ({@code estimationClass}
+	 * {@code c-3}). PEPS treats that as “excessive” for Calculated Properties hotspot
+	 * styling and Red Text Notes (display ratios like {@code 101:1}).
+	 */
+	public static final double EXCESSIVE_ESTIMATE_MISMATCH_FACTOR = 100.0;
+
+	public static boolean isExcessiveEstimateMismatch(Double actual, Double estimated) {
+		Double factor = plannerEstimateFactor(actual, estimated);
+		return factor != null && factor.doubleValue() > EXCESSIVE_ESTIMATE_MISMATCH_FACTOR;
 	}
 
 	/**

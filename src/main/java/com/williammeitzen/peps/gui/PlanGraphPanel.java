@@ -7142,7 +7142,9 @@ order by id_explain_plan_property;
 				+ ", exact_actual_worker_count\n"
 				+ ", difference_time_ms\n"
 				+ ", total_actual_rows\n"
+				+ ", total_estimated_rows\n"
 				+ ", actual_data_size_bytes\n"
+				+ ", estimated_data_size_bytes\n"
 				+ ", parallel_leader_difference_time_highlight\n"
 				+ ", parallel_leader_actual_rows_highlight\n"
 				+ ", parallel_leader_actual_data_size_highlight\n"
@@ -7178,8 +7180,46 @@ order by id_explain_plan_property;
 				"total_rows_removed_by_index_recheck_is_exact");
 
 		StringBuilder redTextNotes = new StringBuilder();
+		appendExcessiveEstimateMismatchNotes(redTextNotes, row);
 		appendParallelParticipantExpectationNotes(redTextNotes, row, intIDExplainPlanProperty);
 		return new OperatorNotes(notes.toString().trim(), redTextNotes.toString().trim());
+	}
+
+	/**
+	 * When actual:estimated exceeds 100:1 (PEV2 stronger estimate class), note it
+	 * for Red Text Notes so the Properties pane matches Calculated Properties
+	 * hotspot styling.
+	 */
+	private static void appendExcessiveEstimateMismatchNotes(StringBuilder notes, JsonObject row) {
+		Double actualRows = toDouble(row.get("total_actual_rows"));
+		Double estimatedRows = toDouble(row.get("total_estimated_rows"));
+		Double actualMass = toDouble(row.get("actual_data_size_bytes"));
+		Double estimatedMass = toDouble(row.get("estimated_data_size_bytes"));
+
+		StringBuilder block = new StringBuilder();
+		if (Pev2Metrics.isExcessiveEstimateMismatch(actualRows, estimatedRows)) {
+			String ratio = formatCalculatedRatio(actualRows.doubleValue(), estimatedRows.doubleValue());
+			block.append("Actual vs estimated rows ratio is excessive (")
+					.append(ratio == null ? ">" + (int) Pev2Metrics.EXCESSIVE_ESTIMATE_MISMATCH_FACTOR + ":1" : ratio)
+					.append("; threshold ")
+					.append((int) Pev2Metrics.EXCESSIVE_ESTIMATE_MISMATCH_FACTOR)
+					.append(":1).\n");
+		}
+		if (Pev2Metrics.isExcessiveEstimateMismatch(actualMass, estimatedMass)) {
+			String ratio = formatCalculatedRatio(actualMass.doubleValue(), estimatedMass.doubleValue());
+			block.append("Actual vs estimated mass ratio is excessive (")
+					.append(ratio == null ? ">" + (int) Pev2Metrics.EXCESSIVE_ESTIMATE_MISMATCH_FACTOR + ":1" : ratio)
+					.append("; threshold ")
+					.append((int) Pev2Metrics.EXCESSIVE_ESTIMATE_MISMATCH_FACTOR)
+					.append(":1).\n");
+		}
+		if (block.length() == 0) {
+			return;
+		}
+		if (notes.length() > 0) {
+			notes.append("\n");
+		}
+		notes.append(block);
 	}
 
 	/**
@@ -7838,14 +7878,18 @@ order by id_explain_plan_property;
 		appendCalculatedPercent(rows, "Time difference %", differenceTimeMs, executionTimeMs, false);
 		// Absolute values shown on the diagram (Line Thickness modes); ratios alone
 		// left mass/rows looking "missing" from Calculated Properties.
-		appendCalculatedRows(rows, "Actual rows", totalActualRows, false);
-		appendCalculatedRows(rows, "Estimated rows", totalEstimatedRows, false);
-		appendCalculatedRatio(rows, "Actual vs estimated rows ratio",
+		boolean rowsEstimateExcessive = Pev2Metrics.isExcessiveEstimateMismatch(
 				totalActualRows, totalEstimatedRows);
-		appendCalculatedBytes(rows, "Actual mass", actualDataSizeBytes, false);
-		appendCalculatedBytes(rows, "Estimated mass", estimatedDataSizeBytes, false);
-		appendCalculatedRatio(rows, "Actual vs estimated mass ratio",
+		boolean massEstimateExcessive = Pev2Metrics.isExcessiveEstimateMismatch(
 				actualDataSizeBytes, estimatedDataSizeBytes);
+		appendCalculatedRows(rows, "Actual rows", totalActualRows, rowsEstimateExcessive);
+		appendCalculatedRows(rows, "Estimated rows", totalEstimatedRows, rowsEstimateExcessive);
+		appendCalculatedRatio(rows, "Actual vs estimated rows ratio",
+				totalActualRows, totalEstimatedRows, rowsEstimateExcessive);
+		appendCalculatedBytes(rows, "Actual mass", actualDataSizeBytes, massEstimateExcessive);
+		appendCalculatedBytes(rows, "Estimated mass", estimatedDataSizeBytes, massEstimateExcessive);
+		appendCalculatedRatio(rows, "Actual vs estimated mass ratio",
+				actualDataSizeBytes, estimatedDataSizeBytes, massEstimateExcessive);
 
 		appendCalculatedParticipant(rows, calculatedParticipantLabel(nodeType, "parallel leader"),
 				toDouble(row.get("parallel_leader_exclusive_time_ms")), exclusiveTimeMs, false,
@@ -8032,7 +8076,13 @@ order by id_explain_plan_property;
 		return String.format(java.util.Locale.US, "%.1f%%", pct);
 	}
 
-	private static void appendCalculatedRatio(CalculatedRowsBuilder rows, String name, Double numerator, Double denominator) {
+	private static void appendCalculatedRatio(CalculatedRowsBuilder rows, String name, Double numerator,
+			Double denominator) {
+		appendCalculatedRatio(rows, name, numerator, denominator, false);
+	}
+
+	private static void appendCalculatedRatio(CalculatedRowsBuilder rows, String name, Double numerator,
+			Double denominator, boolean highlight) {
 		if (numerator == null || denominator == null) {
 			return;
 		}
@@ -8040,7 +8090,7 @@ order by id_explain_plan_property;
 		if (formatted == null) {
 			return;
 		}
-		rows.add(name, formatted, false);
+		rows.add(name, formatted, highlight);
 	}
 
 	/**

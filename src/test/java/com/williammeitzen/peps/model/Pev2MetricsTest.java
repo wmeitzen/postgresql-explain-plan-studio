@@ -70,6 +70,16 @@ class Pev2MetricsTest {
 	}
 
 	@Test
+	void isExcessiveEstimateMismatch_thresholdIsOver100x() {
+		assertFalse(Pev2Metrics.isExcessiveEstimateMismatch(100.0, 100.0));
+		assertFalse(Pev2Metrics.isExcessiveEstimateMismatch(1000.0, 10.0)); // 100× not >
+		assertTrue(Pev2Metrics.isExcessiveEstimateMismatch(1001.0, 10.0)); // >100×
+		assertTrue(Pev2Metrics.isExcessiveEstimateMismatch(10.0, 1001.0));
+		assertTrue(Pev2Metrics.isExcessiveEstimateMismatch(50.0, 0.0)); // ∞
+		assertFalse(Pev2Metrics.isExcessiveEstimateMismatch(null, 10.0));
+	}
+
+	@Test
 	void costPercentOfPlan_matchesNorthLabelFormula() {
 		// exclusive 1081. something / max total 67414 ≈ 1.60% (diagram Cost: 1.6%)
 		assertEquals(1.60, Pev2Metrics.costPercentOfPlan(1081.0, 67414.0, 67414.0), 0.01);
