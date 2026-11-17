@@ -691,6 +691,14 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 			if (bolShowTiming == true) { System.out.println("before applyPev2ExclusiveTiming: " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
 			applyPev2ExclusiveTiming(idExplainPlan);
 			if (bolShowTiming == true) { System.out.println("after applyPev2ExclusiveTiming: " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
+
+			// PEV2 Tier 3: exclusive cost + exclusive buffers, then CTE/InitPlan time fixes
+			if (bolShowTiming == true) { System.out.println("before applyPev2ExclusiveCostAndBuffers: " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
+			applyPev2ExclusiveCostAndBuffers(idExplainPlan);
+			if (bolShowTiming == true) { System.out.println("after applyPev2ExclusiveCostAndBuffers: " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
+			if (bolShowTiming == true) { System.out.println("before applyPev2CteAndInitPlanDurationFixes: " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
+			applyPev2CteAndInitPlanDurationFixes(idExplainPlan);
+			if (bolShowTiming == true) { System.out.println("after applyPev2CteAndInitPlanDurationFixes: " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
 			
 			if (bolShowTiming == true) { System.out.println("before updateStringUnitsPercentageAnnotationsTextData: " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
 			updateStringUnitsPercentageAnnotationsTextData(idExplainPlan); // 2
@@ -1902,6 +1910,224 @@ select id_explain_plan_property, parent_id_explain_plan_property, x_cart, y_cart
 		if (bolShowSQL == true) { System.out.println(strSQL); }
 		Database.dml(strSQL);
 	}
+
+	/**
+	 * PEV2 Tier 3a: exclusive cost and exclusive buffer/IO block counts
+	 * ({@code calculateExclusives} cost part + {@code calculateBuffersIOExclusives}).
+	 * Subplan children ({@code subplan_name} set) are excluded from the child sum
+	 * for buffers, matching pev2. Also refreshes disk/ram page aggregates from
+	 * exclusive blocks so buffer-driven UI matches pev2 exclusives.
+	 */
+	public void applyPev2ExclusiveCostAndBuffers(int intIDExplainPlan) {
+		boolean bolShowSQL = false;
+		String strSQL = "";
+
+		// Exclusive cost = total_cost − Σ child total_cost (clamp at 0)
+		strSQL += "update explain_plan_operator_annotations as PARENT set\n"
+				+ "exclusive_cost = case\n"
+				+ "  when PARENT.total_cost is null or trim(PARENT.total_cost) = '' then null\n"
+				+ "  else max(0,\n"
+				+ "    cast(PARENT.total_cost as real) - coalesce((\n"
+				+ "      select sum(cast(CHILD.total_cost as real))\n"
+				+ "      from explain_plan_operator_annotations as CHILD\n"
+				+ "      where CHILD.id_explain_plan = PARENT.id_explain_plan\n"
+				+ "        and CHILD.parent_id_explain_plan_property = PARENT.id_explain_plan_property\n"
+				+ "        and CHILD.total_cost is not null and trim(CHILD.total_cost) <> ''\n"
+				+ "    ), 0)\n"
+				+ "  )\n"
+				+ "end\n"
+				+ "where PARENT.id_explain_plan = " + intIDExplainPlan + ";\n";
+
+		String[] blockCols = {
+				"shared_hit_blocks", "shared_read_blocks", "shared_dirtied_blocks", "shared_written_blocks",
+				"temp_read_blocks", "temp_written_blocks",
+				"local_hit_blocks", "local_read_blocks", "local_dirtied_blocks", "local_written_blocks"
+		};
+		for (String col : blockCols) {
+			String exclusiveCol = "exclusive_" + col;
+			strSQL += "update explain_plan_operator_annotations as PARENT set\n"
+					+ exclusiveCol + " = case\n"
+					+ "  when PARENT." + col + " is null or trim(PARENT." + col + ") = '' then null\n"
+					+ "  else cast(PARENT." + col + " as real) - coalesce((\n"
+					+ "    select sum(coalesce(cast(case when CHILD." + col + " is null or trim(CHILD." + col + ") = '' then null else CHILD." + col + " end as real), 0))\n"
+					+ "    from explain_plan_operator_annotations as CHILD\n"
+					+ "    where CHILD.id_explain_plan = PARENT.id_explain_plan\n"
+					+ "      and CHILD.parent_id_explain_plan_property = PARENT.id_explain_plan_property\n"
+					+ "      and (CHILD.subplan_name is null or trim(CHILD.subplan_name) = '')\n"
+					+ "  ), 0)\n"
+					+ "end\n"
+					+ "where PARENT.id_explain_plan = " + intIDExplainPlan + ";\n";
+		}
+
+		// Drive disk/ram aggregates from exclusive blocks (PEV2 display basis)
+		strSQL += "update explain_plan_operator_annotations set\n"
+				+ "disk_pages = cast(round(\n"
+				+ "  coalesce(exclusive_shared_read_blocks, 0) + coalesce(exclusive_shared_dirtied_blocks, 0)\n"
+				+ "  + coalesce(exclusive_shared_written_blocks, 0) + coalesce(exclusive_temp_read_blocks, 0)\n"
+				+ "  + coalesce(exclusive_temp_written_blocks, 0)\n"
+				+ ") as integer)\n"
+				+ ", ram_pages = cast(round(\n"
+				+ "  coalesce(exclusive_local_hit_blocks, 0) + coalesce(exclusive_local_read_blocks, 0)\n"
+				+ "  + coalesce(exclusive_local_dirtied_blocks, 0) + coalesce(exclusive_local_written_blocks, 0)\n"
+				+ "  + coalesce(exclusive_shared_hit_blocks, 0)\n"
+				+ ") as integer)\n"
+				+ ", disk_plus_ram_pages = cast(round(\n"
+				+ "  coalesce(exclusive_shared_read_blocks, 0) + coalesce(exclusive_shared_dirtied_blocks, 0)\n"
+				+ "  + coalesce(exclusive_shared_written_blocks, 0) + coalesce(exclusive_temp_read_blocks, 0)\n"
+				+ "  + coalesce(exclusive_temp_written_blocks, 0)\n"
+				+ "  + coalesce(exclusive_local_hit_blocks, 0) + coalesce(exclusive_local_read_blocks, 0)\n"
+				+ "  + coalesce(exclusive_local_dirtied_blocks, 0) + coalesce(exclusive_local_written_blocks, 0)\n"
+				+ "  + coalesce(exclusive_shared_hit_blocks, 0)\n"
+				+ ") as integer)\n"
+				+ "where id_explain_plan = " + intIDExplainPlan + "\n"
+				+ "and id_explain_plan_property <> -1;\n";
+
+		strSQL = "begin transaction;\n" + strSQL + "commit;\n";
+		if (bolShowSQL == true) { System.out.println(strSQL); }
+		Database.dml(strSQL);
+	}
+
+	/**
+	 * PEV2 Tier 3b: {@code fixCteScansDuration} + {@code fixInitPlanUsageDuration}.
+	 * Adjusts exclusive_time_ms after the base exclusive calculation.
+	 */
+	public void applyPev2CteAndInitPlanDurationFixes(int intIDExplainPlan) {
+		boolean bolShowSQL = false;
+		String strSQL = "";
+
+		// CTE scan proportional exclusive subtraction (pev2 fixCteScansDuration).
+		// CTE definitions: With CTE wrappers or nodes whose subplan_name starts with 'CTE '.
+		// Scans: node_type = 'CTE Scan' matched by cte_name.
+		strSQL += "update explain_plan_operator_annotations as SCAN set\n"
+				+ "exclusive_time_ms = max(0,\n"
+				+ "  SCAN.exclusive_time_ms - (\n"
+				+ "    select CTE.revised_actual_total_time_ms * SCAN.revised_actual_total_time_ms\n"
+				+ "      / nullif((\n"
+				+ "        select sum(S2.exclusive_time_ms)\n"
+				+ "        from explain_plan_operator_annotations as S2\n"
+				+ "        where S2.id_explain_plan = SCAN.id_explain_plan\n"
+				+ "          and S2.node_type = 'CTE Scan'\n"
+				+ "          and S2.cte_name = SCAN.cte_name\n"
+				+ "      ), 0)\n"
+				+ "    from explain_plan_operator_annotations as CTE\n"
+				+ "    where CTE.id_explain_plan = SCAN.id_explain_plan\n"
+				+ "      and CTE.revised_actual_total_time_ms is not null\n"
+				+ "      and (\n"
+				+ "        (CTE.node_type = 'With CTE' and replace(trim(coalesce(CTE.cte_name,'')), 'as ', '') = SCAN.cte_name)\n"
+				+ "        or (CTE.subplan_name is not null and trim(CTE.subplan_name) = 'CTE ' || SCAN.cte_name)\n"
+				+ "      )\n"
+				+ "    order by CTE.id_explain_plan_property\n"
+				+ "    limit 1\n"
+				+ "  )\n"
+				+ ")\n"
+				+ "where SCAN.id_explain_plan = " + intIDExplainPlan + "\n"
+				+ "and SCAN.node_type = 'CTE Scan'\n"
+				+ "and SCAN.cte_name is not null and trim(SCAN.cte_name) <> ''\n"
+				+ "and SCAN.exclusive_time_ms is not null\n"
+				+ "and SCAN.revised_actual_total_time_ms is not null\n"
+				+ "and exists (\n"
+				+ "  select 1 from explain_plan_operator_annotations as CTE\n"
+				+ "  where CTE.id_explain_plan = SCAN.id_explain_plan\n"
+				+ "    and CTE.revised_actual_total_time_ms is not null\n"
+				+ "    and (\n"
+				+ "      (CTE.node_type = 'With CTE' and replace(trim(coalesce(CTE.cte_name,'')), 'as ', '') = SCAN.cte_name)\n"
+				+ "      or (CTE.subplan_name is not null and trim(CTE.subplan_name) = 'CTE ' || SCAN.cte_name)\n"
+				+ "    )\n"
+				+ ");\n";
+
+		strSQL = "begin transaction;\n" + strSQL + "commit;\n";
+		if (bolShowSQL == true) { System.out.println(strSQL); }
+		Database.dml(strSQL);
+
+		// InitPlan usage (pev2 fixInitPlanUsageDuration): Java-side token match for safety.
+		applyPev2InitPlanUsageDurationFix(intIDExplainPlan);
+	}
+
+	/**
+	 * Subtract InitPlan revised duration from non-InitPlan nodes whose filter/conds
+	 * reference the InitPlan's {@code $N} return param or subplan name.
+	 */
+	private void applyPev2InitPlanUsageDurationFix(int intIDExplainPlan) {
+		JsonArray initPlans = Database.rows(
+				"select id_explain_plan_property, revised_actual_total_time_ms, subplan_name\n"
+						+ "from explain_plan_operator_annotations\n"
+						+ "where id_explain_plan = " + intIDExplainPlan + "\n"
+						+ "and parent_relationship = 'InitPlan'\n"
+						+ "and revised_actual_total_time_ms is not null\n"
+						+ "and subplan_name is not null and trim(subplan_name) <> ''\n");
+		if (initPlans == null || initPlans.size() == 0) {
+			return;
+		}
+		JsonArray nodes = Database.rows(
+				"select id_explain_plan_property, exclusive_time_ms, filter, index_cond, hash_cond, parent_relationship\n"
+						+ "from explain_plan_operator_annotations\n"
+						+ "where id_explain_plan = " + intIDExplainPlan + "\n"
+						+ "and exclusive_time_ms is not null\n"
+						+ "and exclusive_time_ms > 0\n"
+						+ "and coalesce(parent_relationship, '') <> 'InitPlan'\n");
+		if (nodes == null || nodes.size() == 0) {
+			return;
+		}
+		StringBuilder updates = new StringBuilder();
+		for (int i = 0; i < initPlans.size(); i++) {
+			JsonObject ip = (JsonObject) initPlans.get(i);
+			String subplan = ip.getString("subplan_name");
+			if (subplan == null) {
+				continue;
+			}
+			Double cteDuration = ip.getDouble("revised_actual_total_time_ms");
+			if (cteDuration == null) {
+				continue;
+			}
+			String token = extractInitPlanRefToken(subplan);
+			if (token == null || token.isEmpty()) {
+				continue;
+			}
+			for (int n = 0; n < nodes.size(); n++) {
+				JsonObject node = (JsonObject) nodes.get(n);
+				String haystack = ""
+						+ nullToEmpty(node.getString("filter")) + " "
+						+ nullToEmpty(node.getString("index_cond")) + " "
+						+ nullToEmpty(node.getString("hash_cond"));
+				if (!haystack.contains(token)) {
+					continue;
+				}
+				Double exclusive = node.getDouble("exclusive_time_ms");
+				if (exclusive == null) {
+					continue;
+				}
+				double next = Math.max(0.0, exclusive.doubleValue() - cteDuration.doubleValue());
+				updates.append("update explain_plan_operator_annotations set exclusive_time_ms = ")
+						.append(next)
+						.append(" where id_explain_plan = ").append(intIDExplainPlan)
+						.append(" and id_explain_plan_property = ")
+						.append(node.get("id_explain_plan_property"))
+						.append(";\n");
+			}
+		}
+		if (updates.length() > 0) {
+			Database.dml("begin transaction;\n" + updates + "commit;\n");
+		}
+	}
+
+	/** Prefer {@code $N} from {@code InitPlan k (returns $N)}; else the InitPlan label itself. */
+	private static String extractInitPlanRefToken(String subplanName) {
+		if (subplanName == null) {
+			return null;
+		}
+		java.util.regex.Matcher m = java.util.regex.Pattern
+				.compile("\\(returns\\s+(\\$[0-9]+)\\)", java.util.regex.Pattern.CASE_INSENSITIVE)
+				.matcher(subplanName);
+		if (m.find()) {
+			return m.group(1);
+		}
+		m = java.util.regex.Pattern.compile("(InitPlan\\s+[1-9][0-9]*)", java.util.regex.Pattern.CASE_INSENSITIVE)
+				.matcher(subplanName);
+		if (m.find()) {
+			return m.group(1);
+		}
+		return subplanName.trim();
+	}
 	
 	
 	public void setPerOperatorTotalsForPLAndWorkers(int intIDExplainPlan) {
@@ -2256,13 +2482,14 @@ order by id_explain_plan_property
 		// set percentage string numerics
 		strSQL += "update explain_plan_operator_annotations as EPOA set\n" +
 		
-				// cost
+				// cost — PEV2: exclusive_cost / max(total_cost) (see PlanService.calculateMaximums + node calculateCost)
 				"cost_percentage_string = case\n" + 
-				"  when (select sum_total_costs from explain_plan_generated_values where id_explain_plan = EPOA.id_explain_plan) is null then null\n" + 
-				"  when (select sum_total_costs from explain_plan_generated_values where id_explain_plan = EPOA.id_explain_plan) = 0 then 0\n" + 
-				"  when total_cost*1.0 / (select sum_total_costs from explain_plan_generated_values where id_explain_plan = EPOA.id_explain_plan) < 0.001 then 0\n" + 
-				"  when total_cost*1.0 / (select sum_total_costs from explain_plan_generated_values where id_explain_plan = EPOA.id_explain_plan) < 0.1 then round(total_cost / (select sum_total_costs from explain_plan_generated_values where id_explain_plan = EPOA.id_explain_plan), 3) * 100\n" + 
-				"  else cast(total_cost*1.0 / (select sum_total_costs from explain_plan_generated_values where id_explain_plan = EPOA.id_explain_plan) * 100 + 0.5 as integer)\n" + 
+				"  when exclusive_cost is null then null\n" + 
+				"  when (select max_total_cost from explain_plan_generated_values where id_explain_plan = EPOA.id_explain_plan) is null then null\n" + 
+				"  when (select max_total_cost from explain_plan_generated_values where id_explain_plan = EPOA.id_explain_plan) = 0 then 0\n" + 
+				"  when exclusive_cost*1.0 / (select max_total_cost from explain_plan_generated_values where id_explain_plan = EPOA.id_explain_plan) < 0.001 then 0\n" + 
+				"  when exclusive_cost*1.0 / (select max_total_cost from explain_plan_generated_values where id_explain_plan = EPOA.id_explain_plan) < 0.1 then round(exclusive_cost*1.0 / (select max_total_cost from explain_plan_generated_values where id_explain_plan = EPOA.id_explain_plan), 3) * 100\n" + 
+				"  else cast(exclusive_cost*1.0 / (select max_total_cost from explain_plan_generated_values where id_explain_plan = EPOA.id_explain_plan) * 100 + 0.5 as integer)\n" + 
 				"end\n" +
 				
 				// time difference
