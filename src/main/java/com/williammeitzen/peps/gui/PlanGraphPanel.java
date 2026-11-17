@@ -1918,8 +1918,8 @@ select id_explain_plan_property, parent_id_explain_plan_property, x_cart, y_cart
 	 * PEV2 Tier 3a: exclusive cost and exclusive buffer/IO block counts
 	 * ({@code calculateExclusives} cost part + {@code calculateBuffersIOExclusives}).
 	 * Subplan children ({@code subplan_name} set) are excluded from the child sum
-	 * for buffers, matching pev2. Also refreshes disk/ram page aggregates from
-	 * exclusive blocks so buffer-driven UI matches pev2 exclusives.
+	 * for buffers, matching pev2. Stores results in {@code exclusive_*_blocks}
+	 * columns (annotations have no {@code disk_pages}/{@code ram_pages}).
 	 */
 	public void applyPev2ExclusiveCostAndBuffers(int intIDExplainPlan) {
 		boolean bolShowSQL = false;
@@ -1974,32 +1974,14 @@ select id_explain_plan_property, parent_id_explain_plan_property, x_cart, y_cart
 					+ "where PARENT.id_explain_plan = " + intIDExplainPlan + ";\n";
 		}
 
-		// Drive disk/ram aggregates from exclusive blocks (PEV2 display basis)
-		strSQL += "update explain_plan_operator_annotations set\n"
-				+ "disk_pages = cast(round(\n"
-				+ "  coalesce(exclusive_shared_read_blocks, 0) + coalesce(exclusive_shared_dirtied_blocks, 0)\n"
-				+ "  + coalesce(exclusive_shared_written_blocks, 0) + coalesce(exclusive_temp_read_blocks, 0)\n"
-				+ "  + coalesce(exclusive_temp_written_blocks, 0)\n"
-				+ ") as integer)\n"
-				+ ", ram_pages = cast(round(\n"
-				+ "  coalesce(exclusive_local_hit_blocks, 0) + coalesce(exclusive_local_read_blocks, 0)\n"
-				+ "  + coalesce(exclusive_local_dirtied_blocks, 0) + coalesce(exclusive_local_written_blocks, 0)\n"
-				+ "  + coalesce(exclusive_shared_hit_blocks, 0)\n"
-				+ ") as integer)\n"
-				+ ", disk_plus_ram_pages = cast(round(\n"
-				+ "  coalesce(exclusive_shared_read_blocks, 0) + coalesce(exclusive_shared_dirtied_blocks, 0)\n"
-				+ "  + coalesce(exclusive_shared_written_blocks, 0) + coalesce(exclusive_temp_read_blocks, 0)\n"
-				+ "  + coalesce(exclusive_temp_written_blocks, 0)\n"
-				+ "  + coalesce(exclusive_local_hit_blocks, 0) + coalesce(exclusive_local_read_blocks, 0)\n"
-				+ "  + coalesce(exclusive_local_dirtied_blocks, 0) + coalesce(exclusive_local_written_blocks, 0)\n"
-				+ "  + coalesce(exclusive_shared_hit_blocks, 0)\n"
-				+ ") as integer)\n"
-				+ "where id_explain_plan = " + intIDExplainPlan + "\n"
-				+ "and id_explain_plan_property <> -1;\n";
-
-		strSQL = "begin transaction;\n" + strSQL + "commit;\n";
-		if (bolShowSQL == true) { System.out.println(strSQL); }
-		Database.dml(strSQL);
+		// Note: annotations do not have disk_pages/ram_pages columns (those exist on
+		// workers only; the create-table defs are commented out). Exclusive block
+		// columns above are the PEV2-aligned storage for buffer exclusives.
+		if (strSQL.length() > 0) {
+			strSQL = "begin transaction;\n" + strSQL + "commit;\n";
+			if (bolShowSQL == true) { System.out.println(strSQL); }
+			Database.dml(strSQL);
+		}
 	}
 
 	/**
