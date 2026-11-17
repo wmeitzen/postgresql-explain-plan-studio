@@ -1864,6 +1864,8 @@ select id_explain_plan_property, parent_id_explain_plan_property, x_cart, y_cart
 		boolean bolShowSQL = false;
 		String strSQL = "";
 
+		Database.ensureExplainPlanOperatorAnnotationsPev2Columns();
+
 		// Revised inclusive times (Pev2Metrics.revisedTotalTimeMs)
 		strSQL += "update explain_plan_operator_annotations set\n"
 				+ "revised_actual_total_time_ms = case\n"
@@ -1923,8 +1925,12 @@ select id_explain_plan_property, parent_id_explain_plan_property, x_cart, y_cart
 		boolean bolShowSQL = false;
 		String strSQL = "";
 
-		// Exclusive cost = total_cost − Σ child total_cost (clamp at 0)
-		strSQL += "update explain_plan_operator_annotations as PARENT set\n"
+		// Older DBs / hot reloads may not have run schema ensure yet
+		Database.ensureExplainPlanOperatorAnnotationsPev2Columns();
+
+		// Exclusive cost = total_cost − Σ child total_cost (clamp at 0).
+		// Commit this alone so Cost % still works if a later buffer UPDATE fails.
+		strSQL = "update explain_plan_operator_annotations as PARENT set\n"
 				+ "exclusive_cost = case\n"
 				+ "  when PARENT.total_cost is null or trim(PARENT.total_cost) = '' then null\n"
 				+ "  else max(0,\n"
@@ -1938,7 +1944,15 @@ select id_explain_plan_property, parent_id_explain_plan_property, x_cart, y_cart
 				+ "  )\n"
 				+ "end\n"
 				+ "where PARENT.id_explain_plan = " + intIDExplainPlan + ";\n";
+		// Keep max_total_cost fresh for Cost % (pev2 uses max of Total Cost)
+		strSQL += "update explain_plan_generated_values as EPGV set\n"
+				+ "max_total_cost = (select max(total_cost*1.0) from explain_plan_operator_annotations where id_explain_plan = EPGV.id_explain_plan)\n"
+				+ ",sum_total_costs = (select sum(total_cost*1.0) from explain_plan_operator_annotations where id_explain_plan = EPGV.id_explain_plan)\n"
+				+ "where EPGV.id_explain_plan = " + intIDExplainPlan + ";\n";
+		if (bolShowSQL == true) { System.out.println(strSQL); }
+		Database.dml(strSQL);
 
+		strSQL = "";
 		String[] blockCols = {
 				"shared_hit_blocks", "shared_read_blocks", "shared_dirtied_blocks", "shared_written_blocks",
 				"temp_read_blocks", "temp_written_blocks",
@@ -2463,14 +2477,33 @@ order by id_explain_plan_property
 		// set percentage string numerics
 		strSQL += "update explain_plan_operator_annotations as EPOA set\n" +
 		
-				// cost — PEV2: exclusive_cost / max(total_cost) (see PlanService.calculateMaximums + node calculateCost)
+				// cost — PEV2: exclusive_cost / max(total_cost); fall back to total_cost so north
+				// Cost labels never collapse to node-type when exclusive_cost is missing
 				"cost_percentage_string = case\n" + 
-				"  when exclusive_cost is null then null\n" + 
-				"  when (select max_total_cost from explain_plan_generated_values where id_explain_plan = EPOA.id_explain_plan) is null then null\n" + 
-				"  when (select max_total_cost from explain_plan_generated_values where id_explain_plan = EPOA.id_explain_plan) = 0 then 0\n" + 
-				"  when exclusive_cost*1.0 / (select max_total_cost from explain_plan_generated_values where id_explain_plan = EPOA.id_explain_plan) < 0.001 then 0\n" + 
-				"  when exclusive_cost*1.0 / (select max_total_cost from explain_plan_generated_values where id_explain_plan = EPOA.id_explain_plan) < 0.1 then round(exclusive_cost*1.0 / (select max_total_cost from explain_plan_generated_values where id_explain_plan = EPOA.id_explain_plan), 3) * 100\n" + 
-				"  else cast(exclusive_cost*1.0 / (select max_total_cost from explain_plan_generated_values where id_explain_plan = EPOA.id_explain_plan) * 100 + 0.5 as integer)\n" + 
+				"  when coalesce(exclusive_cost, case when total_cost is null or trim(total_cost) = '' then null else cast(total_cost as real) end) is null then null\n" + 
+				"  when coalesce(\n" +
+				"    (select max_total_cost from explain_plan_generated_values where id_explain_plan = EPOA.id_explain_plan),\n" +
+				"    (select max(total_cost*1.0) from explain_plan_operator_annotations where id_explain_plan = EPOA.id_explain_plan)\n" +
+				"  ) is null then null\n" + 
+				"  when coalesce(\n" +
+				"    (select max_total_cost from explain_plan_generated_values where id_explain_plan = EPOA.id_explain_plan),\n" +
+				"    (select max(total_cost*1.0) from explain_plan_operator_annotations where id_explain_plan = EPOA.id_explain_plan)\n" +
+				"  ) = 0 then 0\n" + 
+				"  when coalesce(exclusive_cost, cast(total_cost as real))*1.0 / coalesce(\n" +
+				"    (select max_total_cost from explain_plan_generated_values where id_explain_plan = EPOA.id_explain_plan),\n" +
+				"    (select max(total_cost*1.0) from explain_plan_operator_annotations where id_explain_plan = EPOA.id_explain_plan)\n" +
+				"  ) < 0.001 then 0\n" + 
+				"  when coalesce(exclusive_cost, cast(total_cost as real))*1.0 / coalesce(\n" +
+				"    (select max_total_cost from explain_plan_generated_values where id_explain_plan = EPOA.id_explain_plan),\n" +
+				"    (select max(total_cost*1.0) from explain_plan_operator_annotations where id_explain_plan = EPOA.id_explain_plan)\n" +
+				"  ) < 0.1 then round(coalesce(exclusive_cost, cast(total_cost as real))*1.0 / coalesce(\n" +
+				"    (select max_total_cost from explain_plan_generated_values where id_explain_plan = EPOA.id_explain_plan),\n" +
+				"    (select max(total_cost*1.0) from explain_plan_operator_annotations where id_explain_plan = EPOA.id_explain_plan)\n" +
+				"  ), 3) * 100\n" + 
+				"  else cast(coalesce(exclusive_cost, cast(total_cost as real))*1.0 / coalesce(\n" +
+				"    (select max_total_cost from explain_plan_generated_values where id_explain_plan = EPOA.id_explain_plan),\n" +
+				"    (select max(total_cost*1.0) from explain_plan_operator_annotations where id_explain_plan = EPOA.id_explain_plan)\n" +
+				"  ) * 100 + 0.5 as integer)\n" + 
 				"end\n" +
 				
 				// time difference

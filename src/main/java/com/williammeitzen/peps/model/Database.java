@@ -1843,7 +1843,7 @@ south_1_fontmetrics_width = null;
 	}
 
 	/** PEV2-aligned metric columns for older DBs that predate the create-table definitions. */
-	private static void ensureExplainPlanOperatorAnnotationsPev2Columns() {
+	public static void ensureExplainPlanOperatorAnnotationsPev2Columns() {
 		ensureTableColumn("explain_plan_operator_annotations", "revised_actual_total_time_ms", "float");
 		ensureTableColumn("explain_plan_operator_annotations", "revised_actual_startup_time_ms", "float");
 		ensureTableColumn("explain_plan_operator_annotations", "exclusive_cost", "float");
