@@ -1741,45 +1741,86 @@ select id_explain_plan_property, parent_id_explain_plan_property, x_cart, y_cart
 		if (bolConcatenateSQL == false && bolShowSQL == true) { System.out.println(strSQL); }
 		if (bolConcatenateSQL == false && strSQL != "") { Database.dml(strSQL); strSQL = ""; }
 
-		// set total_actual_rows to the most accurate value known
-		// set total_estimated_rows to the most accurate value known, but don't include worker actual rows
-		// set total_actual_rows_is_exact accordingly
+		// PEV2 Tier 1: totals = per-loop metric × Actual Loops (see Pev2Metrics.revisedRows).
+		// Do not also × (1+workers): parallel plans already fold workers into Actual Loops.
+		// Intermediate worker-scaled columns above are retained for PEPS parallel UI only.
+		// loops helper: null/blank → 1; explicit 0 (never executed) stays 0.
 		strSQL += "update explain_plan_operator_annotations as EPOA set\n" +
-				"total_actual_rows = coalesce(actual_rows_plus_sum_workers_actual_rows, actual_rows_times_ancestor_workers_launched, actual_rows_times_ancestor_workers_planned, actual_rows)\n" +
-				",total_estimated_rows = coalesce(plan_rows_times_ancestor_workers_launched, plan_rows_times_ancestor_workers_planned, plan_rows)\n" +
-				",total_rows_removed_by_filter = coalesce(rows_removed_by_filter_times_exact_actual_worker_count, rows_removed_by_filter_times_ancestor_workers_planned, rows_removed_by_filter_times_ancestor_workers_launched, rows_removed_by_filter)\n" +
-				",total_rows_removed_by_join_filter = coalesce(rows_removed_by_join_filter_times_exact_actual_worker_count, rows_removed_by_join_filter_times_ancestor_workers_planned, rows_removed_by_join_filter_times_ancestor_workers_launched, rows_removed_by_join_filter)\n" +
-				",total_rows_removed_by_index_recheck = coalesce(rows_removed_by_index_recheck_times_exact_actual_worker_count, rows_removed_by_index_recheck_times_ancestor_workers_planned, rows_removed_by_index_recheck_times_ancestor_workers_launched, rows_removed_by_index_recheck)\n" +
+				"total_actual_rows = case\n" +
+				"  when actual_rows is null or trim(actual_rows) = '' then null\n" +
+				"  else cast(round(\n" +
+				"    cast(actual_rows as real) * coalesce(cast(case when actual_loops is null or trim(actual_loops) = '' then null else actual_loops end as real), 1)\n" +
+				"  ) as integer)\n" +
+				"end\n" +
+				",total_estimated_rows = case\n" +
+				"  when plan_rows is null or trim(plan_rows) = '' then null\n" +
+				"  else cast(round(\n" +
+				"    cast(plan_rows as real) * coalesce(cast(case when actual_loops is null or trim(actual_loops) = '' then null else actual_loops end as real), 1)\n" +
+				"  ) as integer)\n" +
+				"end\n" +
+				",total_rows_removed_by_filter = case\n" +
+				"  when rows_removed_by_filter is null or trim(rows_removed_by_filter) = '' then null\n" +
+				"  else cast(round(\n" +
+				"    cast(rows_removed_by_filter as real) * coalesce(cast(case when actual_loops is null or trim(actual_loops) = '' then null else actual_loops end as real), 1)\n" +
+				"  ) as integer)\n" +
+				"end\n" +
+				",total_rows_removed_by_join_filter = case\n" +
+				"  when rows_removed_by_join_filter is null or trim(rows_removed_by_join_filter) = '' then null\n" +
+				"  else cast(round(\n" +
+				"    cast(rows_removed_by_join_filter as real) * coalesce(cast(case when actual_loops is null or trim(actual_loops) = '' then null else actual_loops end as real), 1)\n" +
+				"  ) as integer)\n" +
+				"end\n" +
+				",total_rows_removed_by_index_recheck = case\n" +
+				"  when rows_removed_by_index_recheck is null or trim(rows_removed_by_index_recheck) = '' then null\n" +
+				"  else cast(round(\n" +
+				"    cast(rows_removed_by_index_recheck as real) * coalesce(cast(case when actual_loops is null or trim(actual_loops) = '' then null else actual_loops end as real), 1)\n" +
+				"  ) as integer)\n" +
+				"end\n" +
 				"where id_explain_plan = " + intIDExplainPlan + " -- id_explain_plan\n" +
 				";\n";
 		if (bolConcatenateSQL == false && bolShowSQL == true) { System.out.println(strSQL); }
 		if (bolConcatenateSQL == false && strSQL != "") { Database.dml(strSQL); strSQL = ""; }
 
+		// PEV2: multi-loop row totals are averages×loops → approximate (tilde in pev2 UI)
 		strSQL += "update explain_plan_operator_annotations as EPOA set\n" +
-				"total_actual_rows_is_exact = case when actual_rows_plus_sum_workers_actual_rows is not null or node_type in ('Gather', 'Gather Merge') or ancestor_workers_launched is null then 1 else 0 end\n" +
-				",total_rows_removed_by_filter_is_exact = case when coalesce(total_rows_removed_by_filter*1.0, 0) = coalesce(rows_removed_by_filter*1.0, 0) then 1 else 0 end\n" +
-				",total_rows_removed_by_join_filter_is_exact = case when coalesce(total_rows_removed_by_join_filter*1.0, 0) = coalesce(rows_removed_by_join_filter*1.0, 0) then 1 else 0 end\n" +
-				",total_rows_removed_by_index_recheck_is_exact = case when coalesce(total_rows_removed_by_index_recheck*1.0, 0) = coalesce(rows_removed_by_index_recheck*1.0, 0) then 1 else 0 end\n" +
+				"total_actual_rows_is_exact = case\n" +
+				"  when actual_loops is null or trim(actual_loops) = '' then 1\n" +
+				"  when cast(actual_loops as real) <= 1 then 1\n" +
+				"  else 0\n" +
+				"end\n" +
+				",total_rows_removed_by_filter_is_exact = case\n" +
+				"  when total_rows_removed_by_filter is null then 1\n" +
+				"  when actual_loops is null or trim(actual_loops) = '' or cast(actual_loops as real) <= 1 then 1\n" +
+				"  else 0\n" +
+				"end\n" +
+				",total_rows_removed_by_join_filter_is_exact = case\n" +
+				"  when total_rows_removed_by_join_filter is null then 1\n" +
+				"  when actual_loops is null or trim(actual_loops) = '' or cast(actual_loops as real) <= 1 then 1\n" +
+				"  else 0\n" +
+				"end\n" +
+				",total_rows_removed_by_index_recheck_is_exact = case\n" +
+				"  when total_rows_removed_by_index_recheck is null then 1\n" +
+				"  when actual_loops is null or trim(actual_loops) = '' or cast(actual_loops as real) <= 1 then 1\n" +
+				"  else 0\n" +
+				"end\n" +
 				"where id_explain_plan = " + intIDExplainPlan + " -- id_explain_plan\n" +
 				"and total_actual_rows is not null\n" +
 				";\n";
 		if (bolConcatenateSQL == false && bolShowSQL == true) { System.out.println(strSQL); }
 		if (bolConcatenateSQL == false && strSQL != "") { Database.dml(strSQL); strSQL = ""; }
 
-		// set actual_data_size_bytes to the most accurate value known
-		// set estimated_data_size_bytes to the most accurate value known, but don't include worker actual rows
-		// set total_actual_mass_is_exact accordingly
+		// Mass from PEV2-aligned row totals × plan_width
 		strSQL += "update explain_plan_operator_annotations as EPOA set\n" +
-				"actual_data_size_bytes = coalesce(actual_mass_times_sum_workers_actual_rows, actual_mass_times_ancestor_workers_launched, actual_mass_times_ancestor_workers_planned, total_actual_rows * plan_width)\n" +
-				",estimated_data_size_bytes = coalesce(estimated_mass_times_ancestor_workers_launched, estimated_mass_times_ancestor_workers_planned, plan_rows * plan_width)\n" +
+				"actual_data_size_bytes = case when total_actual_rows is null or plan_width is null or trim(plan_width) = '' then null else total_actual_rows * cast(plan_width as real) end\n" +
+				",estimated_data_size_bytes = case when total_estimated_rows is null or plan_width is null or trim(plan_width) = '' then null else total_estimated_rows * cast(plan_width as real) end\n" +
 				"where id_explain_plan = " + intIDExplainPlan + " -- id_explain_plan\n" +
 				";\n";
 		if (bolConcatenateSQL == false && bolShowSQL == true) { System.out.println(strSQL); }
 		if (bolConcatenateSQL == false && strSQL != "") { Database.dml(strSQL); strSQL = ""; }
 
-		// set total_actual_mass_is_exact
+		// Mass exactness tracks row exactness (same loops rule)
 		strSQL += "update explain_plan_operator_annotations as EPOA set\n" +
-				"total_actual_mass_is_exact = case when actual_mass_times_sum_workers_actual_rows is not null or node_type in ('Gather', 'Gather Merge') or ancestor_workers_launched is null then 1 else 0 end\n" +
+				"total_actual_mass_is_exact = total_actual_rows_is_exact\n" +
 				"where id_explain_plan = " + intIDExplainPlan + " -- id_explain_plan\n" +
 				"and actual_data_size_bytes is not null\n" +
 				";\n";
