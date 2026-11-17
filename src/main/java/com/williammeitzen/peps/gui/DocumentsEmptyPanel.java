@@ -50,7 +50,7 @@ public class DocumentsEmptyPanel extends JPanel {
 		column.add(Box.createVerticalStrut(8));
 
 		JLabel subtitle = new JLabel(
-				"Create a blank plan, or open a large sample EXPLAIN to explore the diagram.",
+				"Create a blank plan, or open a sample EXPLAIN to explore the diagram.",
 				SwingConstants.CENTER);
 		subtitle.setAlignmentX(CENTER_ALIGNMENT);
 		subtitle.setFont(subtitle.getFont().deriveFont(Font.PLAIN, 13f));
