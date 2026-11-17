@@ -685,6 +685,12 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 			if (bolShowTiming == true) { System.out.println("before updateRowAndMassCalcuations: " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
 			updateRowAndMassCalculations(idExplainPlan); // 2
 			if (bolShowTiming == true) { System.out.println("after updateRowAndMassCalcuations: " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
+
+			// PEV2 Tier 2: overwrite exclusive_time_ms using revised inclusive times
+			// (must run after ancestor_workers_launched is set above)
+			if (bolShowTiming == true) { System.out.println("before applyPev2ExclusiveTiming: " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
+			applyPev2ExclusiveTiming(idExplainPlan);
+			if (bolShowTiming == true) { System.out.println("after applyPev2ExclusiveTiming: " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
 			
 			if (bolShowTiming == true) { System.out.println("before updateStringUnitsPercentageAnnotationsTextData: " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
 			updateStringUnitsPercentageAnnotationsTextData(idExplainPlan); // 2
@@ -1832,6 +1838,69 @@ select id_explain_plan_property, parent_id_explain_plan_property, x_cart, y_cart
 		if (strSQL != "") { Database.dml(strSQL); strSQL = ""; }
 
 		if (bolShowTiming == true) { System.out.println("after setExclusiveTimeForPLAndWorkers: " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
+	}
+
+	/**
+	 * PEV2 Tier 2: set {@code revised_actual_*_time_ms} and overwrite
+	 * {@code exclusive_time_ms} to match dalibo/pev2 {@code calculateExclusives}:
+	 * {@code revised = actual_time * loops / (ancestor_workers_launched + 1)},
+	 * {@code exclusive = max(0, revised - sum(child revised))} excluding InitPlan
+	 * children (unless the parent is Result).
+	 *
+	 * <p>Runs after {@link #updateRowAndMassCalculations} so ancestor worker counts
+	 * exist. Leaves PEPS {@code parallel_leader_exclusive_time_ms} untouched for
+	 * the worker UI.
+	 */
+	public void applyPev2ExclusiveTiming(int intIDExplainPlan) {
+		boolean bolShowSQL = false;
+		String strSQL = "";
+
+		// Revised inclusive times (Pev2Metrics.revisedTotalTimeMs)
+		strSQL += "update explain_plan_operator_annotations set\n"
+				+ "revised_actual_total_time_ms = case\n"
+				+ "  when actual_total_time_ms is null then null\n"
+				+ "  else actual_total_time_ms\n"
+				+ "    * coalesce(cast(case when actual_loops is null or trim(actual_loops) = '' then null else actual_loops end as real), 1)\n"
+				+ "    / (coalesce(ancestor_workers_launched, 0) + 1)\n"
+				+ "end\n"
+				+ ",revised_actual_startup_time_ms = case\n"
+				+ "  when actual_startup_time_ms is null then null\n"
+				+ "  else actual_startup_time_ms\n"
+				+ "    * coalesce(cast(case when actual_loops is null or trim(actual_loops) = '' then null else actual_loops end as real), 1)\n"
+				+ "    / (coalesce(ancestor_workers_launched, 0) + 1)\n"
+				+ "end\n"
+				+ "where id_explain_plan = " + intIDExplainPlan + ";\n";
+
+		// Exclusive = revised − Σ child revised (skip InitPlan children unless parent is Result)
+		strSQL += "update explain_plan_operator_annotations as PARENT set\n"
+				+ "exclusive_time_ms = case\n"
+				+ "  when PARENT.revised_actual_total_time_ms is null then PARENT.exclusive_time_ms\n"
+				+ "  else max(0,\n"
+				+ "    PARENT.revised_actual_total_time_ms - coalesce((\n"
+				+ "      select sum(CHILD.revised_actual_total_time_ms)\n"
+				+ "      from explain_plan_operator_annotations as CHILD\n"
+				+ "      where CHILD.id_explain_plan = PARENT.id_explain_plan\n"
+				+ "        and CHILD.parent_id_explain_plan_property = PARENT.id_explain_plan_property\n"
+				+ "        and (\n"
+				+ "          coalesce(CHILD.parent_relationship, '') <> 'InitPlan'\n"
+				+ "          or PARENT.node_type = 'Result'\n"
+				+ "        )\n"
+				+ "    ), 0)\n"
+				+ "  )\n"
+				+ "end\n"
+				+ "where PARENT.id_explain_plan = " + intIDExplainPlan + "\n"
+				+ "and PARENT.id_explain_plan_property <> -1;\n";
+
+		// Synthetic root keeps full execution time when present
+		strSQL += "update explain_plan_operator_annotations as EPOA set\n"
+				+ "exclusive_time_ms = (select execution_time_ms from explain_plan_generated_values where id_explain_plan = EPOA.id_explain_plan)\n"
+				+ "where id_explain_plan = " + intIDExplainPlan + "\n"
+				+ "and id_explain_plan_property = -1\n"
+				+ "and exists(select 1 from explain_plan_generated_values where id_explain_plan = EPOA.id_explain_plan and execution_time_ms is not null);\n";
+
+		strSQL = "begin transaction;\n" + strSQL + "commit;\n";
+		if (bolShowSQL == true) { System.out.println(strSQL); }
+		Database.dml(strSQL);
 	}
 	
 	

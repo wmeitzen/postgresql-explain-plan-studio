@@ -914,6 +914,21 @@ public final class Database {
 			// peg values
 			+ ", pg_version_number float\n"
 			+ ", pg_version_environment varchar(250)\n"
+
+			// PEV2-aligned derived metrics (see Pev2Metrics / PlanGraphPanel.applyPev2*)
+			+ ", revised_actual_total_time_ms float\n"
+			+ ", revised_actual_startup_time_ms float\n"
+			+ ", exclusive_cost float\n"
+			+ ", exclusive_shared_hit_blocks float\n"
+			+ ", exclusive_shared_read_blocks float\n"
+			+ ", exclusive_shared_dirtied_blocks float\n"
+			+ ", exclusive_shared_written_blocks float\n"
+			+ ", exclusive_temp_read_blocks float\n"
+			+ ", exclusive_temp_written_blocks float\n"
+			+ ", exclusive_local_hit_blocks float\n"
+			+ ", exclusive_local_read_blocks float\n"
+			+ ", exclusive_local_dirtied_blocks float\n"
+			+ ", exclusive_local_written_blocks float\n"
 			
 			// add pk - must be done at table creation 
 			+ ", constraint pk_epoa primary key (id_explain_plan, id_explain_plan_property)\n"
@@ -925,6 +940,7 @@ public final class Database {
 		strSQL += "create index if not exists idx_epoa_test_4 on explain_plan_operator_annotations (id_explain_plan, node_type, join_type, operation, strategy, command);\n";
 
         Database.dml(strSQL);
+		ensureExplainPlanOperatorAnnotationsPev2Columns();
 
 /*
 update explain_plan_operator_annotations set
@@ -1824,6 +1840,23 @@ south_1_fontmetrics_width = null;
 	/** Add an explain_plans column if an older database is missing it. */
 	private static void ensureExplainPlansColumn(String columnName, String columnSqlType) {
 		ensureTableColumn("explain_plans", columnName, columnSqlType);
+	}
+
+	/** PEV2-aligned metric columns for older DBs that predate the create-table definitions. */
+	private static void ensureExplainPlanOperatorAnnotationsPev2Columns() {
+		ensureTableColumn("explain_plan_operator_annotations", "revised_actual_total_time_ms", "float");
+		ensureTableColumn("explain_plan_operator_annotations", "revised_actual_startup_time_ms", "float");
+		ensureTableColumn("explain_plan_operator_annotations", "exclusive_cost", "float");
+		ensureTableColumn("explain_plan_operator_annotations", "exclusive_shared_hit_blocks", "float");
+		ensureTableColumn("explain_plan_operator_annotations", "exclusive_shared_read_blocks", "float");
+		ensureTableColumn("explain_plan_operator_annotations", "exclusive_shared_dirtied_blocks", "float");
+		ensureTableColumn("explain_plan_operator_annotations", "exclusive_shared_written_blocks", "float");
+		ensureTableColumn("explain_plan_operator_annotations", "exclusive_temp_read_blocks", "float");
+		ensureTableColumn("explain_plan_operator_annotations", "exclusive_temp_written_blocks", "float");
+		ensureTableColumn("explain_plan_operator_annotations", "exclusive_local_hit_blocks", "float");
+		ensureTableColumn("explain_plan_operator_annotations", "exclusive_local_read_blocks", "float");
+		ensureTableColumn("explain_plan_operator_annotations", "exclusive_local_dirtied_blocks", "float");
+		ensureTableColumn("explain_plan_operator_annotations", "exclusive_local_written_blocks", "float");
 	}
 
 	private static void ensureTableColumn(String tableName, String columnName, String columnSqlType) {
