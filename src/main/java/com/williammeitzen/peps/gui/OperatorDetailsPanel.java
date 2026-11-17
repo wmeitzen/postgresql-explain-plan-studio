@@ -335,7 +335,11 @@ public class OperatorDetailsPanel extends JPanel {
 				? new PlanGraphPanel.OperatorCalculatedProperties(new Object[0][2], new boolean[0])
 				: graph.getOperatorCalculatedProperties(operatorPropertyId);
 		hasCalculatedFields = calculated != null && calculated.rows != null && calculated.rows.length > 0;
+		String propertyHeader = PlanGraphPanel.propertyColumnHeaderForOperator(
+				graph == null ? "" : graph.getOperatorDisplayTitle(operatorPropertyId));
+		propertiesPanel.setPropertyColumnHeader(propertyHeader);
 		if (hasCalculatedFields) {
+			calculatedPanel.setPropertyColumnHeader(propertyHeader);
 			calculatedPanel.setPropertiesDetails(calculated.rows, calculated.highlights);
 		} else {
 			calculatedPanel.clearOperatorProperties();

@@ -45,6 +45,18 @@ public class OperationPropertiesPanel extends JTable {
 
 	private PlanGraphPanel planGraphPanel = null;
 	private Object[] columnNames = { "Property", "Value" };
+
+	/** Update the Property column header (e.g. {@code Materialize Property}). */
+	public void setPropertyColumnHeader(String propertyHeader) {
+		String header = (propertyHeader == null || propertyHeader.isBlank()) ? "Property" : propertyHeader.trim();
+		columnNames = new Object[] { header, "Value" };
+		if (getColumnModel() != null && getColumnModel().getColumnCount() >= 1) {
+			getColumnModel().getColumn(0).setHeaderValue(header);
+			if (getTableHeader() != null) {
+				getTableHeader().repaint();
+			}
+		}
+	}
 	private Object[][] data;
 	private int selectedOperatorPropertyId = Integer.MIN_VALUE;
 	private final Set<String> expandedLists = new HashSet<>();
@@ -91,6 +103,7 @@ public class OperationPropertiesPanel extends JTable {
 		expandedLists.clear();
 		workersExpanded = false;
 		rowHighlights = null;
+		setPropertyColumnHeader("Property");
 		if (getModel() instanceof DefaultTableModel) {
 			((DefaultTableModel) getModel()).setDataVector(new Object[0][0], columnNames);
 			applyColumnWidths(propertyColumnWidth, valueColumnWidth);

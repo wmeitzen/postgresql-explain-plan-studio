@@ -7789,6 +7789,7 @@ order by id_explain_plan_property;
 		}
 		String strSQL = "select\n"
 				+ "  EPOA.node_type\n"
+				+ ", EPOA.join_type\n"
 				+ ", EPOA.total_cost\n"
 				+ ", EPOA.exclusive_cost\n"
 				+ ", EPOA.exclusive_time_ms\n"
@@ -7819,7 +7820,9 @@ order by id_explain_plan_property;
 		Double exclusiveTimeMs = toDouble(row.get("exclusive_time_ms"));
 		Double differenceTimeMs = toDouble(row.get("difference_time_ms"));
 		Double totalActualRows = toDouble(row.get("total_actual_rows"));
+		Double totalEstimatedRows = toDouble(row.get("total_estimated_rows"));
 		Double actualDataSizeBytes = toDouble(row.get("actual_data_size_bytes"));
+		Double estimatedDataSizeBytes = toDouble(row.get("estimated_data_size_bytes"));
 		Double executionTimeMs = toDouble(row.get("execution_time_ms"));
 		// Match diagram north Cost % (PEV2): exclusive_cost / max(total_cost), not
 		// inclusive total_cost / sum(all totals).
@@ -7834,10 +7837,16 @@ order by id_explain_plan_property;
 		appendCalculatedPercent(rows, "Operator time %", exclusiveTimeMs, executionTimeMs, false);
 		appendCalculatedElapsed(rows, "Time difference", differenceTimeMs, false);
 		appendCalculatedPercent(rows, "Time difference %", differenceTimeMs, executionTimeMs, false);
+		// Absolute values shown on the diagram (Line Thickness modes); ratios alone
+		// left mass/rows looking "missing" from Calculated Properties.
+		appendCalculatedRows(rows, "Actual rows", totalActualRows, false);
+		appendCalculatedRows(rows, "Estimated rows", totalEstimatedRows, false);
 		appendCalculatedRatio(rows, "Actual vs estimated rows ratio",
-				totalActualRows, toDouble(row.get("total_estimated_rows")));
+				totalActualRows, totalEstimatedRows);
+		appendCalculatedBytes(rows, "Actual mass", actualDataSizeBytes, false);
+		appendCalculatedBytes(rows, "Estimated mass", estimatedDataSizeBytes, false);
 		appendCalculatedRatio(rows, "Actual vs estimated mass ratio",
-				actualDataSizeBytes, toDouble(row.get("estimated_data_size_bytes")));
+				actualDataSizeBytes, estimatedDataSizeBytes);
 
 		appendCalculatedParticipant(rows, calculatedParticipantLabel(nodeType, "parallel leader"),
 				toDouble(row.get("parallel_leader_exclusive_time_ms")), exclusiveTimeMs, false,
@@ -7891,6 +7900,43 @@ order by id_explain_plan_property;
 			return role.substring(0, 1).toUpperCase(java.util.Locale.ROOT) + role.substring(1);
 		}
 		return nodeType + " " + role;
+	}
+
+	/**
+	 * Display title for Properties column headers, e.g. {@code Materialize} or
+	 * {@code Nested Loop (Inner Join)}.
+	 */
+	public String getOperatorDisplayTitle(int intIDExplainPlanProperty) {
+		if (idExplainPlan == null) {
+			return "";
+		}
+		JsonObject row = Database.row(
+				"select node_type, join_type from explain_plan_operator_annotations\n"
+						+ "where id_explain_plan = " + idExplainPlan + "\n"
+						+ "and id_explain_plan_property = " + intIDExplainPlanProperty + "\n");
+		if (row == null) {
+			return "";
+		}
+		return formatOperatorDisplayTitle(blankIfNullish(row.getString("node_type")),
+				blankIfNullish(row.getString("join_type")));
+	}
+
+	static String formatOperatorDisplayTitle(String nodeType, String joinType) {
+		if (nodeType == null || nodeType.isEmpty()) {
+			return "";
+		}
+		if (joinType != null && !joinType.isEmpty()) {
+			return nodeType + " (" + joinType + ")";
+		}
+		return nodeType;
+	}
+
+	/** Column header for the Property side, e.g. {@code Materialize Property}. */
+	public static String propertyColumnHeaderForOperator(String operatorDisplayTitle) {
+		if (operatorDisplayTitle == null || operatorDisplayTitle.isBlank()) {
+			return "Property";
+		}
+		return operatorDisplayTitle.trim() + " Property";
 	}
 
 	private static void appendCalculatedParticipant(CalculatedRowsBuilder rows, String sectionName,
