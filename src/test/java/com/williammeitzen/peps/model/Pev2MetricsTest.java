@@ -99,4 +99,28 @@ class Pev2MetricsTest {
 		assertTrue(Pev2Metrics.rowsTotalIsExact(null));
 		assertFalse(Pev2Metrics.rowsTotalIsExact(321195.0));
 	}
+
+	@Test
+	void initPlanRefToken_prefersDollarParam() {
+		assertEquals("$1", Pev2Metrics.initPlanRefToken("InitPlan 2 (returns $1)"));
+		assertEquals("InitPlan 2", Pev2Metrics.initPlanRefToken("InitPlan 2"));
+	}
+
+	@Test
+	void materializeAndParallelParity_endToEndFormulas() {
+		// Materialize #446-style: rows=1 loops=321195 → pev2 shows 321195
+		assertEquals(321195.0, Pev2Metrics.revisedRows(1.0, 321195.0));
+		assertFalse(Pev2Metrics.rowsTotalIsExact(321195.0));
+
+		// Nested Loop inner index: time=0.9 loops=5000 → revised 4500; exclusive after child 0
+		assertEquals(4500.0, Pev2Metrics.revisedTotalTimeMs(0.9, 5000.0, null));
+		assertEquals(4500.0, Pev2Metrics.exclusiveDurationMs(4500.0, 0.0));
+
+		// Parallel child under Gather (4 workers launched): loops=5, time=10 → revised 10
+		assertEquals(10.0, Pev2Metrics.revisedTotalTimeMs(10.0, 5.0, 4.0));
+		assertEquals(312595.0, Pev2Metrics.revisedRows(62519.0, 5.0));
+
+		// Cost exclusive
+		assertEquals(2.0, Pev2Metrics.exclusiveCost(12.34, 10.34));
+	}
 }

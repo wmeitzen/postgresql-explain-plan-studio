@@ -154,4 +154,27 @@ public final class Pev2Metrics {
 		}
 		return actualLoops.doubleValue() <= 1.0;
 	}
+
+	/**
+	 * Token used by pev2 {@code fixInitPlanUsageDuration} to find consumers of an
+	 * InitPlan: prefer {@code $N} from {@code InitPlan k (returns $N)}, else the
+	 * {@code InitPlan k} label.
+	 */
+	public static String initPlanRefToken(String subplanName) {
+		if (subplanName == null) {
+			return null;
+		}
+		java.util.regex.Matcher m = java.util.regex.Pattern
+				.compile("\\(returns\\s+(\\$[0-9]+)\\)", java.util.regex.Pattern.CASE_INSENSITIVE)
+				.matcher(subplanName);
+		if (m.find()) {
+			return m.group(1);
+		}
+		m = java.util.regex.Pattern.compile("(InitPlan\\s+[1-9][0-9]*)", java.util.regex.Pattern.CASE_INSENSITIVE)
+				.matcher(subplanName);
+		if (m.find()) {
+			return m.group(1);
+		}
+		return subplanName.trim();
+	}
 }
