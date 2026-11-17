@@ -96,6 +96,27 @@ public final class Pev2Metrics {
 	}
 
 	/**
+	 * PEV2 cost share for diagram north labels and Calculated Properties
+	 * {@code Cost %}: {@code exclusiveCost / max(Total Cost)} as a percent
+	 * (0–100). Falls back to {@code totalCost} when exclusive is missing so
+	 * labels never go blank after a partial annotation update.
+	 *
+	 * <p>Must not use inclusive {@code totalCost / sum(all totalCosts)} — that
+	 * double-counts ancestors and diverges from diagram {@code Cost: N%} text.
+	 */
+	public static Double costPercentOfPlan(Double exclusiveCost, Double totalCostFallback,
+			Double maxTotalCost) {
+		if (maxTotalCost == null || maxTotalCost.doubleValue() == 0.0) {
+			return null;
+		}
+		Double numerator = exclusiveCost != null ? exclusiveCost : totalCostFallback;
+		if (numerator == null) {
+			return null;
+		}
+		return numerator.doubleValue() / maxTotalCost.doubleValue() * 100.0;
+	}
+
+	/**
 	 * PEV2 exclusive buffer/IO: {@code inclusive - sum(non-subplan children inclusive)}.
 	 */
 	public static Double exclusiveBlocks(Double inclusive, double childrenInclusiveSum) {

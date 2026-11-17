@@ -70,6 +70,31 @@ class Pev2MetricsTest {
 	}
 
 	@Test
+	void costPercentOfPlan_matchesNorthLabelFormula() {
+		// exclusive 1081. something / max total 67414 ≈ 1.60% (diagram Cost: 1.6%)
+		assertEquals(1.60, Pev2Metrics.costPercentOfPlan(1081.0, 67414.0, 67414.0), 0.01);
+		// Pass-through node: exclusive ~0 → Properties Cost % must be 0, not inclusive share
+		assertEquals(0.0, Pev2Metrics.costPercentOfPlan(0.0, 50000.0, 67414.0), 1e-9);
+		// Missing exclusive falls back to total (same as north coalesce)
+		assertEquals(100.0, Pev2Metrics.costPercentOfPlan(null, 67414.0, 67414.0), 1e-9);
+		assertNull(Pev2Metrics.costPercentOfPlan(10.0, 10.0, 0.0));
+		assertNull(Pev2Metrics.costPercentOfPlan(null, null, 100.0));
+	}
+
+	@Test
+	void costPercentOfPlan_mustNotUseSumOfTotalsDenominator() {
+		// Bug that caused Properties ≠ north: total/sum(all totals) vs exclusive/max
+		double exclusive = 0.0;
+		double inclusiveTotal = 63952.59;
+		double maxTotal = 67414.01;
+		double sumAllTotals = 500000.0; // inflated by ancestors
+		assertEquals(0.0, Pev2Metrics.costPercentOfPlan(exclusive, inclusiveTotal, maxTotal), 1e-9);
+		double wrongPropertiesStyle = inclusiveTotal / sumAllTotals * 100.0;
+		assertTrue(wrongPropertiesStyle > 1.0,
+				"sanity: old formula looked non-zero while exclusive share is 0");
+	}
+
+	@Test
 	void exclusiveBlocks_canBeNegative_likePev2() {
 		// pev2 does not clamp buffers to zero
 		assertEquals(-2.0, Pev2Metrics.exclusiveBlocks(3.0, 5.0));

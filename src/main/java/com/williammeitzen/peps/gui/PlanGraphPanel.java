@@ -7790,6 +7790,7 @@ order by id_explain_plan_property;
 		String strSQL = "select\n"
 				+ "  EPOA.node_type\n"
 				+ ", EPOA.total_cost\n"
+				+ ", EPOA.exclusive_cost\n"
 				+ ", EPOA.exclusive_time_ms\n"
 				+ ", EPOA.difference_time_ms\n"
 				+ ", EPOA.total_actual_rows\n"
@@ -7803,7 +7804,7 @@ order by id_explain_plan_property;
 				+ ", EPOA.parallel_leader_difference_time_highlight\n"
 				+ ", EPOA.parallel_leader_actual_rows_highlight\n"
 				+ ", EPOA.parallel_leader_actual_data_size_highlight\n"
-				+ ", EPGV.sum_total_costs\n"
+				+ ", EPGV.max_total_cost\n"
 				+ ", EPGV.execution_time_ms\n"
 				+ "from explain_plan_operator_annotations as EPOA\n"
 				+ "left join explain_plan_generated_values as EPGV\n"
@@ -7819,11 +7820,16 @@ order by id_explain_plan_property;
 		Double differenceTimeMs = toDouble(row.get("difference_time_ms"));
 		Double totalActualRows = toDouble(row.get("total_actual_rows"));
 		Double actualDataSizeBytes = toDouble(row.get("actual_data_size_bytes"));
-		Double sumTotalCosts = toDouble(row.get("sum_total_costs"));
 		Double executionTimeMs = toDouble(row.get("execution_time_ms"));
+		// Match diagram north Cost % (PEV2): exclusive_cost / max(total_cost), not
+		// inclusive total_cost / sum(all totals).
+		Double costPercent = Pev2Metrics.costPercentOfPlan(
+				toDouble(row.get("exclusive_cost")),
+				toDouble(row.get("total_cost")),
+				toDouble(row.get("max_total_cost")));
 
 		CalculatedRowsBuilder rows = new CalculatedRowsBuilder();
-		appendCalculatedPercent(rows, "Cost %", toDouble(row.get("total_cost")), sumTotalCosts, false);
+		appendCalculatedPercentOfHundred(rows, "Cost %", costPercent, false);
 		appendCalculatedElapsed(rows, "Operator time", exclusiveTimeMs, false);
 		appendCalculatedPercent(rows, "Operator time %", exclusiveTimeMs, executionTimeMs, false);
 		appendCalculatedElapsed(rows, "Time difference", differenceTimeMs, false);
@@ -7945,6 +7951,16 @@ order by id_explain_plan_property;
 		rows.add(name, text, highlight);
 	}
 
+	/** Same formatting as {@link #appendCalculatedPercent} when the share is already 0–100. */
+	private static void appendCalculatedPercentOfHundred(CalculatedRowsBuilder rows, String name,
+			Double percentOfHundred, boolean highlight) {
+		String text = formatCalculatedPercentValue(percentOfHundred);
+		if (text == null) {
+			return;
+		}
+		rows.add(name, text, highlight);
+	}
+
 	private static String formatCalculatedPercent(Double numerator, Double denominator) {
 		if (numerator == null || denominator == null) {
 			return null;
@@ -7953,6 +7969,14 @@ order by id_explain_plan_property;
 			return "0%";
 		}
 		double pct = numerator.doubleValue() / denominator.doubleValue() * 100.0;
+		return formatCalculatedPercentValue(pct);
+	}
+
+	private static String formatCalculatedPercentValue(Double pctBoxed) {
+		if (pctBoxed == null) {
+			return null;
+		}
+		double pct = pctBoxed.doubleValue();
 		if (!Double.isFinite(pct)) {
 			return null;
 		}
