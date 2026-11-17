@@ -166,6 +166,9 @@ public class PlanSourcePanel extends JPanel {
 	private JPanel passwordRow;
 	/** Components shown only in Connect & run EXPLAIN mode. */
 	private Component[] connectModeOnlyComponents;
+	/** SQL half of the SQL/plan stack; collapsed entirely in Plan text only mode. */
+	private JPanel sqlBlock;
+	private JSplitPane sqlJsonSplit;
 	private String planName;
 	private String planSourceButtonClicked;
 	private JTabbedPane objCurrentPlanTabs;
@@ -783,7 +786,7 @@ public class PlanSourcePanel extends JPanel {
 		sqlFieldHost = wrapWithAnonymizeBadge(planSourceFromQuerySQLTextAreaScrollPane, sqlAnonymizeBadge);
 		planFieldHost = wrapWithAnonymizeBadge(jsonPlanTextAreaScrollPane, planAnonymizeBadge);
 
-		JPanel sqlBlock = new JPanel(new BorderLayout(0, 4));
+		sqlBlock = new JPanel(new BorderLayout(0, 4));
 		sqlBlock.setOpaque(false);
 		sqlBlock.add(planSourceFromQuerySQLLabel, BorderLayout.NORTH);
 		sqlBlock.add(sqlFieldHost, BorderLayout.CENTER);
@@ -800,7 +803,7 @@ public class PlanSourcePanel extends JPanel {
 		jsonBlock.add(showPlanGraphButtonRow, BorderLayout.SOUTH);
 		jsonBlock.setMinimumSize(new Dimension(120, 100));
 
-		JSplitPane sqlJsonSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, sqlBlock, jsonBlock);
+		sqlJsonSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, sqlBlock, jsonBlock);
 		sqlJsonSplit.setResizeWeight(0.5);
 		sqlJsonSplit.setContinuousLayout(true);
 		sqlJsonSplit.setBorder(null);
@@ -815,6 +818,8 @@ public class PlanSourcePanel extends JPanel {
 		stackGbc.fill = GridBagConstraints.BOTH;
 		panel.add(sizedStack, stackGbc);
 
+		// Hide the whole SQL block in Plan text only mode (not just its children),
+		// otherwise the split leaves a large empty top pane and crushes the plan field.
 		connectModeOnlyComponents = new Component[] {
 				sectionHeaderServer,
 				connectByLabel, connectByPanel,
@@ -829,8 +834,7 @@ public class PlanSourcePanel extends JPanel {
 				sectionHeaderCommands,
 				planSourceFromQueryPreCommandLabel, preCommandFieldHost,
 				planSourceFromQueryPostCommandLabel, postCommandFieldHost,
-				planSourceFromQuerySQLLabel, sqlFieldHost,
-				planSourceFromQueryButton
+				sqlBlock
 		};
 
 		// Absorb extra horizontal space so fields stay left-aligned at hybrid widths.
@@ -866,10 +870,47 @@ public class PlanSourcePanel extends JPanel {
 				}
 			}
 		}
+		collapseSqlHalfOfPlanStack(!connect);
 		revalidate();
 		repaint();
 		if (persist) {
 			saveSourceModePreference(connect ? SOURCE_MODE_CONNECT : SOURCE_MODE_PASTE);
+		}
+	}
+
+	/**
+	 * In Plan text only mode, give the entire vertical stack to the plan field.
+	 * Hiding SQL children alone left an empty top split pane (what looked like a
+	 * missing explain/plan editor on sample plans).
+	 */
+	private void collapseSqlHalfOfPlanStack(boolean collapse) {
+		if (sqlJsonSplit == null || sqlBlock == null) {
+			return;
+		}
+		if (collapse) {
+			sqlBlock.setMinimumSize(new Dimension(0, 0));
+			sqlBlock.setPreferredSize(new Dimension(0, 0));
+			sqlJsonSplit.setDividerSize(0);
+			sqlJsonSplit.setResizeWeight(0.0);
+			sqlJsonSplit.setDividerLocation(0);
+			SwingUtilities.invokeLater(() -> {
+				if (sqlJsonSplit != null && !isConnectSourceMode()) {
+					sqlJsonSplit.setDividerLocation(0);
+					sqlJsonSplit.revalidate();
+				}
+			});
+		} else {
+			sqlBlock.setMinimumSize(new Dimension(120, 100));
+			sqlBlock.setPreferredSize(null);
+			sqlJsonSplit.setDividerSize(8);
+			sqlJsonSplit.setResizeWeight(0.5);
+			SwingUtilities.invokeLater(() -> {
+				if (sqlJsonSplit != null && isConnectSourceMode()) {
+					int h = Math.max(sqlJsonSplit.getHeight(), 200);
+					sqlJsonSplit.setDividerLocation(h / 2);
+					sqlJsonSplit.revalidate();
+				}
+			});
 		}
 	}
 
