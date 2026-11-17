@@ -20,6 +20,9 @@ import java.awt.event.ComponentEvent;
 import java.awt.event.FocusAdapter;
 import java.awt.event.FocusEvent;
 import java.awt.event.ItemEvent;
+import java.util.function.BiConsumer;
+
+import com.formdev.flatlaf.FlatClientProperties;
 import java.text.SimpleDateFormat;
 import java.util.Collections;
 import java.util.Date;
@@ -169,6 +172,8 @@ public class PlanSourcePanel extends JPanel {
 	/** SQL half of the SQL/plan stack; collapsed entirely in Plan text only mode. */
 	private JPanel sqlBlock;
 	private JSplitPane sqlJsonSplit;
+	/** Outer width split (content | spacer) driven by SE corner grips. */
+	private JSplitPane widthSplit;
 	private String planName;
 	private String planSourceButtonClicked;
 	private JTabbedPane objCurrentPlanTabs;
@@ -807,10 +812,13 @@ public class PlanSourcePanel extends JPanel {
 		sqlJsonSplit.setResizeWeight(0.5);
 		sqlJsonSplit.setContinuousLayout(true);
 		sqlJsonSplit.setBorder(null);
-		sqlJsonSplit.setDividerSize(8);
+		sqlJsonSplit.setDividerSize(6);
+		usePlainSplitDivider(sqlJsonSplit);
 
 		// Horizontal divider on the right edge so width can be dragged like height.
-		JSplitPane sizedStack = wrapWithHorizontalWidthSplit(sqlJsonSplit, AREA_WIDTH);
+		widthSplit = wrapWithHorizontalWidthSplit(sqlJsonSplit, AREA_WIDTH);
+		JSplitPane sizedStack = widthSplit;
+		wireSeResizeGrips();
 
 		GridBagConstraints stackGbc = fullWidthGbc(row++, new Insets(8, 8, 4, 8));
 		stackGbc.weightx = 1.0;
@@ -1821,8 +1829,9 @@ public class PlanSourcePanel extends JPanel {
 		JLayeredPane layered = (JLayeredPane) host;
 		Object contentObj = layered.getClientProperty("anonymizeContent");
 		Object cornerObj = layered.getClientProperty("anonymizeBadgeCorner");
-		if (contentObj instanceof JComponent && cornerObj instanceof JComponent) {
-			layoutAnonymizeBadgeOverlay(layered, (JComponent) contentObj, (JComponent) cornerObj);
+		if (contentObj instanceof JComponent) {
+			JComponent badge = cornerObj instanceof JComponent ? (JComponent) cornerObj : null;
+			layoutFieldOverlays(layered, (JComponent) contentObj, badge);
 		}
 		layered.revalidate();
 		layered.repaint();
@@ -1897,9 +1906,137 @@ public class PlanSourcePanel extends JPanel {
 		horizontal.setResizeWeight(1.0);
 		horizontal.setContinuousLayout(true);
 		horizontal.setBorder(null);
-		horizontal.setDividerSize(8);
+		horizontal.setDividerSize(6);
 		horizontal.setDividerLocation(Math.max(160, initialWidth));
+		usePlainSplitDivider(horizontal);
 		return horizontal;
+	}
+
+	/** Hide FlatLaf's three-dot divider grip; SE corner grips replace it visually. */
+	static void usePlainSplitDivider(JSplitPane split) {
+		if (split == null) {
+			return;
+		}
+		split.putClientProperty(FlatClientProperties.STYLE, "style: plain");
+	}
+
+	private void wireSeResizeGrips() {
+		wireSeResizeGrip(sqlFieldHost, (dx, dy) -> {
+			nudgeWidthSplit(dx.intValue());
+			nudgeSqlPlanDivider(dy.intValue());
+		});
+		wireSeResizeGrip(planFieldHost, (dx, dy) -> {
+			nudgeWidthSplit(dx.intValue());
+			if (isConnectSourceMode()) {
+				// Dragging the plan field's SE corner down gives the plan more height.
+				nudgeSqlPlanDivider(-dy.intValue());
+			} else {
+				nudgePlanPreferredHeight(dy.intValue());
+			}
+		});
+	}
+
+	static void wireSeResizeGrip(JComponent host, BiConsumer<Integer, Integer> onDrag) {
+		if (!(host instanceof JLayeredPane)) {
+			return;
+		}
+		Object gripObj = ((JLayeredPane) host).getClientProperty("seResizeGrip");
+		if (gripObj instanceof SeResizeGrip) {
+			((SeResizeGrip) gripObj).setOnDrag(onDrag);
+		}
+	}
+
+	/** Nudge a split divider by {@code delta} px, keeping both sides at least {@code minSide}. */
+	static void nudgeSplitDivider(JSplitPane split, int delta, int minSide) {
+		if (split == null || delta == 0) {
+			return;
+		}
+		int next = Math.max(minSide, split.getDividerLocation() + delta);
+		int span = split.getOrientation() == JSplitPane.VERTICAL_SPLIT
+				? split.getHeight()
+				: split.getWidth();
+		int max = Math.max(minSide, span - split.getDividerSize() - minSide);
+		split.setDividerLocation(Math.min(next, max));
+	}
+
+	/**
+	 * Overlay only the SE resize grip (no anonymize badge) — for large text areas
+	 * that still sit in a height/width split stack.
+	 */
+	static JComponent wrapWithSeResizeGrip(JComponent content) {
+		JLayeredPane layered = newTrackingLayeredPane(content);
+		SeResizeGrip seGrip = new SeResizeGrip();
+		layered.putClientProperty("seResizeGrip", seGrip);
+		layered.add(content, JLayeredPane.DEFAULT_LAYER);
+		layered.add(seGrip, JLayeredPane.DRAG_LAYER);
+		layered.addComponentListener(new ComponentAdapter() {
+			@Override
+			public void componentResized(ComponentEvent e) {
+				layoutFieldOverlays(layered, content, null);
+			}
+
+			@Override
+			public void componentShown(ComponentEvent e) {
+				layoutFieldOverlays(layered, content, null);
+			}
+		});
+		layoutFieldOverlays(layered, content, null);
+		return layered;
+	}
+
+	private static JLayeredPane newTrackingLayeredPane(JComponent content) {
+		JLayeredPane layered = new JLayeredPane() {
+			private static final long serialVersionUID = 1L;
+
+			@Override
+			public Dimension getPreferredSize() {
+				return content.getPreferredSize();
+			}
+
+			@Override
+			public Dimension getMinimumSize() {
+				return content.getMinimumSize();
+			}
+
+			@Override
+			public Dimension getMaximumSize() {
+				return content.getMaximumSize();
+			}
+
+			@Override
+			public boolean isOptimizedDrawingEnabled() {
+				return false;
+			}
+		};
+		layered.setOpaque(false);
+		layered.putClientProperty("anonymizeContent", content);
+		return layered;
+	}
+
+	private void nudgeWidthSplit(int dx) {
+		nudgeSplitDivider(widthSplit, dx, 160);
+	}
+
+	private void nudgeSqlPlanDivider(int dy) {
+		if (!isConnectSourceMode()) {
+			return;
+		}
+		nudgeSplitDivider(sqlJsonSplit, dy, 40);
+	}
+
+	private void nudgePlanPreferredHeight(int dy) {
+		if (jsonPlanTextAreaScrollPane == null || dy == 0) {
+			return;
+		}
+		Dimension pref = jsonPlanTextAreaScrollPane.getPreferredSize();
+		int width = Math.max(160, pref.width > 0 ? pref.width : AREA_WIDTH);
+		int height = Math.max(80, (pref.height > 0 ? pref.height : AREA_HEIGHT) + dy);
+		sizeTextArea(jsonPlanTextAreaScrollPane, width, height);
+		if (planFieldHost != null) {
+			planFieldHost.revalidate();
+		}
+		revalidate();
+		repaint();
 	}
 
 	static JLabel createAnonymizeBadge() {
@@ -1943,59 +2080,53 @@ public class PlanSourcePanel extends JPanel {
 		badgeCorner.setBorder(new EmptyBorder(4, 0, 0, 6));
 		badgeCorner.add(badge);
 
-		JLayeredPane layered = new JLayeredPane() {
-			private static final long serialVersionUID = 1L;
-
-			@Override
-			public Dimension getPreferredSize() {
-				return content.getPreferredSize();
-			}
-
-			@Override
-			public Dimension getMinimumSize() {
-				return content.getMinimumSize();
-			}
-
-			@Override
-			public Dimension getMaximumSize() {
-				return content.getMaximumSize();
-			}
-
-			@Override
-			public boolean isOptimizedDrawingEnabled() {
-				return false;
-			}
-		};
-		layered.setOpaque(false);
-		layered.putClientProperty("anonymizeContent", content);
+		JLayeredPane layered = newTrackingLayeredPane(content);
+		SeResizeGrip seGrip = new SeResizeGrip();
 		layered.putClientProperty("anonymizeBadgeCorner", badgeCorner);
+		layered.putClientProperty("seResizeGrip", seGrip);
 		layered.add(content, JLayeredPane.DEFAULT_LAYER);
 		layered.add(badgeCorner, JLayeredPane.PALETTE_LAYER);
+		layered.add(seGrip, JLayeredPane.DRAG_LAYER);
 		layered.addComponentListener(new ComponentAdapter() {
 			@Override
 			public void componentResized(ComponentEvent e) {
-				layoutAnonymizeBadgeOverlay(layered, content, badgeCorner);
+				layoutFieldOverlays(layered, content, badgeCorner);
 			}
 
 			@Override
 			public void componentShown(ComponentEvent e) {
-				layoutAnonymizeBadgeOverlay(layered, content, badgeCorner);
+				layoutFieldOverlays(layered, content, badgeCorner);
 			}
 		});
-		layoutAnonymizeBadgeOverlay(layered, content, badgeCorner);
+		layoutFieldOverlays(layered, content, badgeCorner);
 		return layered;
 	}
 
-	private static void layoutAnonymizeBadgeOverlay(JLayeredPane layered, JComponent content,
+	/** @deprecated use {@link #layoutFieldOverlays}; kept name for call sites / tests. */
+	static void layoutAnonymizeBadgeOverlay(JLayeredPane layered, JComponent content,
+			JComponent badgeCorner) {
+		layoutFieldOverlays(layered, content, badgeCorner);
+	}
+
+	static void layoutFieldOverlays(JLayeredPane layered, JComponent content,
 			JComponent badgeCorner) {
 		int w = Math.max(layered.getWidth(), 0);
 		int h = Math.max(layered.getHeight(), 0);
 		content.setBounds(0, 0, w, h);
-		Dimension badgeSize = badgeCorner.getPreferredSize();
-		int bw = Math.max(badgeSize.width, 26);
-		int bh = Math.max(badgeSize.height, 24);
-		badgeCorner.setBounds(Math.max(0, w - bw), 0, bw, bh);
-		badgeCorner.revalidate();
+		if (badgeCorner != null) {
+			Dimension badgeSize = badgeCorner.getPreferredSize();
+			int bw = Math.max(badgeSize.width, 26);
+			int bh = Math.max(badgeSize.height, 24);
+			badgeCorner.setBounds(Math.max(0, w - bw), 0, bw, bh);
+			badgeCorner.revalidate();
+		}
+		Object gripObj = layered.getClientProperty("seResizeGrip");
+		if (gripObj instanceof SeResizeGrip) {
+			SeResizeGrip grip = (SeResizeGrip) gripObj;
+			Dimension gs = grip.getPreferredSize();
+			grip.setBounds(Math.max(0, w - gs.width - 2), Math.max(0, h - gs.height - 2),
+					gs.width, gs.height);
+		}
 	}
 
 	static ImageIcon loadAnonymizeSilhouetteIcon() {

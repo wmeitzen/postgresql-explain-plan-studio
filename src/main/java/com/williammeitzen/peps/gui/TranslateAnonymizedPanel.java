@@ -41,6 +41,8 @@ public class TranslateAnonymizedPanel extends JPanel {
 	private final JLabel warningLabel;
 	private final JLabel inputAnonymizeBadge;
 	private final Border outputDefaultBorder;
+	private final JSplitPane verticalSplit;
+	private final JSplitPane widthSplit;
 	private Timer pulseTimer;
 	private boolean showingWarning;
 	private PlanSourcePanel planSourcePanel;
@@ -78,8 +80,10 @@ public class TranslateAnonymizedPanel extends JPanel {
 		inputAnonymizeBadge = PlanSourcePanel.createAnonymizeBadge();
 		inputAnonymizeBadge.setVisible(true);
 		JComponent inputHost = PlanSourcePanel.wrapWithAnonymizeBadge(inputScroll, inputAnonymizeBadge);
+		JComponent outputHost = PlanSourcePanel.wrapWithSeResizeGrip(outputScroll);
 		// Ensure overlay has non-zero bounds after first layout pass
 		javax.swing.SwingUtilities.invokeLater(() -> PlanSourcePanel.relayoutAnonymizeBadgeHost(inputHost));
+		javax.swing.SwingUtilities.invokeLater(() -> PlanSourcePanel.relayoutAnonymizeBadgeHost(outputHost));
 
 		JPanel top = new JPanel(new BorderLayout(0, 4));
 		top.setOpaque(false);
@@ -95,18 +99,28 @@ public class TranslateAnonymizedPanel extends JPanel {
 		JPanel bottom = new JPanel(new BorderLayout(0, 4));
 		bottom.setOpaque(false);
 		bottom.add(translatedHeader, BorderLayout.NORTH);
-		bottom.add(outputScroll, BorderLayout.CENTER);
+		bottom.add(outputHost, BorderLayout.CENTER);
 		bottom.setMinimumSize(new Dimension(120, 100));
 
-		JSplitPane split = new JSplitPane(JSplitPane.VERTICAL_SPLIT, top, bottom);
-		split.setResizeWeight(0.5);
-		split.setContinuousLayout(true);
-		split.setBorder(null);
-		split.setDividerSize(8);
+		verticalSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, top, bottom);
+		verticalSplit.setResizeWeight(0.5);
+		verticalSplit.setContinuousLayout(true);
+		verticalSplit.setBorder(null);
+		verticalSplit.setDividerSize(6);
+		PlanSourcePanel.usePlainSplitDivider(verticalSplit);
 
-		JSplitPane sizedSplit = PlanSourcePanel.wrapWithHorizontalWidthSplit(split, 640);
+		widthSplit = PlanSourcePanel.wrapWithHorizontalWidthSplit(verticalSplit, 640);
 
-		add(sizedSplit, BorderLayout.CENTER);
+		PlanSourcePanel.wireSeResizeGrip(inputHost, (dx, dy) -> {
+			PlanSourcePanel.nudgeSplitDivider(widthSplit, dx.intValue(), 160);
+			PlanSourcePanel.nudgeSplitDivider(verticalSplit, dy.intValue(), 40);
+		});
+		PlanSourcePanel.wireSeResizeGrip(outputHost, (dx, dy) -> {
+			PlanSourcePanel.nudgeSplitDivider(widthSplit, dx.intValue(), 160);
+			PlanSourcePanel.nudgeSplitDivider(verticalSplit, -dy.intValue(), 40);
+		});
+
+		add(widthSplit, BorderLayout.CENTER);
 
 		inputArea.getDocument().addDocumentListener(new DocumentListener() {
 			@Override

@@ -7789,7 +7789,6 @@ order by id_explain_plan_property;
 		}
 		String strSQL = "select\n"
 				+ "  EPOA.node_type\n"
-				+ ", EPOA.join_type\n"
 				+ ", EPOA.total_cost\n"
 				+ ", EPOA.exclusive_cost\n"
 				+ ", EPOA.exclusive_time_ms\n"
@@ -7903,40 +7902,35 @@ order by id_explain_plan_property;
 	}
 
 	/**
-	 * Display title for Properties column headers, e.g. {@code Materialize} or
-	 * {@code Nested Loop (Inner Join)}.
+	 * Node Type only for Properties column headers (no Join Type suffix), e.g.
+	 * {@code Nested Loop} → header {@code Nested Loop Property}.
 	 */
 	public String getOperatorDisplayTitle(int intIDExplainPlanProperty) {
 		if (idExplainPlan == null) {
 			return "";
 		}
 		JsonObject row = Database.row(
-				"select node_type, join_type from explain_plan_operator_annotations\n"
+				"select node_type from explain_plan_operator_annotations\n"
 						+ "where id_explain_plan = " + idExplainPlan + "\n"
 						+ "and id_explain_plan_property = " + intIDExplainPlanProperty + "\n");
 		if (row == null) {
 			return "";
 		}
-		return formatOperatorDisplayTitle(blankIfNullish(row.getString("node_type")),
-				blankIfNullish(row.getString("join_type")));
+		return formatOperatorDisplayTitle(blankIfNullish(row.getString("node_type")));
 	}
 
-	static String formatOperatorDisplayTitle(String nodeType, String joinType) {
-		if (nodeType == null || nodeType.isEmpty()) {
-			return "";
-		}
-		if (joinType != null && !joinType.isEmpty()) {
-			return nodeType + " (" + joinType + ")";
-		}
-		return nodeType;
+	/** @return EXPLAIN {@code Node Type} text, or empty if missing. */
+	static String formatOperatorDisplayTitle(String nodeType) {
+		return nodeType == null ? "" : nodeType.trim();
 	}
 
-	/** Column header for the Property side, e.g. {@code Materialize Property}. */
-	public static String propertyColumnHeaderForOperator(String operatorDisplayTitle) {
-		if (operatorDisplayTitle == null || operatorDisplayTitle.isBlank()) {
+	/** Column header for the Property side, e.g. {@code Nested Loop Property}. */
+	public static String propertyColumnHeaderForOperator(String nodeType) {
+		String title = formatOperatorDisplayTitle(nodeType);
+		if (title.isEmpty()) {
 			return "Property";
 		}
-		return operatorDisplayTitle.trim() + " Property";
+		return title + " Property";
 	}
 
 	private static void appendCalculatedParticipant(CalculatedRowsBuilder rows, String sectionName,
