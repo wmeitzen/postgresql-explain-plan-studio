@@ -5,6 +5,7 @@ import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.event.ActionEvent;
+import java.awt.event.ItemEvent;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 import java.util.Collections;
@@ -14,6 +15,7 @@ import java.util.function.Consumer;
 import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
+import javax.swing.JCheckBox;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -24,8 +26,11 @@ import javax.swing.UIManager;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 
+import com.williammeitzen.peps.model.OperatorWarnings;
+
 /**
- * Compact Find strip for the Plan Diagram: live search, Next/Previous, occurrence count.
+ * Compact Find strip for the Plan Diagram: live search, warning filters,
+ * Next/Previous, occurrence count.
  */
 public class DiagramFindBar extends JPanel {
 
@@ -35,6 +40,11 @@ public class DiagramFindBar extends JPanel {
 	private static final Color NO_MATCH_BG = new Color(0xFF, 0xDC, 0xDC);
 
 	private final JTextField queryField = new JTextField(18);
+	private final JCheckBox timeWarnBox = new JCheckBox("Time");
+	private final JCheckBox costWarnBox = new JCheckBox("Cost");
+	private final JCheckBox rowsWarnBox = new JCheckBox("Rows");
+	private final JCheckBox filterWarnBox = new JCheckBox("Filter");
+	private final JCheckBox heapWarnBox = new JCheckBox("Heap");
 	private final JLabel occurrenceLabel = new JLabel("Occurrence 0 / 0");
 
 	private PlanGraphPanel graphPanel;
@@ -52,6 +62,22 @@ public class DiagramFindBar extends JPanel {
 		queryField.setToolTipText("Search operator labels (Ctrl+F)");
 		Utils.installCrossPlatformEditBindings(queryField);
 		add(queryField);
+
+		configureWarnBox(timeWarnBox,
+				"Require Time warning (combined with other checked filters)");
+		configureWarnBox(costWarnBox,
+				"Require Cost warning (combined with other checked filters)");
+		configureWarnBox(rowsWarnBox,
+				"Require Rows warning (combined with other checked filters)");
+		configureWarnBox(filterWarnBox,
+				"Require Filter warning (combined with other checked filters)");
+		configureWarnBox(heapWarnBox,
+				"Require Heap warning (combined with other checked filters)");
+		add(timeWarnBox);
+		add(costWarnBox);
+		add(rowsWarnBox);
+		add(filterWarnBox);
+		add(heapWarnBox);
 
 		JButton prevBtn = new JButton("Previous");
 		prevBtn.setToolTipText("Find Previous (Shift+Enter / Shift+F3)");
@@ -126,6 +152,16 @@ public class DiagramFindBar extends JPanel {
 		updateOccurrenceLabel();
 	}
 
+	private void configureWarnBox(JCheckBox box, String tip) {
+		box.setOpaque(false);
+		box.setToolTipText(tip);
+		box.addItemListener(e -> {
+			if (e.getStateChange() == ItemEvent.SELECTED || e.getStateChange() == ItemEvent.DESELECTED) {
+				searchFromField(true);
+			}
+		});
+	}
+
 	/** Re-apply LAF TextField/Label colors after View → color-scheme changes. */
 	public void syncThemeSurfaces() {
 		setOpaque(true);
@@ -136,6 +172,11 @@ public class DiagramFindBar extends JPanel {
 				if (labelFg != null) {
 					child.setForeground(UiTheme.uiColor(labelFg));
 				}
+			} else if (child instanceof JCheckBox) {
+				if (labelFg != null) {
+					child.setForeground(UiTheme.uiColor(labelFg));
+				}
+				child.setBackground(getBackground());
 			} else if (child instanceof JButton) {
 				Color btnFg = UIManager.getColor("Button.foreground");
 				if (btnFg != null) {
@@ -204,6 +245,11 @@ public class DiagramFindBar extends JPanel {
 
 	private void searchFromField(boolean selectFirst) {
 		String query = queryField.getText();
+		boolean warnTime = timeWarnBox.isSelected();
+		boolean warnCost = costWarnBox.isSelected();
+		boolean warnRows = rowsWarnBox.isSelected();
+		boolean warnFilter = filterWarnBox.isSelected();
+		boolean warnHeap = heapWarnBox.isSelected();
 		if (graphPanel == null) {
 			matches = Collections.emptyList();
 			currentIndex = -1;
@@ -212,7 +258,7 @@ public class DiagramFindBar extends JPanel {
 			return;
 		}
 		graphPanel.setFindHighlightQuery(query);
-		matches = graphPanel.findOperatorIdsMatching(query);
+		matches = graphPanel.findOperatorIdsMatching(query, warnTime, warnCost, warnRows, warnFilter, warnHeap);
 		if (matches.isEmpty()) {
 			currentIndex = -1;
 			updateOccurrenceLabel();
@@ -270,7 +316,10 @@ public class DiagramFindBar extends JPanel {
 	 */
 	private void applyQueryFieldColors() {
 		String q = queryField.getText();
-		boolean noMatch = q != null && !q.isEmpty() && matches.isEmpty();
+		boolean anyWarn = timeWarnBox.isSelected() || costWarnBox.isSelected() || rowsWarnBox.isSelected()
+				|| filterWarnBox.isSelected() || heapWarnBox.isSelected();
+		boolean searching = (q != null && !q.isEmpty()) || anyWarn;
+		boolean noMatch = searching && matches.isEmpty();
 		if (noMatch) {
 			queryField.setBackground(UiTheme.uiColor(NO_MATCH_BG));
 		} else {

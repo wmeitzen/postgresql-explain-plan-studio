@@ -634,6 +634,10 @@ public final class Database {
     		+ ", rows_removed_by_join_filter varchar(256)\n"
     		+ ", rows_removed_by_filter varchar(256)\n"
     		+ ", rows_removed_by_index_recheck varchar(256)\n"
+    		+ ", heap_fetches varchar(256)\n"
+    		+ ", warning_tags varchar(256)\n"
+    		+ ", warning_tags_fontmetrics_width int\n"
+    		+ ", warning_tags_fontmetrics_height int\n"
     		+ ", repeatable_seed varchar(256)\n"
     		+ ", sampling_method varchar(256)\n"
     		+ ", scan_direction varchar(256)\n"
@@ -1857,6 +1861,10 @@ south_1_fontmetrics_width = null;
 		ensureTableColumn("explain_plan_operator_annotations", "exclusive_local_read_blocks", "float");
 		ensureTableColumn("explain_plan_operator_annotations", "exclusive_local_dirtied_blocks", "float");
 		ensureTableColumn("explain_plan_operator_annotations", "exclusive_local_written_blocks", "float");
+		ensureTableColumn("explain_plan_operator_annotations", "heap_fetches", "varchar(256)");
+		ensureTableColumn("explain_plan_operator_annotations", "warning_tags", "varchar(256)");
+		ensureTableColumn("explain_plan_operator_annotations", "warning_tags_fontmetrics_width", "int");
+		ensureTableColumn("explain_plan_operator_annotations", "warning_tags_fontmetrics_height", "int");
 	}
 
 	private static void ensureTableColumn(String tableName, String columnName, String columnSqlType) {

@@ -12,6 +12,7 @@ import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.FontMetrics;
+import java.awt.GraphicsEnvironment;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.LinearGradientPaint;
@@ -64,6 +65,7 @@ import com.williammeitzen.peps.gui.Utils.LineThicknesses;
 import com.williammeitzen.peps.gui.Utils.PercentageBy;
 import com.williammeitzen.peps.model.Database;
 import com.williammeitzen.peps.model.ExplainTextPlanConverter;
+import com.williammeitzen.peps.model.OperatorWarnings;
 import com.williammeitzen.peps.model.Pev2Metrics;
 import com.williammeitzen.peps.model.PlanFormat;
 
@@ -581,6 +583,7 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 			if (bolShowSQL == true) { System.out.println(strSQL); }
 			Database.dml(strSQL);
 
+			Database.ensureExplainPlanOperatorAnnotationsPev2Columns();
 			strSQL = "delete from explain_plan_operator_annotations where id_explain_plan = " + idExplainPlan;
 			if (bolShowSQL == true) { System.out.println(strSQL); }
 			Database.dml(strSQL);
@@ -1097,6 +1100,7 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 					mapAnnotations.put("rows_removed_by_join_filter", operator_value_where_operator_name_is(jsnPropertyRows, "Rows Removed by Join Filter"));
 					mapAnnotations.put("rows_removed_by_filter", operator_value_where_operator_name_is(jsnPropertyRows, "Rows Removed by Filter"));
 					mapAnnotations.put("rows_removed_by_index_recheck", operator_value_where_operator_name_is(jsnPropertyRows, "Rows Removed by Index Recheck"));
+					mapAnnotations.put("heap_fetches", operator_value_where_operator_name_is(jsnPropertyRows, "Heap Fetches"));
 					mapAnnotations.put("repeatable_seed", operator_value_where_operator_name_is(jsnPropertyRows, "Repeatable Seed"));
 					mapAnnotations.put("sampling_method", operator_value_where_operator_name_is(jsnPropertyRows, "Sampling Method"));
 					mapAnnotations.put("scan_direction", operator_value_where_operator_name_is(jsnPropertyRows, "Scan Direction"));
@@ -2659,6 +2663,91 @@ from explain_plan_operator_annotations
 		if (strSQL != "") { Database.dml(strSQL); strSQL = ""; }
 
 		if (bolShowTiming == true) { System.out.println("after updateStringUnitsPercentageAnnotationsTextData (7): " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
+
+		updateOperatorWarningTags(intIDExplainPlan);
+	}
+
+	/**
+	 * Persist dashboard warning tags ({@code [time][cost]…}) after PEPS top-2
+	 * Cost/Time highlights and revised row/filter metrics are available.
+	 */
+	private void updateOperatorWarningTags(int intIDExplainPlan) {
+		Database.ensureExplainPlanOperatorAnnotationsPev2Columns();
+		FontMetrics faFm = getFontMetrics(warningTagsFontAwesomeFont());
+		int chipSide = warningChipSide(faFm);
+		JsonArray rows = Database.rows(
+				"select\n"
+						+ "  id_explain_plan_property\n"
+						+ ", cost_highlight_1\n"
+						+ ", cost_highlight_2\n"
+						+ ", exclusive_time_highlight_1\n"
+						+ ", exclusive_time_highlight_2\n"
+						+ ", actual_rows\n"
+						+ ", plan_rows\n"
+						+ ", total_actual_rows\n"
+						+ ", total_rows_removed_by_filter\n"
+						+ ", total_rows_removed_by_join_filter\n"
+						+ ", total_rows_removed_by_index_recheck\n"
+						+ ", rows_removed_by_filter\n"
+						+ ", rows_removed_by_join_filter\n"
+						+ ", heap_fetches\n"
+						+ "from explain_plan_operator_annotations\n"
+						+ "where id_explain_plan = " + intIDExplainPlan + "\n");
+		if (rows == null) {
+			return;
+		}
+		StringBuilder sql = new StringBuilder();
+		for (int i = 0; i < rows.size(); i++) {
+			JsonObject row = (JsonObject) rows.get(i);
+			Integer id = row.getInteger("id_explain_plan_property");
+			if (id == null) {
+				continue;
+			}
+			// Root (-1) never shows warning chips, but still reserves the band
+			// so connectors to it stay level with other operators.
+			String tags = "";
+			if (id.intValue() != -1) {
+				boolean time = OperatorWarnings.warnTime(
+						isHighlightFlag(row.get("exclusive_time_highlight_1")),
+						isHighlightFlag(row.get("exclusive_time_highlight_2")));
+				boolean cost = OperatorWarnings.warnCost(
+						isHighlightFlag(row.get("cost_highlight_1")),
+						isHighlightFlag(row.get("cost_highlight_2")));
+				boolean rowsWarn = OperatorWarnings.warnRows(
+						toDouble(row.get("actual_rows")), toDouble(row.get("plan_rows")));
+				Double removed = OperatorWarnings.primaryRemovedRevised(
+						toDouble(row.get("total_rows_removed_by_filter")),
+						toDouble(row.get("total_rows_removed_by_join_filter")),
+						toDouble(row.get("total_rows_removed_by_index_recheck")));
+				boolean filter = OperatorWarnings.warnFilter(removed, toDouble(row.get("total_actual_rows")));
+				boolean heap = OperatorWarnings.warnHeap(
+						toDouble(row.get("heap_fetches")),
+						toDouble(row.get("actual_rows")),
+						toDouble(row.get("rows_removed_by_filter")),
+						toDouble(row.get("rows_removed_by_join_filter")));
+				tags = OperatorWarnings.formatTags(time, cost, rowsWarn, filter, heap);
+			}
+			// Always reserve chip-band height so operators without warnings stay
+			// vertically aligned (avoids angled connectors in a shared row).
+			int reservedHeight = Math.max(chipSide, tags.isEmpty() ? 0 : measureWarningTagsHeight(tags));
+			if (tags.isEmpty()) {
+				sql.append("update explain_plan_operator_annotations set warning_tags = null")
+						.append(", warning_tags_fontmetrics_width = 0")
+						.append(", warning_tags_fontmetrics_height = ").append(reservedHeight)
+						.append(" where id_explain_plan = ").append(intIDExplainPlan)
+						.append(" and id_explain_plan_property = ").append(id).append(";\n");
+			} else {
+				sql.append("update explain_plan_operator_annotations set warning_tags = '")
+						.append(tags.replace("'", "''")).append("'")
+						.append(", warning_tags_fontmetrics_width = ").append(measureWarningTagsWidth(tags))
+						.append(", warning_tags_fontmetrics_height = ").append(reservedHeight)
+						.append(" where id_explain_plan = ").append(intIDExplainPlan)
+						.append(" and id_explain_plan_property = ").append(id).append(";\n");
+			}
+		}
+		if (sql.length() > 0) {
+			Database.dml(sql.toString());
+		}
 	}
 
 	public void updateButtonsToEnable(int intIDExplainPlan) {
@@ -4976,7 +5065,9 @@ select id_explain_plan_property, x_cart, y_cart, box_height from explain_plan_op
 		// to the bottom edge (probably the bottom side of south_4 text)
 		strSQL = "update explain_plan_operator_annotations set\n" + 
 				"operator_height = \n" + 
-				"    north_1_fontmetrics_height\n" + 
+				"    coalesce(warning_tags_fontmetrics_height, 0)\n" +
+				"    + 3\n" + // gap under reserved warning-chip band (also when tags empty)
+				"    + north_1_fontmetrics_height\n" + 
 				"    + (select outside_box_top_margin from config)\n" +
 				"    + box_height\n" +
 				"    + south_2_fontmetrics_height\n" + 
@@ -5077,7 +5168,10 @@ select id_explain_plan_property, x_cart, y_cart, row_height, previous_y_rect, y_
 
 		// set top and bottom side of each operator box 
 		strSQL = "update explain_plan_operator_annotations set\n" +
-			"box_top = row_boundary_top + north_1_fontmetrics_height\n" +
+			"box_top = row_boundary_top\n" +
+			"  + coalesce(warning_tags_fontmetrics_height, 0)\n" +
+			"  + 3\n" + // same reserved gap as operator_height when tags are empty
+			"  + north_1_fontmetrics_height\n" +
 			"where id_explain_plan = " + intIDExplainPlan + ";\n" + 
 			"update explain_plan_operator_annotations set\n" +
 			"box_bottom = box_top + box_height\n" +
@@ -5437,6 +5531,122 @@ order by id_explain_plan_property;
 		return labelFont.deriveFont(OPERATOR_FONT_STYLE, (float) withZoom(Math.max(labelFont.getSize(), OPERATOR_FONT_SIZE)));
 	}
 
+	/** Loaded once from {@code /fonts/fa-solid-900.ttf} (Font Awesome Free). */
+	private static Font fontAwesomeSolidBase;
+
+	private int warningTagsFontSize() {
+		return Math.max(withZoom(Math.max(OPERATOR_FONT_SIZE, 12)), operatorLabelFont().getSize() + 1);
+	}
+
+	/** Font Awesome Free Solid for warning glyphs ({@code fa-clock}, {@code fa-filter}, …). */
+	private Font warningTagsFontAwesomeFont() {
+		int size = warningTagsFontSize();
+		if (fontAwesomeSolidBase == null) {
+			synchronized (PlanGraphPanel.class) {
+				if (fontAwesomeSolidBase == null) {
+					try (java.io.InputStream in = PlanGraphPanel.class
+							.getResourceAsStream("/fonts/fa-solid-900.ttf")) {
+						if (in != null) {
+							Font created = Font.createFont(Font.TRUETYPE_FONT, in);
+							GraphicsEnvironment.getLocalGraphicsEnvironment().registerFont(created);
+							fontAwesomeSolidBase = created;
+						}
+					} catch (Exception e) {
+						System.err.println("Unable to load Font Awesome solid font: " + e.getMessage());
+					}
+					if (fontAwesomeSolidBase == null) {
+						fontAwesomeSolidBase = operatorLabelFont();
+					}
+				}
+			}
+		}
+		return fontAwesomeSolidBase.deriveFont(Font.PLAIN, (float) size);
+	}
+
+	private Font fontForWarningTag(String tag) {
+		if (OperatorWarnings.TAG_COST.equals(tag)) {
+			return operatorLabelFont().deriveFont(Font.BOLD, (float) warningTagsFontSize());
+		}
+		return warningTagsFontAwesomeFont();
+	}
+
+	/** Uniform square chip side so Time is not wider than Rows/Filter. */
+	private int warningChipSide(FontMetrics fm) {
+		int padY = warningChipPadY();
+		return Math.max(fm.getAscent(), fm.stringWidth("W")) + padY * 2;
+	}
+
+	private int warningChipPadX() {
+		return Math.max(3, withZoom(3));
+	}
+
+	private int warningChipPadY() {
+		return Math.max(2, withZoom(2));
+	}
+
+	private int warningChipGap() {
+		return Math.max(3, withZoom(3));
+	}
+
+	/** Solid chip behind each warning glyph so outline/emoji symbols read clearly. */
+	private static Color warningChipBackground(String tag) {
+		if (OperatorWarnings.TAG_TIME.equals(tag)) {
+			return new Color(0x0E, 0xA5, 0xE9); // sky
+		}
+		if (OperatorWarnings.TAG_COST.equals(tag)) {
+			return new Color(0xF5, 0x9E, 0x0B); // amber
+		}
+		if (OperatorWarnings.TAG_ROWS.equals(tag)) {
+			return new Color(0xF4, 0x3F, 0x5E); // rose
+		}
+		if (OperatorWarnings.TAG_FILTER.equals(tag)) {
+			return new Color(0x22, 0xC5, 0x5E); // green
+		}
+		if (OperatorWarnings.TAG_HEAP.equals(tag)) {
+			return new Color(0xA8, 0x55, 0xF7); // purple
+		}
+		return new Color(0x64, 0x74, 0x8B);
+	}
+
+	private static Color warningChipForeground(String tag) {
+		// Near-black on bright chips — keeps $ / fa-filter looking solid, not hollow.
+		return new Color(0x0B, 0x12, 0x20);
+	}
+
+	private int measureWarningTagsWidth(String warningTags) {
+		if (warningTags == null || warningTags.isEmpty()) {
+			return 0;
+		}
+		int gap = warningChipGap();
+		int count = 0;
+		int side = 0;
+		for (String part : warningTags.trim().split("\\s+")) {
+			if (part.isEmpty()) {
+				continue;
+			}
+			side = Math.max(side, warningChipSide(getFontMetrics(fontForWarningTag(part))));
+			count++;
+		}
+		if (count == 0) {
+			return 0;
+		}
+		return count * side + (count - 1) * gap;
+	}
+
+	private int measureWarningTagsHeight(String warningTags) {
+		if (warningTags == null || warningTags.isEmpty()) {
+			return 0;
+		}
+		int max = 0;
+		for (String part : warningTags.trim().split("\\s+")) {
+			if (part.isEmpty()) {
+				continue;
+			}
+			max = Math.max(max, warningChipSide(getFontMetrics(fontForWarningTag(part))));
+		}
+		return max;
+	}
+
 	/** North/south operator labels: blue in light themes, soft white in dark. */
 	private Color operatorLabelColor() {
 		return UiTheme.isDark() ? OPERATOR_FONT_FOREGROUND_COLOR_DARK : OPERATOR_FONT_FOREGROUND_COLOR;
@@ -5448,6 +5658,53 @@ order by id_explain_plan_property;
 
 	private Color workerTextColor() {
 		return UiTheme.isDark() ? OPERATOR_FONT_FOREGROUND_COLOR_DARK : WORKER_TEXT_FONT_COLOR;
+	}
+
+	/**
+	 * Dashboard warning glyphs on equal square chips, parked just above north Cost/Time text.
+	 */
+	public void drawWarningTags(Graphics2D g, int x_center, int north_y_baseline,
+			int north_1_fontmetrics_height, int outside_box_top_margin, String warning_tags,
+			int warning_tags_fontmetrics_width, int warning_tags_fontmetrics_height) {
+		if (warning_tags == null || warning_tags.trim().isEmpty()) {
+			return;
+		}
+		int gap = warningChipGap();
+		int textWidth = Math.max(measureWarningTagsWidth(warning_tags), warning_tags_fontmetrics_width);
+		int northBaseline = GRAPH_TOP_MARGIN + north_y_baseline - withZoom(outside_box_top_margin);
+		// Sit just above the north label using live label ascent (same as selection bounds).
+		// Do not stack another north_1_fontmetrics_height subtract — that blew chips upward when zoomed.
+		FontMetrics northFm = getFontMetrics(operatorLabelFont());
+		int northTop = northBaseline - Math.max(1, northFm.getAscent());
+		int chipBottom = northTop - gap;
+		int textX = GRAPH_LEFT_MARGIN + x_center - (textWidth / 2);
+		String[] parts = warning_tags.trim().split("\\s+");
+		int x = textX;
+		float arc = Math.max(4f, withZoom(4));
+		for (int i = 0; i < parts.length; i++) {
+			String part = parts[i];
+			if (part.isEmpty()) {
+				continue;
+			}
+			if (i > 0) {
+				x += gap;
+			}
+			Font font = fontForWarningTag(part);
+			g.setFont(font);
+			FontMetrics fm = g.getFontMetrics(font);
+			int side = warningChipSide(fm);
+			int glyphW = fm.stringWidth(part);
+			int ascent = fm.getAscent();
+			int chipY = chipBottom - side;
+			int glyphX = x + Math.max(0, (side - glyphW) / 2);
+			int glyphBaseline = chipY + (side + ascent) / 2;
+			Paint priorPaint = g.getPaint();
+			g.setPaint(warningChipBackground(part));
+			g.fill(new RoundRectangle2D.Float(x, chipY, side, side, arc, arc));
+			g.setPaint(priorPaint);
+			drawStringWithFindHighlights(g, part, glyphX, glyphBaseline, warningChipForeground(part));
+			x += side;
+		}
 	}
 
 	public void drawNorthText(Graphics2D g, int x_center, int y_baseline, String north_1_text
@@ -6027,6 +6284,9 @@ order by id_explain_plan_property;
 		strSQL += ", north_1_fontmetrics_height\n";
 		strSQL += ", north_1_highlight_1\n";
 		strSQL += ", north_1_highlight_2\n";
+		strSQL += ", warning_tags\n";
+		strSQL += ", coalesce(warning_tags_fontmetrics_width, 0) as warning_tags_fontmetrics_width\n";
+		strSQL += ", coalesce(warning_tags_fontmetrics_height, 0) as warning_tags_fontmetrics_height\n";
 		strSQL += ", (select outside_box_top_margin from config) as outside_box_top_margin\n";
 		strSQL += ", box_bottom as south_y_baseline\n";
 		strSQL += ", south_1_text\n";
@@ -6059,6 +6319,11 @@ order by id_explain_plan_property;
 				int north_1_fontmetrics_height = jsnRow.getInteger("north_1_fontmetrics_height");
 				boolean north_1_highlight_1 = (jsnRow.getInteger("north_1_highlight_1") == 1);
 				boolean north_1_highlight_2 = (jsnRow.getInteger("north_1_highlight_2") == 1);
+				String warning_tags = jsnRow.getString("warning_tags");
+				int warning_tags_fontmetrics_width = jsnRow.getInteger("warning_tags_fontmetrics_width") == null
+						? 0 : jsnRow.getInteger("warning_tags_fontmetrics_width");
+				int warning_tags_fontmetrics_height = jsnRow.getInteger("warning_tags_fontmetrics_height") == null
+						? 0 : jsnRow.getInteger("warning_tags_fontmetrics_height");
 				int outside_box_top_margin = jsnRow.getInteger("outside_box_top_margin");
 				int south_y_baseline = jsnRow.getInteger("south_y_baseline");
 				String south_1_text = jsnRow.getString("south_1_text");
@@ -6079,6 +6344,11 @@ order by id_explain_plan_property;
 				boolean neverExecuted = isNeverExecutedOperator(id_explain_plan_property);
 				Composite priorMute = beginNeverExecutedMute(g, neverExecuted);
 				try {
+					if (!neverExecuted) {
+						drawWarningTags(g, x_center, north_y_baseline, north_1_fontmetrics_height,
+								outside_box_top_margin, warning_tags, warning_tags_fontmetrics_width,
+								warning_tags_fontmetrics_height);
+					}
 					drawNorthText(g, x_center, north_y_baseline, north_1_text, north_1_fontmetrics_width
 							, north_1_fontmetrics_height, outside_box_top_margin
 							, neverExecuted ? false : north_1_highlight_1
@@ -6513,6 +6783,9 @@ order by id_explain_plan_property;
 	private String operatorContentBoundsSql(Integer operatorId) {
 		String strSQL = "select id_explain_plan_property, box_left, box_right, box_top, box_bottom\n"
 				+ ", north_1_text\n"
+				+ ", warning_tags\n"
+				+ ", coalesce(warning_tags_fontmetrics_width, 0) as warning_tags_fontmetrics_width\n"
+				+ ", coalesce(warning_tags_fontmetrics_height, 0) as warning_tags_fontmetrics_height\n"
 				+ ", south_1_text, south_2_text, south_3_text, south_4_text, south_5_text\n"
 				+ ", arrow_text\n"
 				+ ", coalesce(arrow_text_fontmetrics_width, 0) as arrow_text_fontmetrics_width\n"
@@ -6845,14 +7118,33 @@ order by id_explain_plan_property;
 		int xCenter = GRAPH_LEFT_MARGIN + boxLeft + (boxRight - boxLeft) / 2;
 
 		String northText = row.getString("north_1_text");
+		int northBaseline = GRAPH_TOP_MARGIN + boxTop - withZoom(outsideTop);
+		int northAscent = Math.max(1, labelFm.getAscent());
+		int northTop = northBaseline - northAscent;
 		if (northText != null && !northText.isEmpty()) {
 			int northW = Math.max(labelFm.stringWidth(northText), 1);
-			int northTop = GRAPH_TOP_MARGIN + boxTop - withZoom(outsideTop) - labelFm.getAscent();
-			int northBottom = GRAPH_TOP_MARGIN + boxTop - withZoom(outsideTop) + labelFm.getDescent();
+			int northBottom = northBaseline + labelFm.getDescent();
 			left = Math.min(left, xCenter - northW / 2 - highlightPad);
 			right = Math.max(right, xCenter + (northW + 1) / 2 + highlightPad);
 			top = Math.min(top, northTop);
 			bottom = Math.max(bottom, northBottom);
+		}
+
+		// Include warning chips in selection / hit real estate (same geometry as drawWarningTags).
+		String warningTags = row.getString("warning_tags");
+		if (warningTags != null && !warningTags.trim().isEmpty()) {
+			int warnW = Math.max(measureWarningTagsWidth(warningTags),
+					row.getInteger("warning_tags_fontmetrics_width") == null ? 0
+							: row.getInteger("warning_tags_fontmetrics_width"));
+			int warnH = Math.max(measureWarningTagsHeight(warningTags),
+					row.getInteger("warning_tags_fontmetrics_height") == null ? 0
+							: row.getInteger("warning_tags_fontmetrics_height"));
+			int gap = warningChipGap();
+			int warnBottom = northTop - gap;
+			int warnTop = warnBottom - Math.max(1, warnH);
+			left = Math.min(left, xCenter - warnW / 2);
+			right = Math.max(right, xCenter + (warnW + 1) / 2);
+			top = Math.min(top, warnTop);
 		}
 
 		// Mirror drawSouthText: south_1 is pre-bumped; each present line advances by its ascent.
@@ -7141,10 +7433,20 @@ order by id_explain_plan_property;
 				+ ", ancestor_workers_launched\n"
 				+ ", exact_actual_worker_count\n"
 				+ ", difference_time_ms\n"
+				+ ", actual_rows\n"
+				+ ", plan_rows\n"
 				+ ", total_actual_rows\n"
 				+ ", total_estimated_rows\n"
 				+ ", actual_data_size_bytes\n"
 				+ ", estimated_data_size_bytes\n"
+				+ ", cost_highlight_1\n"
+				+ ", cost_highlight_2\n"
+				+ ", cost_percentage_string\n"
+				+ ", exclusive_time_highlight_1\n"
+				+ ", exclusive_time_highlight_2\n"
+				+ ", exclusive_time_percentage_string\n"
+				+ ", heap_fetches\n"
+				+ ", warning_tags\n"
 				+ ", parallel_leader_difference_time_highlight\n"
 				+ ", parallel_leader_actual_rows_highlight\n"
 				+ ", parallel_leader_actual_data_size_highlight\n"
@@ -7180,23 +7482,56 @@ order by id_explain_plan_property;
 				"total_rows_removed_by_index_recheck_is_exact");
 
 		StringBuilder redTextNotes = new StringBuilder();
-		appendExcessiveEstimateMismatchNotes(redTextNotes, row);
+		appendDashboardWarningNotes(redTextNotes, row);
 		appendParallelParticipantExpectationNotes(redTextNotes, row, intIDExplainPlanProperty);
 		return new OperatorNotes(notes.toString().trim(), redTextNotes.toString().trim());
 	}
 
 	/**
-	 * When actual:estimated exceeds 100:1 (PEV2 stronger estimate class), note it
-	 * for Red Text Notes so the Properties pane matches Calculated Properties
-	 * hotspot styling.
+	 * Red Text Notes for dashboard warnings (diagram tags above north text).
 	 */
-	private static void appendExcessiveEstimateMismatchNotes(StringBuilder notes, JsonObject row) {
+	private static void appendDashboardWarningNotes(StringBuilder notes, JsonObject row) {
+		StringBuilder block = new StringBuilder();
+		boolean time = OperatorWarnings.warnTime(
+				isHighlightFlag(row.get("exclusive_time_highlight_1")),
+				isHighlightFlag(row.get("exclusive_time_highlight_2")));
+		boolean cost = OperatorWarnings.warnCost(
+				isHighlightFlag(row.get("cost_highlight_1")),
+				isHighlightFlag(row.get("cost_highlight_2")));
+		if (time) {
+			String pct = blankIfNullish(row.getString("exclusive_time_percentage_string"));
+			block.append("Operator time is among the highest shares in this plan");
+			if (!pct.isEmpty()) {
+				block.append(" (").append(pct).append("%)");
+			}
+			block.append(".\n");
+		}
+		if (cost) {
+			String pct = blankIfNullish(row.getString("cost_percentage_string"));
+			block.append("Cost is among the highest shares in this plan");
+			if (!pct.isEmpty()) {
+				block.append(" (").append(pct).append("%)");
+			}
+			block.append(".\n");
+		}
+
 		Double actualRows = toDouble(row.get("total_actual_rows"));
 		Double estimatedRows = toDouble(row.get("total_estimated_rows"));
 		Double actualMass = toDouble(row.get("actual_data_size_bytes"));
 		Double estimatedMass = toDouble(row.get("estimated_data_size_bytes"));
-
-		StringBuilder block = new StringBuilder();
+		boolean rowsWarn = OperatorWarnings.warnRows(
+				toDouble(row.get("actual_rows")), toDouble(row.get("plan_rows")));
+		if (rowsWarn) {
+			Double factor = Pev2Metrics.plannerEstimateFactor(
+					toDouble(row.get("actual_rows")), toDouble(row.get("plan_rows")));
+			block.append("Actual vs estimated rows factor is high");
+			if (factor != null && !factor.isInfinite()) {
+				block.append(" (").append(String.format(java.util.Locale.US, "%.0f", factor))
+						.append("×; threshold ")
+						.append((int) OperatorWarnings.ROWS_WARNING_FACTOR).append("×)");
+			}
+			block.append(".\n");
+		}
 		if (Pev2Metrics.isExcessiveEstimateMismatch(actualRows, estimatedRows)) {
 			String ratio = formatCalculatedRatio(actualRows.doubleValue(), estimatedRows.doubleValue());
 			block.append("Actual vs estimated rows ratio is excessive (")
@@ -7213,6 +7548,44 @@ order by id_explain_plan_property;
 					.append((int) Pev2Metrics.EXCESSIVE_ESTIMATE_MISMATCH_FACTOR)
 					.append(":1).\n");
 		}
+
+		Double removed = OperatorWarnings.primaryRemovedRevised(
+				toDouble(row.get("total_rows_removed_by_filter")),
+				toDouble(row.get("total_rows_removed_by_join_filter")),
+				toDouble(row.get("total_rows_removed_by_index_recheck")));
+		Double filterPct = OperatorWarnings.filterRemovedPercent(removed, actualRows);
+		if (OperatorWarnings.warnFilter(removed, actualRows)) {
+			block.append("Filter removes a high share of rows (")
+					.append(filterPct == null ? ">" + (int) OperatorWarnings.FILTER_WARNING_PERCENT
+							: String.format(java.util.Locale.US, "%.0f", filterPct))
+					.append("%; threshold ")
+					.append((int) OperatorWarnings.FILTER_WARNING_PERCENT)
+					.append("%).\n");
+		}
+
+		Double heapFetches = toDouble(row.get("heap_fetches"));
+		Double heapPct = OperatorWarnings.heapFetchPercent(
+				heapFetches,
+				toDouble(row.get("actual_rows")),
+				toDouble(row.get("rows_removed_by_filter")),
+				toDouble(row.get("rows_removed_by_join_filter")));
+		if (OperatorWarnings.warnHeap(heapFetches, toDouble(row.get("actual_rows")),
+				toDouble(row.get("rows_removed_by_filter")),
+				toDouble(row.get("rows_removed_by_join_filter")))) {
+			if (heapFetches != null) {
+				block.append(String.format(java.util.Locale.US, "%.0f", heapFetches.doubleValue()))
+						.append(" heap fetches");
+			} else {
+				block.append("Heap fetches");
+			}
+			if (heapPct != null && !heapPct.isInfinite()) {
+				block.append(" (")
+						.append(String.format(java.util.Locale.US, "%.0f", heapPct.doubleValue()))
+						.append("% of rows examined)");
+			}
+			block.append("; visibility map may be stale — VACUUM often helps.\n");
+		}
+
 		if (block.length() == 0) {
 			return;
 		}
@@ -7833,10 +8206,23 @@ order by id_explain_plan_property;
 				+ ", EPOA.exclusive_cost\n"
 				+ ", EPOA.exclusive_time_ms\n"
 				+ ", EPOA.difference_time_ms\n"
+				+ ", EPOA.actual_rows\n"
+				+ ", EPOA.plan_rows\n"
 				+ ", EPOA.total_actual_rows\n"
 				+ ", EPOA.total_estimated_rows\n"
 				+ ", EPOA.actual_data_size_bytes\n"
 				+ ", EPOA.estimated_data_size_bytes\n"
+				+ ", EPOA.cost_highlight_1\n"
+				+ ", EPOA.cost_highlight_2\n"
+				+ ", EPOA.exclusive_time_highlight_1\n"
+				+ ", EPOA.exclusive_time_highlight_2\n"
+				+ ", EPOA.heap_fetches\n"
+				+ ", EPOA.rows_removed_by_filter\n"
+				+ ", EPOA.rows_removed_by_join_filter\n"
+				+ ", EPOA.total_rows_removed_by_filter\n"
+				+ ", EPOA.total_rows_removed_by_join_filter\n"
+				+ ", EPOA.total_rows_removed_by_index_recheck\n"
+				+ ", EPOA.warning_tags\n"
 				+ ", EPOA.parallel_leader_exclusive_time_ms\n"
 				+ ", EPOA.parallel_leader_difference_time_ms\n"
 				+ ", EPOA.parallel_leader_actual_rows\n"
@@ -7863,6 +8249,32 @@ order by id_explain_plan_property;
 		Double actualDataSizeBytes = toDouble(row.get("actual_data_size_bytes"));
 		Double estimatedDataSizeBytes = toDouble(row.get("estimated_data_size_bytes"));
 		Double executionTimeMs = toDouble(row.get("execution_time_ms"));
+		boolean costWarn = OperatorWarnings.warnCost(
+				isHighlightFlag(row.get("cost_highlight_1")),
+				isHighlightFlag(row.get("cost_highlight_2")));
+		boolean timeWarn = OperatorWarnings.warnTime(
+				isHighlightFlag(row.get("exclusive_time_highlight_1")),
+				isHighlightFlag(row.get("exclusive_time_highlight_2")));
+		boolean rowsWarn = OperatorWarnings.warnRows(
+				toDouble(row.get("actual_rows")), toDouble(row.get("plan_rows")));
+		Double removedRevised = OperatorWarnings.primaryRemovedRevised(
+				toDouble(row.get("total_rows_removed_by_filter")),
+				toDouble(row.get("total_rows_removed_by_join_filter")),
+				toDouble(row.get("total_rows_removed_by_index_recheck")));
+		boolean filterWarn = OperatorWarnings.warnFilter(removedRevised, totalActualRows);
+		Double heapFetches = toDouble(row.get("heap_fetches"));
+		Double heapPct = OperatorWarnings.heapFetchPercent(
+				heapFetches,
+				toDouble(row.get("actual_rows")),
+				toDouble(row.get("rows_removed_by_filter")),
+				toDouble(row.get("rows_removed_by_join_filter")));
+		boolean heapWarn = OperatorWarnings.warnHeap(
+				heapFetches,
+				toDouble(row.get("actual_rows")),
+				toDouble(row.get("rows_removed_by_filter")),
+				toDouble(row.get("rows_removed_by_join_filter")));
+		String warningWords = OperatorWarnings.formatWarningWords(
+				timeWarn, costWarn, rowsWarn, filterWarn, heapWarn);
 		// Match diagram north Cost % (PEV2): exclusive_cost / max(total_cost), not
 		// inclusive total_cost / sum(all totals).
 		Double costPercent = Pev2Metrics.costPercentOfPlan(
@@ -7871,25 +8283,38 @@ order by id_explain_plan_property;
 				toDouble(row.get("max_total_cost")));
 
 		CalculatedRowsBuilder rows = new CalculatedRowsBuilder();
-		appendCalculatedPercentOfHundred(rows, "Cost %", costPercent, false);
-		appendCalculatedElapsed(rows, "Operator time", exclusiveTimeMs, false);
-		appendCalculatedPercent(rows, "Operator time %", exclusiveTimeMs, executionTimeMs, false);
+		if (!warningWords.isEmpty()) {
+			rows.add("Warnings", warningWords, true);
+		}
+		appendCalculatedPercentOfHundred(rows, "Cost %", costPercent, costWarn);
+		appendCalculatedElapsed(rows, "Operator time", exclusiveTimeMs, timeWarn);
+		appendCalculatedPercent(rows, "Operator time %", exclusiveTimeMs, executionTimeMs, timeWarn);
 		appendCalculatedElapsed(rows, "Time difference", differenceTimeMs, false);
 		appendCalculatedPercent(rows, "Time difference %", differenceTimeMs, executionTimeMs, false);
 		// Absolute values shown on the diagram (Line Thickness modes); ratios alone
 		// left mass/rows looking "missing" from Calculated Properties.
 		boolean rowsEstimateExcessive = Pev2Metrics.isExcessiveEstimateMismatch(
-				totalActualRows, totalEstimatedRows);
+				totalActualRows, totalEstimatedRows) || rowsWarn;
 		boolean massEstimateExcessive = Pev2Metrics.isExcessiveEstimateMismatch(
 				actualDataSizeBytes, estimatedDataSizeBytes);
 		appendCalculatedRows(rows, "Actual rows", totalActualRows, rowsEstimateExcessive);
 		appendCalculatedRows(rows, "Estimated rows", totalEstimatedRows, rowsEstimateExcessive);
 		appendCalculatedRatio(rows, "Actual vs estimated rows ratio",
 				totalActualRows, totalEstimatedRows, rowsEstimateExcessive);
+		Double filterPct = OperatorWarnings.filterRemovedPercent(removedRevised, totalActualRows);
+		if (filterPct != null) {
+			appendCalculatedPercentOfHundred(rows, "Rows removed by filter %", filterPct, filterWarn);
+		}
 		appendCalculatedBytes(rows, "Actual mass", actualDataSizeBytes, massEstimateExcessive);
 		appendCalculatedBytes(rows, "Estimated mass", estimatedDataSizeBytes, massEstimateExcessive);
 		appendCalculatedRatio(rows, "Actual vs estimated mass ratio",
 				actualDataSizeBytes, estimatedDataSizeBytes, massEstimateExcessive);
+		if (heapFetches != null) {
+			appendCalculatedRows(rows, "Heap fetches", heapFetches, heapWarn);
+			if (heapPct != null && !heapPct.isInfinite()) {
+				appendCalculatedPercentOfHundred(rows, "Heap fetch %", heapPct, heapWarn);
+			}
+		}
 
 		appendCalculatedParticipant(rows, calculatedParticipantLabel(nodeType, "parallel leader"),
 				toDouble(row.get("parallel_leader_exclusive_time_ms")), exclusiveTimeMs, false,
@@ -8659,31 +9084,78 @@ order by id_explain_plan_property;
 	 * Empty query → empty list. Stable order: x_cart, y_cart, id.
 	 */
 	public List<Integer> findOperatorIdsMatching(String query) {
+		return findOperatorIdsMatching(query, false, false, false, false, false);
+	}
+
+	/**
+	 * Text Find plus optional dashboard-warning filters. Selected warning
+	 * checkboxes are combined with AND (operator must have every selected tag).
+	 * A non-empty query further restricts by label text.
+	 */
+	public List<Integer> findOperatorIdsMatching(String query, boolean warnTime, boolean warnCost,
+			boolean warnRows, boolean warnFilter, boolean warnHeap) {
 		List<Integer> ids = new ArrayList<>();
-		if (idExplainPlan == null || query == null) {
+		if (idExplainPlan == null) {
 			return ids;
 		}
-		String trimmed = query.trim();
-		if (trimmed.isEmpty()) {
+		String trimmed = query == null ? "" : query.trim();
+		boolean anyWarn = warnTime || warnCost || warnRows || warnFilter || warnHeap;
+		if (trimmed.isEmpty() && !anyWarn) {
 			return ids;
 		}
-		String likeLiteral = ("%" + escapeLikePattern(trimmed) + "%").replace("'", "''");
-		String sql = "select id_explain_plan_property\n"
-				+ "from explain_plan_operator_annotations\n"
-				+ "where id_explain_plan = " + idExplainPlan + "\n"
-				+ "and (\n"
-				+ "  lower(coalesce(north_1_text, '')) like lower('" + likeLiteral + "') escape '\\'\n"
-				+ "  or lower(coalesce(south_1_text, '')) like lower('" + likeLiteral + "') escape '\\'\n"
-				+ "  or lower(coalesce(south_2_text, '')) like lower('" + likeLiteral + "') escape '\\'\n"
-				+ "  or lower(coalesce(south_3_text, '')) like lower('" + likeLiteral + "') escape '\\'\n"
-				+ "  or lower(coalesce(south_4_text, '')) like lower('" + likeLiteral + "') escape '\\'\n"
-				+ "  or lower(coalesce(south_5_text, '')) like lower('" + likeLiteral + "') escape '\\'\n"
-				+ "  or lower(coalesce(arrow_text, '')) like lower('" + likeLiteral + "') escape '\\'\n"
-				+ "  or lower(coalesce(node_type, '')) like lower('" + likeLiteral + "') escape '\\'\n"
-				+ "  or lower(coalesce(relation_name, '')) like lower('" + likeLiteral + "') escape '\\'\n"
-				+ ")\n"
-				+ "order by x_cart, y_cart, id_explain_plan_property;\n";
-		JsonArray rows = Database.rows(sql);
+		StringBuilder sql = new StringBuilder();
+		sql.append("select id_explain_plan_property\n")
+				.append("from explain_plan_operator_annotations\n")
+				.append("where id_explain_plan = ").append(idExplainPlan).append("\n");
+		if (anyWarn) {
+			if (warnTime) {
+				sql.append("and instr(coalesce(warning_tags, ''), '")
+						.append(OperatorWarnings.TAG_TIME).append("') > 0\n");
+			}
+			if (warnCost) {
+				sql.append("and instr(coalesce(warning_tags, ''), '")
+						.append(OperatorWarnings.TAG_COST).append("') > 0\n");
+			}
+			if (warnRows) {
+				sql.append("and instr(coalesce(warning_tags, ''), '")
+						.append(OperatorWarnings.TAG_ROWS).append("') > 0\n");
+			}
+			if (warnFilter) {
+				sql.append("and instr(coalesce(warning_tags, ''), '")
+						.append(OperatorWarnings.TAG_FILTER).append("') > 0\n");
+			}
+			if (warnHeap) {
+				sql.append("and instr(coalesce(warning_tags, ''), '")
+						.append(OperatorWarnings.TAG_HEAP).append("') > 0\n");
+			}
+		}
+		if (!trimmed.isEmpty()) {
+			String likeLiteral = ("%" + escapeLikePattern(trimmed) + "%").replace("'", "''");
+			sql.append("and (\n")
+					.append("  lower(coalesce(north_1_text, '')) like lower('").append(likeLiteral)
+					.append("') escape '\\'\n")
+					.append("  or lower(coalesce(south_1_text, '')) like lower('").append(likeLiteral)
+					.append("') escape '\\'\n")
+					.append("  or lower(coalesce(south_2_text, '')) like lower('").append(likeLiteral)
+					.append("') escape '\\'\n")
+					.append("  or lower(coalesce(south_3_text, '')) like lower('").append(likeLiteral)
+					.append("') escape '\\'\n")
+					.append("  or lower(coalesce(south_4_text, '')) like lower('").append(likeLiteral)
+					.append("') escape '\\'\n")
+					.append("  or lower(coalesce(south_5_text, '')) like lower('").append(likeLiteral)
+					.append("') escape '\\'\n")
+					.append("  or lower(coalesce(arrow_text, '')) like lower('").append(likeLiteral)
+					.append("') escape '\\'\n")
+					.append("  or lower(coalesce(node_type, '')) like lower('").append(likeLiteral)
+					.append("') escape '\\'\n")
+					.append("  or lower(coalesce(relation_name, '')) like lower('").append(likeLiteral)
+					.append("') escape '\\'\n")
+					.append("  or lower(coalesce(warning_tags, '')) like lower('").append(likeLiteral)
+					.append("') escape '\\'\n")
+					.append(")\n");
+		}
+		sql.append("order by x_cart, y_cart, id_explain_plan_property;\n");
+		JsonArray rows = Database.rows(sql.toString());
 		if (rows == null) {
 			return ids;
 		}
