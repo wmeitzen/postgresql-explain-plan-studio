@@ -94,12 +94,22 @@ class OperatorWarningsTest {
 	void tooltipFor_matchesDashboardHoverCopy() {
 		assertEquals("Opr time % is among highest", OperatorWarnings.tooltipFor(OperatorWarnings.TAG_TIME));
 		assertEquals("Cost % is among highest", OperatorWarnings.tooltipFor(OperatorWarnings.TAG_COST));
-		assertEquals("Actual vs. Estimate ratio is excessive",
+		assertEquals("Actual vs. Estimated ratio is excessive",
 				OperatorWarnings.tooltipFor(OperatorWarnings.TAG_ROWS));
 		assertEquals("Filter removes high % of rows",
 				OperatorWarnings.tooltipFor(OperatorWarnings.TAG_FILTER));
 		assertEquals("Heap fetch % is high, consider VACUUM",
 				OperatorWarnings.tooltipFor(OperatorWarnings.TAG_HEAP));
+		assertEquals("Opr time 23%",
+				OperatorWarnings.tooltipFor(OperatorWarnings.TAG_TIME, "23", null, null, null, null));
+		assertEquals("Cost 45%",
+				OperatorWarnings.tooltipFor(OperatorWarnings.TAG_COST, null, "45", null, null, null));
+		assertEquals("Actual vs. Estimated ratio 156:1",
+				OperatorWarnings.tooltipFor(OperatorWarnings.TAG_ROWS, null, null, "156:1", null, null));
+		assertEquals("Filter removes 90% of rows",
+				OperatorWarnings.tooltipFor(OperatorWarnings.TAG_FILTER, null, null, null, "90", null));
+		assertEquals("Heap fetch 12%, consider VACUUM",
+				OperatorWarnings.tooltipFor(OperatorWarnings.TAG_HEAP, null, null, null, null, "12"));
 		assertEquals(null, OperatorWarnings.tooltipFor(""));
 		assertEquals(null, OperatorWarnings.tooltipFor(null));
 	}

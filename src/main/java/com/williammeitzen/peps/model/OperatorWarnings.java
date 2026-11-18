@@ -294,22 +294,47 @@ public final class OperatorWarnings {
 
 	/** Hover tooltip for a diagram warning chip. Returns {@code null} for unknown tags. */
 	public static String tooltipFor(String tag) {
+		return tooltipFor(tag, null, null, null, null, null);
+	}
+
+	/**
+	 * Hover tooltip including measured values when available.
+	 * {@code estimateRatio} is display text such as {@code 156:1}; percent fields
+	 * are numeric strings without a trailing {@code %}.
+	 */
+	public static String tooltipFor(String tag, String timePercent, String costPercent,
+			String estimateRatio, String filterPercent, String heapPercent) {
 		if (tag == null || tag.isEmpty()) {
 			return null;
 		}
 		if (TAG_TIME.equals(tag)) {
+			if (timePercent != null && !timePercent.isEmpty()) {
+				return "Opr time " + timePercent + "%";
+			}
 			return "Opr time % is among highest";
 		}
 		if (TAG_COST.equals(tag)) {
+			if (costPercent != null && !costPercent.isEmpty()) {
+				return "Cost " + costPercent + "%";
+			}
 			return "Cost % is among highest";
 		}
 		if (TAG_ROWS.equals(tag)) {
-			return "Actual vs. Estimate ratio is excessive";
+			if (estimateRatio != null && !estimateRatio.isEmpty()) {
+				return "Actual vs. Estimated ratio " + estimateRatio;
+			}
+			return "Actual vs. Estimated ratio is excessive";
 		}
 		if (TAG_FILTER.equals(tag)) {
+			if (filterPercent != null && !filterPercent.isEmpty()) {
+				return "Filter removes " + filterPercent + "% of rows";
+			}
 			return "Filter removes high % of rows";
 		}
 		if (TAG_HEAP.equals(tag)) {
+			if (heapPercent != null && !heapPercent.isEmpty()) {
+				return "Heap fetch " + heapPercent + "%, consider VACUUM";
+			}
 			return "Heap fetch % is high, consider VACUUM";
 		}
 		return null;

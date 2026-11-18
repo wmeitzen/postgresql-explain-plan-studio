@@ -5728,10 +5728,12 @@ order by id_explain_plan_property;
 
 	/**
 	 * Dashboard warning glyphs on equal square chips, parked just above north Cost/Time text.
+	 * {@code metricsRow} supplies live values for chip hover tooltips (may be null).
 	 */
 	public void drawWarningTags(Graphics2D g, int x_center, int north_y_baseline,
 			int north_1_fontmetrics_height, int outside_box_top_margin, String warning_tags,
-			int warning_tags_fontmetrics_width, int warning_tags_fontmetrics_height) {
+			int warning_tags_fontmetrics_width, int warning_tags_fontmetrics_height,
+			JsonObject metricsRow) {
 		if (warning_tags == null || warning_tags.trim().isEmpty()) {
 			return;
 		}
@@ -5747,6 +5749,13 @@ order by id_explain_plan_property;
 		String[] parts = warning_tags.trim().split("\\s+");
 		int x = textX;
 		float arc = Math.max(4f, withZoom(4));
+		String timePct = blankIfNullish(metricsRow == null ? null
+				: metricsRow.getString("exclusive_time_percentage_string"));
+		String costPct = blankIfNullish(metricsRow == null ? null
+				: metricsRow.getString("cost_percentage_string"));
+		String estimateRatio = warningEstimateRatioTooltip(metricsRow);
+		String filterPct = warningFilterPercentTooltip(metricsRow);
+		String heapPct = warningHeapPercentTooltip(metricsRow);
 		for (int i = 0; i < parts.length; i++) {
 			String part = parts[i];
 			if (part.isEmpty()) {
@@ -5769,7 +5778,7 @@ order by id_explain_plan_property;
 			g.fill(new RoundRectangle2D.Float(x, chipY, side, side, arc, arc));
 			g.setPaint(priorPaint);
 			drawStringWithFindHighlights(g, part, glyphX, glyphBaseline, warningChipForeground(part));
-			String tip = OperatorWarnings.tooltipFor(part);
+			String tip = OperatorWarnings.tooltipFor(part, timePct, costPct, estimateRatio, filterPct, heapPct);
 			if (tip != null && !tip.isEmpty()) {
 				synchronized (warningChipHits) {
 					warningChipHits.add(new WarningChipHit(new Rectangle(x, chipY, side, side), tip));
@@ -5777,6 +5786,60 @@ order by id_explain_plan_property;
 			}
 			x += side;
 		}
+	}
+
+	/** Display ratio for Rows chip tooltip ({@code 156:1}), rows or mass per Settings. */
+	private String warningEstimateRatioTooltip(JsonObject row) {
+		if (row == null) {
+			return "";
+		}
+		Double actual;
+		Double estimated;
+		if (OperatorWarnings.METRIC_MASS.equals(Database.loadWarningRatioMetric())) {
+			actual = toDouble(row.get("actual_data_size_bytes"));
+			estimated = toDouble(row.get("estimated_data_size_bytes"));
+		} else {
+			actual = toDouble(row.get("actual_rows"));
+			estimated = toDouble(row.get("plan_rows"));
+		}
+		if (actual == null || estimated == null) {
+			return "";
+		}
+		String ratio = formatCalculatedRatio(actual.doubleValue(), estimated.doubleValue());
+		return ratio == null ? "" : ratio;
+	}
+
+	private String warningFilterPercentTooltip(JsonObject row) {
+		if (row == null) {
+			return "";
+		}
+		Double removed = OperatorWarnings.primaryRemovedRevised(
+				toDouble(row.get("total_rows_removed_by_filter")),
+				toDouble(row.get("total_rows_removed_by_join_filter")),
+				toDouble(row.get("total_rows_removed_by_index_recheck")));
+		Double pct = OperatorWarnings.filterRemovedPercent(removed, toDouble(row.get("total_actual_rows")));
+		if (pct == null) {
+			return "";
+		}
+		return String.format(java.util.Locale.US, "%.0f", pct.doubleValue());
+	}
+
+	private String warningHeapPercentTooltip(JsonObject row) {
+		if (row == null) {
+			return "";
+		}
+		Double pct = OperatorWarnings.heapFetchPercent(
+				toDouble(row.get("heap_fetches")),
+				toDouble(row.get("actual_rows")),
+				toDouble(row.get("rows_removed_by_filter")),
+				toDouble(row.get("rows_removed_by_join_filter")));
+		if (pct == null) {
+			return "";
+		}
+		if (pct.isInfinite()) {
+			return "∞";
+		}
+		return String.format(java.util.Locale.US, "%.0f", pct.doubleValue());
 	}
 
 	public void drawNorthText(Graphics2D g, int x_center, int y_baseline, String north_1_text
@@ -6362,6 +6425,19 @@ order by id_explain_plan_property;
 		strSQL += ", warning_tags\n";
 		strSQL += ", coalesce(warning_tags_fontmetrics_width, 0) as warning_tags_fontmetrics_width\n";
 		strSQL += ", coalesce(warning_tags_fontmetrics_height, 0) as warning_tags_fontmetrics_height\n";
+		strSQL += ", cost_percentage_string\n";
+		strSQL += ", exclusive_time_percentage_string\n";
+		strSQL += ", actual_rows\n";
+		strSQL += ", plan_rows\n";
+		strSQL += ", total_actual_rows\n";
+		strSQL += ", actual_data_size_bytes\n";
+		strSQL += ", estimated_data_size_bytes\n";
+		strSQL += ", total_rows_removed_by_filter\n";
+		strSQL += ", total_rows_removed_by_join_filter\n";
+		strSQL += ", total_rows_removed_by_index_recheck\n";
+		strSQL += ", rows_removed_by_filter\n";
+		strSQL += ", rows_removed_by_join_filter\n";
+		strSQL += ", heap_fetches\n";
 		strSQL += ", (select outside_box_top_margin from config) as outside_box_top_margin\n";
 		strSQL += ", box_bottom as south_y_baseline\n";
 		strSQL += ", south_1_text\n";
@@ -6422,7 +6498,7 @@ order by id_explain_plan_property;
 					if (!neverExecuted) {
 						drawWarningTags(g, x_center, north_y_baseline, north_1_fontmetrics_height,
 								outside_box_top_margin, warning_tags, warning_tags_fontmetrics_width,
-								warning_tags_fontmetrics_height);
+								warning_tags_fontmetrics_height, jsnRow);
 					}
 					drawNorthText(g, x_center, north_y_baseline, north_1_text, north_1_fontmetrics_width
 							, north_1_fontmetrics_height, outside_box_top_margin
