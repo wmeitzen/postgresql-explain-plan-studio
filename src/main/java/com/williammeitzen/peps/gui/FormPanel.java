@@ -55,6 +55,7 @@ import javax.swing.DropMode;
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JCheckBoxMenuItem;
+import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JDialog;
 import javax.swing.JLabel;
@@ -66,7 +67,9 @@ import javax.swing.JPopupMenu;
 import javax.swing.JProgressBar;
 import javax.swing.JRadioButton;
 import javax.swing.JScrollPane;
+import javax.swing.JSpinner;
 import javax.swing.JTabbedPane;
+import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingUtilities;
 import javax.swing.JTree;
 import javax.swing.TransferHandler;
@@ -100,6 +103,7 @@ import com.williammeitzen.peps.gui.Utils.LineThicknesses;
 
 
 import com.williammeitzen.peps.model.Database;
+import com.williammeitzen.peps.model.OperatorWarnings;
 
 public class FormPanel extends JPanel {
 
@@ -1157,6 +1161,56 @@ public class FormPanel extends JPanel {
 						: plansSortGrouping == PlansSortGrouping.MIXED ? "mixed" : "folders_first");
 	}
 
+	/** Left-aligned Warning Indicators row (no FlowLayout left inset). */
+	private static JPanel warningIndicatorsRow(Component... parts) {
+		JPanel row = new JPanel();
+		row.setLayout(new BoxLayout(row, BoxLayout.X_AXIS));
+		row.setOpaque(false);
+		row.setAlignmentX(Component.LEFT_ALIGNMENT);
+		for (int i = 0; i < parts.length; i++) {
+			if (i > 0) {
+				row.add(Box.createHorizontalStrut(6));
+			}
+			row.add(parts[i]);
+		}
+		Dimension pref = row.getPreferredSize();
+		row.setMaximumSize(new Dimension(Integer.MAX_VALUE, pref.height));
+		return row;
+	}
+
+	/**
+	 * Size a warning spinner from its text-field column count (preferredSize on
+	 * JSpinner alone is ignored once the editor has laid out).
+	 */
+	private static void sizeWarningSpinnerColumns(JSpinner spinner, int columns) {
+		JComponent editor = spinner.getEditor();
+		if (editor instanceof JSpinner.DefaultEditor) {
+			((JSpinner.DefaultEditor) editor).getTextField().setColumns(Math.max(1, columns));
+		}
+		spinner.setPreferredSize(null);
+		spinner.setMinimumSize(null);
+		spinner.setMaximumSize(null);
+		Dimension pref = spinner.getPreferredSize();
+		spinner.setPreferredSize(pref);
+		spinner.setMinimumSize(pref);
+		spinner.setMaximumSize(pref);
+	}
+
+	/** Rebuild open diagrams so warning chips pick up new Settings thresholds. */
+	private void refreshOpenPlansAfterWarningSettingsChange() {
+		for (PlanEvent planEvent : plansMapper.values()) {
+			if (planEvent == null) {
+				continue;
+			}
+			if (planEvent.getPlanSourcePanel() != null) {
+				planEvent.getPlanSourcePanel().setPlanTextIsDirty(true);
+			}
+			if (planEvent.getPlanGraphPanel() != null) {
+				planEvent.getPlanGraphPanel().repaint();
+			}
+		}
+	}
+
 	/**
 	 * Recursively re-sort every folder (and the root) using the current Settings.
 	 * {@code restoreSelection} keeps the current highlight when true.
@@ -1422,6 +1476,80 @@ public class FormPanel extends JPanel {
 		hint.setAlignmentX(Component.LEFT_ALIGNMENT);
 		body.add(hint);
 
+		body.add(Box.createVerticalStrut(16));
+		JLabel warnLabel = new JLabel("Warning Indicators");
+		warnLabel.setFont(warnLabel.getFont().deriveFont(Font.BOLD));
+		warnLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		body.add(warnLabel);
+		body.add(Box.createVerticalStrut(6));
+
+		String minMetric = Database.loadWarningMinMetric();
+		JComboBox<String> minMetricCombo = new JComboBox<>(new String[] {
+				OperatorWarnings.METRIC_ROWS, OperatorWarnings.METRIC_MASS });
+		minMetricCombo.setSelectedItem(minMetric);
+		minMetricCombo.setMaximumSize(minMetricCombo.getPreferredSize());
+
+		long minAmount = Math.round(Database.loadWarningMinActualRows());
+		JSpinner minAmountSpinner = new JSpinner(
+				new SpinnerNumberModel(Long.valueOf(minAmount), Long.valueOf(0L),
+						Long.valueOf(1_000_000_000L), Long.valueOf(100L)));
+		// Two columns wider than the ratio spinner so "5,000" is not clipped.
+		sizeWarningSpinnerColumns(minAmountSpinner, 6);
+
+		JLabel minRowsUnitLabel = new JLabel("rows");
+		JComboBox<String> minMassUnitCombo = new JComboBox<>(new String[] {
+				OperatorWarnings.MASS_UNIT_KB, OperatorWarnings.MASS_UNIT_MB,
+				OperatorWarnings.MASS_UNIT_GB });
+		minMassUnitCombo.setSelectedItem(Database.loadWarningMinMassUnit());
+		minMassUnitCombo.setMaximumSize(minMassUnitCombo.getPreferredSize());
+
+		JPanel minRow = warningIndicatorsRow(
+				new JLabel("Actual calculated"),
+				minMetricCombo,
+				new JLabel("minimum:"),
+				minAmountSpinner,
+				minRowsUnitLabel,
+				minMassUnitCombo);
+		body.add(minRow);
+		body.add(Box.createVerticalStrut(10));
+
+		Runnable syncMinUnitVisibility = () -> {
+			boolean mass = OperatorWarnings.METRIC_MASS.equals(minMetricCombo.getSelectedItem());
+			minRowsUnitLabel.setVisible(!mass);
+			minMassUnitCombo.setVisible(mass);
+			minRow.revalidate();
+		};
+		minMetricCombo.addActionListener(e -> syncMinUnitVisibility.run());
+		syncMinUnitVisibility.run();
+
+		String ratioMetric = Database.loadWarningRatioMetric();
+		JComboBox<String> ratioMetricCombo = new JComboBox<>(new String[] {
+				OperatorWarnings.METRIC_ROWS, OperatorWarnings.METRIC_MASS });
+		ratioMetricCombo.setSelectedItem(ratioMetric);
+		ratioMetricCombo.setMaximumSize(ratioMetricCombo.getPreferredSize());
+
+		int ratioFactor = (int) Math.round(Database.loadWarningRowsFactor());
+		JSpinner ratioFactorSpinner = new JSpinner(new SpinnerNumberModel(ratioFactor, 1, 1_000_000, 1));
+		sizeWarningSpinnerColumns(ratioFactorSpinner, 4);
+
+		JPanel ratioRow = warningIndicatorsRow(
+				new JLabel("Actual vs. Estimated ratio"),
+				ratioMetricCombo,
+				new JLabel("at least"),
+				ratioFactorSpinner,
+				new JLabel("times"));
+		body.add(ratioRow);
+		body.add(Box.createVerticalStrut(10));
+
+		int heapPct = (int) Math.round(Database.loadWarningHeapPercent());
+		JSpinner heapPercentSpinner = new JSpinner(new SpinnerNumberModel(heapPct, 0, 100, 1));
+		heapPercentSpinner.setMaximumSize(heapPercentSpinner.getPreferredSize());
+
+		JPanel heapRow = warningIndicatorsRow(
+				new JLabel("Heap fetch % at least"),
+				heapPercentSpinner);
+		body.add(heapRow);
+
 		Runnable syncEnabled = () -> {
 			boolean byName = modeByName.isSelected();
 			nameLabel.setEnabled(byName);
@@ -1450,6 +1578,16 @@ public class FormPanel extends JPanel {
 				plansSortGrouping = PlansSortGrouping.FOLDERS_FIRST;
 			}
 			savePlansSortPreferences();
+			Database.saveWarningMinPreferences(
+					String.valueOf(minMetricCombo.getSelectedItem()),
+					((Number) minAmountSpinner.getValue()).doubleValue(),
+					String.valueOf(minMassUnitCombo.getSelectedItem()));
+			Database.saveWarningRatioPreferences(
+					String.valueOf(ratioMetricCombo.getSelectedItem()),
+					((Number) ratioFactorSpinner.getValue()).doubleValue());
+			Database.saveWarningHeapPreferences(
+					((Number) heapPercentSpinner.getValue()).doubleValue());
+			refreshOpenPlansAfterWarningSettingsChange();
 			if (plansSortManual) {
 				if (!wasManual) {
 					// Keep the current visual order as the new Manual order.

@@ -93,8 +93,20 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 	private int maxUnitIncrement = 50;
 	private Map<Integer, List<Shape>> propertyVsShapesMap = new HashMap<>();
 	private Map<Integer, List<Shape>> showWorkerToggleVsShapesMap = new HashMap<>();
+	/** Chip rectangles painted this frame → hover tooltip text. */
+	private final List<WarningChipHit> warningChipHits = new ArrayList<>();
 	private Integer hoveredOperatorId = null;
 	private Integer selectedOperatorId = null;
+
+	private static final class WarningChipHit {
+		final Rectangle bounds;
+		final String tooltip;
+
+		WarningChipHit(Rectangle bounds, String tooltip) {
+			this.bounds = bounds;
+			this.tooltip = tooltip;
+		}
+	}
 	
 	private Integer idExplainPlan;
 	private Integer intXDimension = 5000;
@@ -209,8 +221,25 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 		this.objCurrentPlanTabs = objCurrentPlanTabs;
 		this.addMouseListener(this);
 		this.addMouseMotionListener(this);
+		// Empty string enables ToolTipManager without a panel-wide default tip.
+		setToolTipText("");
 		syncThemeSurface();
 		if (bolShowProperties == true) { System.out.println("PlanGraphPanel constructor"); }
+	}
+
+	@Override
+	public String getToolTipText(MouseEvent event) {
+		if (event != null) {
+			synchronized (warningChipHits) {
+				for (int i = warningChipHits.size() - 1; i >= 0; i--) {
+					WarningChipHit hit = warningChipHits.get(i);
+					if (hit.bounds.contains(event.getPoint())) {
+						return hit.tooltip;
+					}
+				}
+			}
+		}
+		return null;
 	}
 
 	/** Keep the diagram canvas on the active scheme surface (avoids a light panel under Dark). */
@@ -2678,13 +2707,13 @@ from explain_plan_operator_annotations
 		JsonArray rows = Database.rows(
 				"select\n"
 						+ "  id_explain_plan_property\n"
-						+ ", cost_highlight_1\n"
-						+ ", cost_highlight_2\n"
-						+ ", exclusive_time_highlight_1\n"
-						+ ", exclusive_time_highlight_2\n"
+						+ ", cost_percentage_string\n"
+						+ ", exclusive_time_percentage_string\n"
 						+ ", actual_rows\n"
 						+ ", plan_rows\n"
 						+ ", total_actual_rows\n"
+						+ ", actual_data_size_bytes\n"
+						+ ", estimated_data_size_bytes\n"
 						+ ", total_rows_removed_by_filter\n"
 						+ ", total_rows_removed_by_join_filter\n"
 						+ ", total_rows_removed_by_index_recheck\n"
@@ -2695,6 +2724,32 @@ from explain_plan_operator_annotations
 						+ "where id_explain_plan = " + intIDExplainPlan + "\n");
 		if (rows == null) {
 			return;
+		}
+		String minMetric = Database.loadWarningMinMetric();
+		double minAmount = Database.loadWarningMinActualRows();
+		String minMassUnit = Database.loadWarningMinMassUnit();
+		String ratioMetric = Database.loadWarningRatioMetric();
+		double rowsFactor = Database.loadWarningRowsFactor();
+		double filterPctThreshold = Database.loadWarningFilterPercent();
+		double heapPctThreshold = Database.loadWarningHeapPercent();
+		int costTopN = Database.loadWarningCostTopN();
+		int timeTopN = Database.loadWarningTimeTopN();
+		List<Double> allCostPercents = new ArrayList<>();
+		List<Double> allTimePercents = new ArrayList<>();
+		for (int i = 0; i < rows.size(); i++) {
+			JsonObject row = (JsonObject) rows.get(i);
+			Integer id = row.getInteger("id_explain_plan_property");
+			if (id == null || id.intValue() == -1) {
+				continue;
+			}
+			Double costPct = toDouble(row.get("cost_percentage_string"));
+			if (costPct != null) {
+				allCostPercents.add(costPct);
+			}
+			Double timePct = toDouble(row.get("exclusive_time_percentage_string"));
+			if (timePct != null) {
+				allTimePercents.add(timePct);
+			}
 		}
 		StringBuilder sql = new StringBuilder();
 		for (int i = 0; i < rows.size(); i++) {
@@ -2707,24 +2762,32 @@ from explain_plan_operator_annotations
 			// so connectors to it stay level with other operators.
 			String tags = "";
 			if (id.intValue() != -1) {
-				boolean time = OperatorWarnings.warnTime(
-						isHighlightFlag(row.get("exclusive_time_highlight_1")),
-						isHighlightFlag(row.get("exclusive_time_highlight_2")));
-				boolean cost = OperatorWarnings.warnCost(
-						isHighlightFlag(row.get("cost_highlight_1")),
-						isHighlightFlag(row.get("cost_highlight_2")));
-				boolean rowsWarn = OperatorWarnings.warnRows(
-						toDouble(row.get("actual_rows")), toDouble(row.get("plan_rows")));
+				Double totalActualRows = toDouble(row.get("total_actual_rows"));
+				Double actualMassBytes = toDouble(row.get("actual_data_size_bytes"));
+				boolean enoughRows = OperatorWarnings.meetsMinCalculated(minMetric, totalActualRows,
+						actualMassBytes, minAmount, minMassUnit);
+				boolean time = enoughRows && OperatorWarnings.warnTimeAmongTop(
+						toDouble(row.get("exclusive_time_percentage_string")), allTimePercents, timeTopN);
+				boolean cost = enoughRows && OperatorWarnings.warnCostAmongTop(
+						toDouble(row.get("cost_percentage_string")), allCostPercents, costTopN);
+				boolean rowsWarn = enoughRows && (OperatorWarnings.METRIC_MASS.equals(ratioMetric)
+						? OperatorWarnings.warnEstimateRatio(actualMassBytes,
+								toDouble(row.get("estimated_data_size_bytes")), rowsFactor)
+						: OperatorWarnings.warnRows(
+								toDouble(row.get("actual_rows")), toDouble(row.get("plan_rows")),
+								rowsFactor));
 				Double removed = OperatorWarnings.primaryRemovedRevised(
 						toDouble(row.get("total_rows_removed_by_filter")),
 						toDouble(row.get("total_rows_removed_by_join_filter")),
 						toDouble(row.get("total_rows_removed_by_index_recheck")));
-				boolean filter = OperatorWarnings.warnFilter(removed, toDouble(row.get("total_actual_rows")));
-				boolean heap = OperatorWarnings.warnHeap(
+				boolean filter = enoughRows && OperatorWarnings.warnFilterPercent(
+						removed, totalActualRows, filterPctThreshold);
+				boolean heap = enoughRows && OperatorWarnings.warnHeap(
 						toDouble(row.get("heap_fetches")),
 						toDouble(row.get("actual_rows")),
 						toDouble(row.get("rows_removed_by_filter")),
-						toDouble(row.get("rows_removed_by_join_filter")));
+						toDouble(row.get("rows_removed_by_join_filter")),
+						heapPctThreshold);
 				tags = OperatorWarnings.formatTags(time, cost, rowsWarn, filter, heap);
 			}
 			// Always reserve chip-band height so operators without warnings stay
@@ -5188,6 +5251,9 @@ order by id_explain_plan_property;
 	public void clearClickableShapes() {
 		propertyVsShapesMap = new HashMap<>();
 		showWorkerToggleVsShapesMap = new HashMap<>();
+		synchronized (warningChipHits) {
+			warningChipHits.clear();
+		}
 	}
 	
 	// include time slider
@@ -5703,6 +5769,12 @@ order by id_explain_plan_property;
 			g.fill(new RoundRectangle2D.Float(x, chipY, side, side, arc, arc));
 			g.setPaint(priorPaint);
 			drawStringWithFindHighlights(g, part, glyphX, glyphBaseline, warningChipForeground(part));
+			String tip = OperatorWarnings.tooltipFor(part);
+			if (tip != null && !tip.isEmpty()) {
+				synchronized (warningChipHits) {
+					warningChipHits.add(new WarningChipHit(new Rectangle(x, chipY, side, side), tip));
+				}
+			}
 			x += side;
 		}
 	}
@@ -6111,6 +6183,9 @@ order by id_explain_plan_property;
 
 		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 		g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+		synchronized (warningChipHits) {
+			warningChipHits.clear();
+		}
 		neverExecutedOperatorIds = loadNeverExecutedOperatorIds(intIDExplainPlan);
 		
 		// set dimensions
@@ -7487,17 +7562,54 @@ order by id_explain_plan_property;
 		return new OperatorNotes(notes.toString().trim(), redTextNotes.toString().trim());
 	}
 
+	/** All non-root Cost % values for the open plan (for top-N Cost warnings). */
+	private List<Double> loadPlanCostPercents() {
+		return loadPlanPercentColumn("cost_percentage_string");
+	}
+
+	/** All non-root Opr time % values for the open plan (for top-N Time warnings). */
+	private List<Double> loadPlanTimePercents() {
+		return loadPlanPercentColumn("exclusive_time_percentage_string");
+	}
+
+	private List<Double> loadPlanPercentColumn(String column) {
+		List<Double> all = new ArrayList<>();
+		if (idExplainPlan == null || column == null || column.isEmpty()) {
+			return all;
+		}
+		JsonArray rows = Database.rows(
+				"select " + column + " from explain_plan_operator_annotations\n"
+						+ "where id_explain_plan = " + idExplainPlan + "\n"
+						+ "and id_explain_plan_property <> -1\n");
+		if (rows == null) {
+			return all;
+		}
+		for (int i = 0; i < rows.size(); i++) {
+			Double pct = toDouble(((JsonObject) rows.get(i)).get(column));
+			if (pct != null) {
+				all.add(pct);
+			}
+		}
+		return all;
+	}
+
 	/**
 	 * Red Text Notes for dashboard warnings (diagram tags above north text).
 	 */
-	private static void appendDashboardWarningNotes(StringBuilder notes, JsonObject row) {
+	private void appendDashboardWarningNotes(StringBuilder notes, JsonObject row) {
 		StringBuilder block = new StringBuilder();
-		boolean time = OperatorWarnings.warnTime(
-				isHighlightFlag(row.get("exclusive_time_highlight_1")),
-				isHighlightFlag(row.get("exclusive_time_highlight_2")));
-		boolean cost = OperatorWarnings.warnCost(
-				isHighlightFlag(row.get("cost_highlight_1")),
-				isHighlightFlag(row.get("cost_highlight_2")));
+		Double actualRows = toDouble(row.get("total_actual_rows"));
+		Double actualMass = toDouble(row.get("actual_data_size_bytes"));
+		boolean enoughRows = OperatorWarnings.meetsMinCalculated(
+				Database.loadWarningMinMetric(), actualRows, actualMass,
+				Database.loadWarningMinActualRows(), Database.loadWarningMinMassUnit());
+
+		boolean time = enoughRows && OperatorWarnings.warnTimeAmongTop(
+				toDouble(row.get("exclusive_time_percentage_string")), loadPlanTimePercents(),
+				Database.loadWarningTimeTopN());
+		boolean cost = enoughRows && OperatorWarnings.warnCostAmongTop(
+				toDouble(row.get("cost_percentage_string")), loadPlanCostPercents(),
+				Database.loadWarningCostTopN());
 		if (time) {
 			String pct = blankIfNullish(row.getString("exclusive_time_percentage_string"));
 			block.append("Operator time is among the highest shares in this plan");
@@ -7515,20 +7627,27 @@ order by id_explain_plan_property;
 			block.append(".\n");
 		}
 
-		Double actualRows = toDouble(row.get("total_actual_rows"));
 		Double estimatedRows = toDouble(row.get("total_estimated_rows"));
-		Double actualMass = toDouble(row.get("actual_data_size_bytes"));
 		Double estimatedMass = toDouble(row.get("estimated_data_size_bytes"));
-		boolean rowsWarn = OperatorWarnings.warnRows(
-				toDouble(row.get("actual_rows")), toDouble(row.get("plan_rows")));
+		double rowsFactorThreshold = Database.loadWarningRowsFactor();
+		boolean ratioMass = OperatorWarnings.METRIC_MASS.equals(Database.loadWarningRatioMetric());
+		boolean rowsWarn = enoughRows && (ratioMass
+				? OperatorWarnings.warnEstimateRatio(actualMass, estimatedMass, rowsFactorThreshold)
+				: OperatorWarnings.warnRows(
+						toDouble(row.get("actual_rows")), toDouble(row.get("plan_rows")),
+						rowsFactorThreshold));
 		if (rowsWarn) {
-			Double factor = Pev2Metrics.plannerEstimateFactor(
-					toDouble(row.get("actual_rows")), toDouble(row.get("plan_rows")));
-			block.append("Actual vs estimated rows factor is high");
+			Double factor = ratioMass
+					? Pev2Metrics.plannerEstimateFactor(actualMass, estimatedMass)
+					: Pev2Metrics.plannerEstimateFactor(
+							toDouble(row.get("actual_rows")), toDouble(row.get("plan_rows")));
+			block.append(ratioMass
+					? "Actual vs estimated mass factor is high"
+					: "Actual vs estimated rows factor is high");
 			if (factor != null && !factor.isInfinite()) {
-				block.append(" (").append(String.format(java.util.Locale.US, "%.0f", factor))
-						.append("×; threshold ")
-						.append((int) OperatorWarnings.ROWS_WARNING_FACTOR).append("×)");
+				block.append(" (")
+						.append(String.format(java.util.Locale.US, "%.0f", factor))
+						.append("×)");
 			}
 			block.append(".\n");
 		}
@@ -7554,13 +7673,15 @@ order by id_explain_plan_property;
 				toDouble(row.get("total_rows_removed_by_join_filter")),
 				toDouble(row.get("total_rows_removed_by_index_recheck")));
 		Double filterPct = OperatorWarnings.filterRemovedPercent(removed, actualRows);
-		if (OperatorWarnings.warnFilter(removed, actualRows)) {
-			block.append("Filter removes a high share of rows (")
-					.append(filterPct == null ? ">" + (int) OperatorWarnings.FILTER_WARNING_PERCENT
-							: String.format(java.util.Locale.US, "%.0f", filterPct))
-					.append("%; threshold ")
-					.append((int) OperatorWarnings.FILTER_WARNING_PERCENT)
-					.append("%).\n");
+		double filterPctThreshold = Database.loadWarningFilterPercent();
+		if (enoughRows && OperatorWarnings.warnFilterPercent(removed, actualRows, filterPctThreshold)) {
+			block.append("Filter removes a high share of rows");
+			if (filterPct != null) {
+				block.append(" (")
+						.append(String.format(java.util.Locale.US, "%.0f", filterPct))
+						.append("%)");
+			}
+			block.append(".\n");
 		}
 
 		Double heapFetches = toDouble(row.get("heap_fetches"));
@@ -7569,9 +7690,10 @@ order by id_explain_plan_property;
 				toDouble(row.get("actual_rows")),
 				toDouble(row.get("rows_removed_by_filter")),
 				toDouble(row.get("rows_removed_by_join_filter")));
-		if (OperatorWarnings.warnHeap(heapFetches, toDouble(row.get("actual_rows")),
+		if (enoughRows && OperatorWarnings.warnHeap(heapFetches, toDouble(row.get("actual_rows")),
 				toDouble(row.get("rows_removed_by_filter")),
-				toDouble(row.get("rows_removed_by_join_filter")))) {
+				toDouble(row.get("rows_removed_by_join_filter")),
+				Database.loadWarningHeapPercent())) {
 			if (heapFetches != null) {
 				block.append(String.format(java.util.Locale.US, "%.0f", heapFetches.doubleValue()))
 						.append(" heap fetches");
@@ -8249,30 +8371,39 @@ order by id_explain_plan_property;
 		Double actualDataSizeBytes = toDouble(row.get("actual_data_size_bytes"));
 		Double estimatedDataSizeBytes = toDouble(row.get("estimated_data_size_bytes"));
 		Double executionTimeMs = toDouble(row.get("execution_time_ms"));
-		boolean costWarn = OperatorWarnings.warnCost(
-				isHighlightFlag(row.get("cost_highlight_1")),
-				isHighlightFlag(row.get("cost_highlight_2")));
-		boolean timeWarn = OperatorWarnings.warnTime(
-				isHighlightFlag(row.get("exclusive_time_highlight_1")),
-				isHighlightFlag(row.get("exclusive_time_highlight_2")));
-		boolean rowsWarn = OperatorWarnings.warnRows(
-				toDouble(row.get("actual_rows")), toDouble(row.get("plan_rows")));
+		boolean enoughRows = OperatorWarnings.meetsMinCalculated(
+				Database.loadWarningMinMetric(), totalActualRows, actualDataSizeBytes,
+				Database.loadWarningMinActualRows(), Database.loadWarningMinMassUnit());
+		boolean costWarn = enoughRows && OperatorWarnings.warnCostAmongTop(
+				toDouble(row.get("cost_percentage_string")), loadPlanCostPercents(),
+				Database.loadWarningCostTopN());
+		boolean timeWarn = enoughRows && OperatorWarnings.warnTimeAmongTop(
+				toDouble(row.get("exclusive_time_percentage_string")), loadPlanTimePercents(),
+				Database.loadWarningTimeTopN());
+		boolean rowsWarn = enoughRows && (OperatorWarnings.METRIC_MASS.equals(Database.loadWarningRatioMetric())
+				? OperatorWarnings.warnEstimateRatio(actualDataSizeBytes, estimatedDataSizeBytes,
+						Database.loadWarningRowsFactor())
+				: OperatorWarnings.warnRows(
+						toDouble(row.get("actual_rows")), toDouble(row.get("plan_rows")),
+						Database.loadWarningRowsFactor()));
 		Double removedRevised = OperatorWarnings.primaryRemovedRevised(
 				toDouble(row.get("total_rows_removed_by_filter")),
 				toDouble(row.get("total_rows_removed_by_join_filter")),
 				toDouble(row.get("total_rows_removed_by_index_recheck")));
-		boolean filterWarn = OperatorWarnings.warnFilter(removedRevised, totalActualRows);
+		boolean filterWarn = enoughRows && OperatorWarnings.warnFilterPercent(
+				removedRevised, totalActualRows, Database.loadWarningFilterPercent());
 		Double heapFetches = toDouble(row.get("heap_fetches"));
 		Double heapPct = OperatorWarnings.heapFetchPercent(
 				heapFetches,
 				toDouble(row.get("actual_rows")),
 				toDouble(row.get("rows_removed_by_filter")),
 				toDouble(row.get("rows_removed_by_join_filter")));
-		boolean heapWarn = OperatorWarnings.warnHeap(
+		boolean heapWarn = enoughRows && OperatorWarnings.warnHeap(
 				heapFetches,
 				toDouble(row.get("actual_rows")),
 				toDouble(row.get("rows_removed_by_filter")),
-				toDouble(row.get("rows_removed_by_join_filter")));
+				toDouble(row.get("rows_removed_by_join_filter")),
+				Database.loadWarningHeapPercent());
 		String warningWords = OperatorWarnings.formatWarningWords(
 				timeWarn, costWarn, rowsWarn, filterWarn, heapWarn);
 		// Match diagram north Cost % (PEV2): exclusive_cost / max(total_cost), not

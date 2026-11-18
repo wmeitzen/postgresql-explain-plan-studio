@@ -68,11 +68,11 @@ public class DiagramFindBar extends JPanel {
 		configureWarnBox(costWarnBox,
 				"Require Cost warning (combined with other checked filters)");
 		configureWarnBox(rowsWarnBox,
-				"Require Rows warning (combined with other checked filters)");
+				"Require Rows warning (Actual vs. Estimated factor from Settings)");
 		configureWarnBox(filterWarnBox,
-				"Require Filter warning (combined with other checked filters)");
+				"Require Filter warning (removed % and Actual rows thresholds from Settings)");
 		configureWarnBox(heapWarnBox,
-				"Require Heap warning (combined with other checked filters)");
+				"Require Heap warning (Heap fetch % threshold from Settings)");
 		add(timeWarnBox);
 		add(costWarnBox);
 		add(rowsWarnBox);

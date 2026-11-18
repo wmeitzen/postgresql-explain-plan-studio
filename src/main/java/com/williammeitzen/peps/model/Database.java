@@ -540,6 +540,26 @@ public final class Database {
 		ensureConfigColumn("plans_sort_name_order", "varchar(16) not null default 'asc'");
 		ensureConfigColumn("plans_sort_grouping", "varchar(32) not null default 'folders_first'");
 		ensureConfigColumn("plans_sort_mode", "varchar(16) not null default 'by_name'");
+		ensureConfigColumn("warning_filter_percent",
+				"float not null default " + (int) OperatorWarnings.FILTER_WARNING_PERCENT);
+		ensureConfigColumn("warning_filter_min_actual_rows",
+				"int not null default " + (int) OperatorWarnings.WARNING_MIN_ACTUAL_ROWS);
+		ensureConfigColumn("warning_min_actual_rows",
+				"int not null default " + (int) OperatorWarnings.WARNING_MIN_ACTUAL_ROWS);
+		ensureConfigColumn("warning_rows_factor",
+				"float not null default " + (int) OperatorWarnings.ROWS_WARNING_FACTOR);
+		ensureConfigColumn("warning_cost_top_n",
+				"int not null default " + OperatorWarnings.COST_WARNING_TOP_N);
+		ensureConfigColumn("warning_time_top_n",
+				"int not null default " + OperatorWarnings.TIME_WARNING_TOP_N);
+		ensureConfigColumn("warning_heap_percent",
+				"float not null default " + (int) OperatorWarnings.HEAP_WARNING_PERCENT);
+		ensureConfigColumn("warning_min_metric",
+				"varchar(16) not null default '" + OperatorWarnings.METRIC_ROWS + "'");
+		ensureConfigColumn("warning_min_mass_unit",
+				"varchar(8) not null default '" + OperatorWarnings.MASS_UNIT_MB + "'");
+		ensureConfigColumn("warning_ratio_metric",
+				"varchar(16) not null default '" + OperatorWarnings.METRIC_ROWS + "'");
 
 		// 4.09: factory color scheme is Dark (was Default). Migrate only the old factory value.
 		if (dblDBConfigVersion > 0.0 && dblDBConfigVersion < 4.09) {
@@ -1688,6 +1708,174 @@ south_1_fontmetrics_width = null;
 		}
 	}
 
+	/** Filter warning: removed-share threshold percent (inclusive). */
+	public static double loadWarningFilterPercent() {
+		return loadConfigDouble("warning_filter_percent", OperatorWarnings.FILTER_WARNING_PERCENT);
+	}
+
+	/** Shared minimum Actual rows for every warning indicator (inclusive). */
+	public static double loadWarningMinActualRows() {
+		return loadConfigDouble("warning_min_actual_rows", OperatorWarnings.WARNING_MIN_ACTUAL_ROWS);
+	}
+
+	/** @deprecated use {@link #loadWarningMinActualRows()} */
+	public static double loadWarningFilterMinActualRows() {
+		return loadWarningMinActualRows();
+	}
+
+	public static void saveWarningFilterPreferences(double percentOrMore) {
+		if (objConnection == null) {
+			return;
+		}
+		double pct = Math.max(0.0, Math.min(100.0, percentOrMore));
+		String sql = "update config set warning_filter_percent = ?";
+		try (PreparedStatement ps = objConnection.prepareStatement(sql)) {
+			ps.setDouble(1, pct);
+			ps.executeUpdate();
+		} catch (SQLException ex) {
+			System.out.println("function Database.saveWarningFilterPreferences()");
+			ex.printStackTrace();
+		}
+	}
+
+	public static void saveWarningMinActualRows(double minActualRows) {
+		saveWarningMinPreferences(OperatorWarnings.METRIC_ROWS, minActualRows,
+				OperatorWarnings.MASS_UNIT_MB);
+	}
+
+	public static String loadWarningMinMetric() {
+		String metric = loadConfigString("warning_min_metric", OperatorWarnings.METRIC_ROWS);
+		return OperatorWarnings.METRIC_MASS.equalsIgnoreCase(metric)
+				? OperatorWarnings.METRIC_MASS : OperatorWarnings.METRIC_ROWS;
+	}
+
+	public static String loadWarningMinMassUnit() {
+		String unit = loadConfigString("warning_min_mass_unit", OperatorWarnings.MASS_UNIT_MB);
+		if (OperatorWarnings.MASS_UNIT_KB.equals(unit)
+				|| OperatorWarnings.MASS_UNIT_GB.equals(unit)
+				|| OperatorWarnings.MASS_UNIT_MB.equals(unit)) {
+			return unit;
+		}
+		return OperatorWarnings.MASS_UNIT_MB;
+	}
+
+	public static void saveWarningMinPreferences(String metric, double minAmount, String massUnit) {
+		if (objConnection == null) {
+			return;
+		}
+		String metricValue = OperatorWarnings.METRIC_MASS.equalsIgnoreCase(metric)
+				? OperatorWarnings.METRIC_MASS : OperatorWarnings.METRIC_ROWS;
+		String unitValue = OperatorWarnings.MASS_UNIT_KB.equals(massUnit)
+				|| OperatorWarnings.MASS_UNIT_GB.equals(massUnit)
+				? massUnit : OperatorWarnings.MASS_UNIT_MB;
+		long amount = Math.round(Math.max(0.0, minAmount));
+		String sql = "update config set warning_min_metric = ?, warning_min_actual_rows = ?"
+				+ ", warning_filter_min_actual_rows = ?, warning_min_mass_unit = ?";
+		try (PreparedStatement ps = objConnection.prepareStatement(sql)) {
+			ps.setString(1, metricValue);
+			ps.setLong(2, amount);
+			ps.setLong(3, amount);
+			ps.setString(4, unitValue);
+			ps.executeUpdate();
+		} catch (SQLException ex) {
+			System.out.println("function Database.saveWarningMinPreferences()");
+			ex.printStackTrace();
+		}
+	}
+
+	/** Rows/mass warning: Actual vs Estimated factor threshold (inclusive). */
+	public static double loadWarningRowsFactor() {
+		return loadConfigDouble("warning_rows_factor", OperatorWarnings.ROWS_WARNING_FACTOR);
+	}
+
+	public static String loadWarningRatioMetric() {
+		String metric = loadConfigString("warning_ratio_metric", OperatorWarnings.METRIC_ROWS);
+		return OperatorWarnings.METRIC_MASS.equalsIgnoreCase(metric)
+				? OperatorWarnings.METRIC_MASS : OperatorWarnings.METRIC_ROWS;
+	}
+
+	public static void saveWarningRowsPreferences(double factorOrMore) {
+		saveWarningRatioPreferences(OperatorWarnings.METRIC_ROWS, factorOrMore);
+	}
+
+	public static void saveWarningRatioPreferences(String metric, double factorOrMore) {
+		if (objConnection == null) {
+			return;
+		}
+		String metricValue = OperatorWarnings.METRIC_MASS.equalsIgnoreCase(metric)
+				? OperatorWarnings.METRIC_MASS : OperatorWarnings.METRIC_ROWS;
+		double factor = Math.max(1.0, factorOrMore);
+		String sql = "update config set warning_ratio_metric = ?, warning_rows_factor = ?";
+		try (PreparedStatement ps = objConnection.prepareStatement(sql)) {
+			ps.setString(1, metricValue);
+			ps.setDouble(2, factor);
+			ps.executeUpdate();
+		} catch (SQLException ex) {
+			System.out.println("function Database.saveWarningRatioPreferences()");
+			ex.printStackTrace();
+		}
+	}
+
+	/** Cost warning: among the top N by Cost %. */
+	public static int loadWarningCostTopN() {
+		return (int) Math.round(loadConfigDouble("warning_cost_top_n", OperatorWarnings.COST_WARNING_TOP_N));
+	}
+
+	public static void saveWarningCostPreferences(int topN) {
+		if (objConnection == null) {
+			return;
+		}
+		int n = Math.max(1, Math.min(100, topN));
+		String sql = "update config set warning_cost_top_n = ?";
+		try (PreparedStatement ps = objConnection.prepareStatement(sql)) {
+			ps.setInt(1, n);
+			ps.executeUpdate();
+		} catch (SQLException ex) {
+			System.out.println("function Database.saveWarningCostPreferences()");
+			ex.printStackTrace();
+		}
+	}
+
+	/** Time warning: among the top N by Opr time %. */
+	public static int loadWarningTimeTopN() {
+		return (int) Math.round(loadConfigDouble("warning_time_top_n", OperatorWarnings.TIME_WARNING_TOP_N));
+	}
+
+	public static void saveWarningTimePreferences(int topN) {
+		if (objConnection == null) {
+			return;
+		}
+		int n = Math.max(1, Math.min(100, topN));
+		String sql = "update config set warning_time_top_n = ?";
+		try (PreparedStatement ps = objConnection.prepareStatement(sql)) {
+			ps.setInt(1, n);
+			ps.executeUpdate();
+		} catch (SQLException ex) {
+			System.out.println("function Database.saveWarningTimePreferences()");
+			ex.printStackTrace();
+		}
+	}
+
+	/** Heap warning: fetch-share threshold percent (0 ⇒ any positive share). */
+	public static double loadWarningHeapPercent() {
+		return loadConfigDouble("warning_heap_percent", OperatorWarnings.HEAP_WARNING_PERCENT);
+	}
+
+	public static void saveWarningHeapPreferences(double percentOrMore) {
+		if (objConnection == null) {
+			return;
+		}
+		double pct = Math.max(0.0, Math.min(100.0, percentOrMore));
+		String sql = "update config set warning_heap_percent = ?";
+		try (PreparedStatement ps = objConnection.prepareStatement(sql)) {
+			ps.setDouble(1, pct);
+			ps.executeUpdate();
+		} catch (SQLException ex) {
+			System.out.println("function Database.saveWarningHeapPreferences()");
+			ex.printStackTrace();
+		}
+	}
+
 	/**
 	 * One-time (schema &lt; 4.12): assign sort_order by name within each parent so Manual
 	 * mode has a stable starting order.
@@ -1779,6 +1967,26 @@ south_1_fontmetrics_width = null;
 			return defaultValue;
 		}
 		return value;
+	}
+
+	private static double loadConfigDouble(String column, double defaultValue) {
+		JsonObject row = row("select " + column + " from config;");
+		if (row == null || row.get(column) == null) {
+			return defaultValue;
+		}
+		Object raw = row.get(column);
+		if (raw instanceof Number) {
+			return ((Number) raw).doubleValue();
+		}
+		String text = String.valueOf(raw);
+		if (text.isBlank() || "null".equalsIgnoreCase(text)) {
+			return defaultValue;
+		}
+		try {
+			return Double.parseDouble(text.trim());
+		} catch (NumberFormatException ex) {
+			return defaultValue;
+		}
 	}
 
 	/**

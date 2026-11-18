@@ -18,19 +18,47 @@ class OperatorWarningsTest {
 	}
 
 	@Test
-	void rows_matchesPev2EstimationClassPresence() {
-		assertFalse(OperatorWarnings.warnRows(100.0, 10.0)); // 10× not >
-		assertTrue(OperatorWarnings.warnRows(101.0, 10.0));
+	void rows_requiresFactorOrMore() {
+		assertTrue(OperatorWarnings.warnRows(100.0, 10.0)); // 10× ≥ default 10
+		assertFalse(OperatorWarnings.warnRows(99.0, 10.0)); // 9.9×
 		assertTrue(OperatorWarnings.warnRows(10.0, 101.0));
 		assertFalse(OperatorWarnings.warnRows(null, 10.0));
+		assertFalse(OperatorWarnings.warnRows(100.0, 10.0, 11.0));
+		assertTrue(OperatorWarnings.warnRows(100.0, 10.0, 10.0));
 	}
 
 	@Test
-	void filter_matchesPev2RowsRemovedClassPresence() {
-		assertFalse(OperatorWarnings.warnFilter(50.0, 50.0)); // 50% not >
-		assertTrue(OperatorWarnings.warnFilter(51.0, 49.0)); // floor 51%
-		assertTrue(OperatorWarnings.warnFilter(900.0, 100.0));
+	void filter_requiresPercentOrMoreAndMinActualRows() {
+		assertEquals(50.0, OperatorWarnings.filterRemovedPercent(50.0, 50.0));
 		assertEquals(90.0, OperatorWarnings.filterRemovedPercent(900.0, 100.0));
+		// Defaults: ≥50% and Actual rows ≥ 5000
+		assertFalse(OperatorWarnings.warnFilter(900.0, 100.0)); // below min rows
+		assertFalse(OperatorWarnings.warnFilter(4000.0, 6000.0)); // 40% < 50%
+		assertTrue(OperatorWarnings.warnFilter(5000.0, 5000.0)); // 50% and 5000 rows
+		assertTrue(OperatorWarnings.warnFilter(9000.0, 1000.0, 50.0, 500.0)); // custom thresholds
+		assertFalse(OperatorWarnings.warnFilter(9000.0, 1000.0, 50.0, 5001.0));
+		assertTrue(OperatorWarnings.warnFilterPercent(5000.0, 5000.0, 50.0));
+		assertFalse(OperatorWarnings.meetsMinActualRows(4999.0, 5000.0));
+		assertTrue(OperatorWarnings.meetsMinActualRows(5000.0, 5000.0));
+		assertTrue(OperatorWarnings.meetsMinCalculated(OperatorWarnings.METRIC_ROWS,
+				5000.0, null, 5000.0, OperatorWarnings.MASS_UNIT_MB));
+		assertFalse(OperatorWarnings.meetsMinCalculated(OperatorWarnings.METRIC_MASS,
+				5000.0, 1024.0 * 1024.0, 2.0, OperatorWarnings.MASS_UNIT_MB)); // 1MB < 2MB
+		assertTrue(OperatorWarnings.meetsMinCalculated(OperatorWarnings.METRIC_MASS,
+				1.0, 2.0 * 1024.0 * 1024.0, 2.0, OperatorWarnings.MASS_UNIT_MB));
+		assertTrue(OperatorWarnings.warnEstimateRatio(100.0, 10.0, 10.0));
+	}
+
+	@Test
+	void costAndTime_amongTopN_includesTiesAtCutoff() {
+		java.util.List<Double> all = java.util.Arrays.asList(50.0, 40.0, 30.0, 40.0);
+		assertTrue(OperatorWarnings.warnCostAmongTop(50.0, all, 2));
+		assertTrue(OperatorWarnings.warnCostAmongTop(40.0, all, 2));
+		assertFalse(OperatorWarnings.warnCostAmongTop(30.0, all, 2));
+		assertTrue(OperatorWarnings.warnCostAmongTop(30.0, all, 3));
+		assertFalse(OperatorWarnings.warnCostAmongTop(null, all, 2));
+		assertTrue(OperatorWarnings.warnTimeAmongTop(40.0, all, 2));
+		assertFalse(OperatorWarnings.warnTimeAmongTop(30.0, all, 2));
 	}
 
 	@Test
@@ -38,6 +66,8 @@ class OperatorWarningsTest {
 		assertFalse(OperatorWarnings.warnHeap(0.0, 100.0, 0.0, 0.0));
 		assertTrue(OperatorWarnings.warnHeap(1.0, 100.0, 0.0, 0.0));
 		assertEquals(50.0, OperatorWarnings.heapFetchPercent(50.0, 100.0, 0.0, 0.0));
+		assertFalse(OperatorWarnings.warnHeap(5.0, 100.0, 0.0, 0.0, 10.0)); // 5% < 10%
+		assertTrue(OperatorWarnings.warnHeap(10.0, 100.0, 0.0, 0.0, 10.0));
 	}
 
 	@Test
@@ -58,5 +88,19 @@ class OperatorWarningsTest {
 		assertEquals("Time Cost Rows Filter Heap",
 				OperatorWarnings.formatWarningWords(true, true, true, true, true));
 		assertEquals("Cost Filter", OperatorWarnings.formatWarningWords(false, true, false, true, false));
+	}
+
+	@Test
+	void tooltipFor_matchesDashboardHoverCopy() {
+		assertEquals("Opr time % is among highest", OperatorWarnings.tooltipFor(OperatorWarnings.TAG_TIME));
+		assertEquals("Cost % is among highest", OperatorWarnings.tooltipFor(OperatorWarnings.TAG_COST));
+		assertEquals("Actual vs. Estimate ratio is excessive",
+				OperatorWarnings.tooltipFor(OperatorWarnings.TAG_ROWS));
+		assertEquals("Filter removes high % of rows",
+				OperatorWarnings.tooltipFor(OperatorWarnings.TAG_FILTER));
+		assertEquals("Heap fetch % is high, consider VACUUM",
+				OperatorWarnings.tooltipFor(OperatorWarnings.TAG_HEAP));
+		assertEquals(null, OperatorWarnings.tooltipFor(""));
+		assertEquals(null, OperatorWarnings.tooltipFor(null));
 	}
 }
