@@ -1541,6 +1541,22 @@ public class FormPanel extends JPanel {
 		body.add(ratioRow);
 		body.add(Box.createVerticalStrut(10));
 
+		int filterPct = (int) Math.round(Database.loadWarningFilterPercent());
+		JSpinner filterPercentSpinner = new JSpinner(new SpinnerNumberModel(filterPct, 0, 100, 1));
+		sizeWarningSpinnerColumns(filterPercentSpinner, 4);
+		JComboBox<String> filterMetricCombo = new JComboBox<>(new String[] {
+				OperatorWarnings.METRIC_ROWS, OperatorWarnings.METRIC_MASS });
+		filterMetricCombo.setSelectedItem(Database.loadWarningFilterMetric());
+		filterMetricCombo.setMaximumSize(filterMetricCombo.getPreferredSize());
+
+		JPanel filterRow = warningIndicatorsRow(
+				new JLabel("Filter removes at least"),
+				filterPercentSpinner,
+				new JLabel("% of"),
+				filterMetricCombo);
+		body.add(filterRow);
+		body.add(Box.createVerticalStrut(10));
+
 		int heapPct = (int) Math.round(Database.loadWarningHeapPercent());
 		JSpinner heapPercentSpinner = new JSpinner(new SpinnerNumberModel(heapPct, 0, 100, 1));
 		heapPercentSpinner.setMaximumSize(heapPercentSpinner.getPreferredSize());
@@ -1565,8 +1581,9 @@ public class FormPanel extends JPanel {
 		syncEnabled.run();
 
 		JButton applyBtn = new JButton("Apply");
-		JButton closeBtn = new JButton("Close");
-		applyBtn.addActionListener(e -> {
+		JButton saveCloseBtn = new JButton("Save and Close");
+		JButton cancelBtn = new JButton("Cancel");
+		Runnable applySettings = () -> {
 			boolean wasManual = plansSortManual;
 			plansSortManual = modeManual.isSelected();
 			plansSortNameAscending = nameAsc.isSelected();
@@ -1585,6 +1602,9 @@ public class FormPanel extends JPanel {
 			Database.saveWarningRatioPreferences(
 					String.valueOf(ratioMetricCombo.getSelectedItem()),
 					((Number) ratioFactorSpinner.getValue()).doubleValue());
+			Database.saveWarningFilterPreferences(
+					((Number) filterPercentSpinner.getValue()).doubleValue(),
+					String.valueOf(filterMetricCombo.getSelectedItem()));
 			Database.saveWarningHeapPreferences(
 					((Number) heapPercentSpinner.getValue()).doubleValue());
 			refreshOpenPlansAfterWarningSettingsChange();
@@ -1597,13 +1617,19 @@ public class FormPanel extends JPanel {
 				sortEntirePlansTree(true);
 				persistEntireTreeSortOrders(planTreeRoot);
 			}
+		};
+		applyBtn.addActionListener(e -> applySettings.run());
+		saveCloseBtn.addActionListener(e -> {
+			applySettings.run();
+			dialog.dispose();
 		});
-		closeBtn.addActionListener(e -> dialog.dispose());
+		cancelBtn.addActionListener(e -> dialog.dispose());
 
 		JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
 		buttons.setBorder(BorderFactory.createEmptyBorder(8, 12, 12, 12));
 		buttons.add(applyBtn);
-		buttons.add(closeBtn);
+		buttons.add(saveCloseBtn);
+		buttons.add(cancelBtn);
 
 		dialog.getContentPane().setLayout(new BorderLayout());
 		dialog.getContentPane().add(body, BorderLayout.CENTER);

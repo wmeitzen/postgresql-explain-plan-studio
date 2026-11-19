@@ -542,6 +542,8 @@ public final class Database {
 		ensureConfigColumn("plans_sort_mode", "varchar(16) not null default 'by_name'");
 		ensureConfigColumn("warning_filter_percent",
 				"float not null default " + (int) OperatorWarnings.FILTER_WARNING_PERCENT);
+		ensureConfigColumn("warning_filter_metric",
+				"varchar(16) not null default '" + OperatorWarnings.METRIC_ROWS + "'");
 		ensureConfigColumn("warning_filter_min_actual_rows",
 				"int not null default " + (int) OperatorWarnings.WARNING_MIN_ACTUAL_ROWS);
 		ensureConfigColumn("warning_min_actual_rows",
@@ -1713,6 +1715,13 @@ south_1_fontmetrics_width = null;
 		return loadConfigDouble("warning_filter_percent", OperatorWarnings.FILTER_WARNING_PERCENT);
 	}
 
+	/** Filter warning metric: {@code rows} or {@code mass}. */
+	public static String loadWarningFilterMetric() {
+		String metric = loadConfigString("warning_filter_metric", OperatorWarnings.METRIC_ROWS);
+		return OperatorWarnings.METRIC_MASS.equalsIgnoreCase(metric)
+				? OperatorWarnings.METRIC_MASS : OperatorWarnings.METRIC_ROWS;
+	}
+
 	/** Shared minimum Actual rows for every warning indicator (inclusive). */
 	public static double loadWarningMinActualRows() {
 		return loadConfigDouble("warning_min_actual_rows", OperatorWarnings.WARNING_MIN_ACTUAL_ROWS);
@@ -1724,13 +1733,20 @@ south_1_fontmetrics_width = null;
 	}
 
 	public static void saveWarningFilterPreferences(double percentOrMore) {
+		saveWarningFilterPreferences(percentOrMore, OperatorWarnings.METRIC_ROWS);
+	}
+
+	public static void saveWarningFilterPreferences(double percentOrMore, String metric) {
 		if (objConnection == null) {
 			return;
 		}
 		double pct = Math.max(0.0, Math.min(100.0, percentOrMore));
-		String sql = "update config set warning_filter_percent = ?";
+		String metricValue = OperatorWarnings.METRIC_MASS.equalsIgnoreCase(metric)
+				? OperatorWarnings.METRIC_MASS : OperatorWarnings.METRIC_ROWS;
+		String sql = "update config set warning_filter_percent = ?, warning_filter_metric = ?";
 		try (PreparedStatement ps = objConnection.prepareStatement(sql)) {
 			ps.setDouble(1, pct);
+			ps.setString(2, metricValue);
 			ps.executeUpdate();
 		} catch (SQLException ex) {
 			System.out.println("function Database.saveWarningFilterPreferences()");

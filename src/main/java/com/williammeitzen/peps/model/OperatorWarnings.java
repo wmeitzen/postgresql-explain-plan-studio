@@ -167,6 +167,28 @@ public final class OperatorWarnings {
 		return Math.floor(removed / denom * 100.0);
 	}
 
+	/**
+	 * Filter removed share for Settings metric {@code rows} or {@code mass}.
+	 * Mass estimates removed bytes from removed rows × (actual mass / actual rows).
+	 */
+	public static Double filterRemovedPercent(String metric, Double removedRevised, Double actualRevised,
+			Double actualDataSizeBytes) {
+		if (METRIC_MASS.equalsIgnoreCase(metric)) {
+			if (removedRevised == null || actualDataSizeBytes == null) {
+				return null;
+			}
+			double removedRows = Math.max(0.0, removedRevised.doubleValue());
+			double actualRows = actualRevised == null ? 0.0 : Math.max(0.0, actualRevised.doubleValue());
+			double actualMass = Math.max(0.0, actualDataSizeBytes.doubleValue());
+			if (actualRows <= 0.0) {
+				return removedRows > 0.0 ? 100.0 : filterRemovedPercent(removedRevised, actualRevised);
+			}
+			double removedMass = removedRows * (actualMass / actualRows);
+			return filterRemovedPercent(removedMass, actualMass);
+		}
+		return filterRemovedPercent(removedRevised, actualRevised);
+	}
+
 	/** Uses default Filter % and shared min Actual rows. */
 	public static boolean warnFilter(Double removedRevised, Double actualRevised) {
 		return warnFilter(removedRevised, actualRevised, FILTER_WARNING_PERCENT, WARNING_MIN_ACTUAL_ROWS);
@@ -187,7 +209,12 @@ public final class OperatorWarnings {
 
 	/** Filter % only (caller applies {@link #meetsMinActualRows}). */
 	public static boolean warnFilterPercent(Double removedRevised, Double actualRevised, double percentOrMore) {
-		Double pct = filterRemovedPercent(removedRevised, actualRevised);
+		return warnFilterPercent(METRIC_ROWS, removedRevised, actualRevised, null, percentOrMore);
+	}
+
+	public static boolean warnFilterPercent(String metric, Double removedRevised, Double actualRevised,
+			Double actualDataSizeBytes, double percentOrMore) {
+		Double pct = filterRemovedPercent(metric, removedRevised, actualRevised, actualDataSizeBytes);
 		return pct != null && pct.doubleValue() >= percentOrMore;
 	}
 
@@ -294,16 +321,17 @@ public final class OperatorWarnings {
 
 	/** Hover tooltip for a diagram warning chip. Returns {@code null} for unknown tags. */
 	public static String tooltipFor(String tag) {
-		return tooltipFor(tag, null, null, null, null, null);
+		return tooltipFor(tag, null, null, null, null, METRIC_ROWS, null);
 	}
 
 	/**
 	 * Hover tooltip including measured values when available.
 	 * {@code estimateRatio} is display text such as {@code 156:1}; percent fields
 	 * are numeric strings without a trailing {@code %}.
+	 * {@code filterMetric} is {@link #METRIC_ROWS} or {@link #METRIC_MASS}.
 	 */
 	public static String tooltipFor(String tag, String timePercent, String costPercent,
-			String estimateRatio, String filterPercent, String heapPercent) {
+			String estimateRatio, String filterPercent, String filterMetric, String heapPercent) {
 		if (tag == null || tag.isEmpty()) {
 			return null;
 		}
@@ -326,10 +354,11 @@ public final class OperatorWarnings {
 			return "Actual vs. Estimated ratio is excessive";
 		}
 		if (TAG_FILTER.equals(tag)) {
+			String unit = METRIC_MASS.equalsIgnoreCase(filterMetric) ? "mass" : "rows";
 			if (filterPercent != null && !filterPercent.isEmpty()) {
-				return "Filter removes " + filterPercent + "% of rows";
+				return "Filter removes " + filterPercent + "% of " + unit;
 			}
-			return "Filter removes high % of rows";
+			return "Filter removes high % of " + unit;
 		}
 		if (TAG_HEAP.equals(tag)) {
 			if (heapPercent != null && !heapPercent.isEmpty()) {

@@ -2731,6 +2731,7 @@ from explain_plan_operator_annotations
 		String ratioMetric = Database.loadWarningRatioMetric();
 		double rowsFactor = Database.loadWarningRowsFactor();
 		double filterPctThreshold = Database.loadWarningFilterPercent();
+		String filterMetric = Database.loadWarningFilterMetric();
 		double heapPctThreshold = Database.loadWarningHeapPercent();
 		int costTopN = Database.loadWarningCostTopN();
 		int timeTopN = Database.loadWarningTimeTopN();
@@ -2781,7 +2782,7 @@ from explain_plan_operator_annotations
 						toDouble(row.get("total_rows_removed_by_join_filter")),
 						toDouble(row.get("total_rows_removed_by_index_recheck")));
 				boolean filter = enoughRows && OperatorWarnings.warnFilterPercent(
-						removed, totalActualRows, filterPctThreshold);
+						filterMetric, removed, totalActualRows, actualMassBytes, filterPctThreshold);
 				boolean heap = enoughRows && OperatorWarnings.warnHeap(
 						toDouble(row.get("heap_fetches")),
 						toDouble(row.get("actual_rows")),
@@ -5754,7 +5755,8 @@ order by id_explain_plan_property;
 		String costPct = blankIfNullish(metricsRow == null ? null
 				: metricsRow.getString("cost_percentage_string"));
 		String estimateRatio = warningEstimateRatioTooltip(metricsRow);
-		String filterPct = warningFilterPercentTooltip(metricsRow);
+		String filterMetric = Database.loadWarningFilterMetric();
+		String filterPct = warningFilterPercentTooltip(metricsRow, filterMetric);
 		String heapPct = warningHeapPercentTooltip(metricsRow);
 		for (int i = 0; i < parts.length; i++) {
 			String part = parts[i];
@@ -5778,7 +5780,8 @@ order by id_explain_plan_property;
 			g.fill(new RoundRectangle2D.Float(x, chipY, side, side, arc, arc));
 			g.setPaint(priorPaint);
 			drawStringWithFindHighlights(g, part, glyphX, glyphBaseline, warningChipForeground(part));
-			String tip = OperatorWarnings.tooltipFor(part, timePct, costPct, estimateRatio, filterPct, heapPct);
+			String tip = OperatorWarnings.tooltipFor(part, timePct, costPct, estimateRatio, filterPct,
+					filterMetric, heapPct);
 			if (tip != null && !tip.isEmpty()) {
 				synchronized (warningChipHits) {
 					warningChipHits.add(new WarningChipHit(new Rectangle(x, chipY, side, side), tip));
@@ -5809,7 +5812,7 @@ order by id_explain_plan_property;
 		return ratio == null ? "" : ratio;
 	}
 
-	private String warningFilterPercentTooltip(JsonObject row) {
+	private String warningFilterPercentTooltip(JsonObject row, String filterMetric) {
 		if (row == null) {
 			return "";
 		}
@@ -5817,7 +5820,8 @@ order by id_explain_plan_property;
 				toDouble(row.get("total_rows_removed_by_filter")),
 				toDouble(row.get("total_rows_removed_by_join_filter")),
 				toDouble(row.get("total_rows_removed_by_index_recheck")));
-		Double pct = OperatorWarnings.filterRemovedPercent(removed, toDouble(row.get("total_actual_rows")));
+		Double pct = OperatorWarnings.filterRemovedPercent(filterMetric, removed,
+				toDouble(row.get("total_actual_rows")), toDouble(row.get("actual_data_size_bytes")));
 		if (pct == null) {
 			return "";
 		}
@@ -7748,13 +7752,17 @@ order by id_explain_plan_property;
 				toDouble(row.get("total_rows_removed_by_filter")),
 				toDouble(row.get("total_rows_removed_by_join_filter")),
 				toDouble(row.get("total_rows_removed_by_index_recheck")));
-		Double filterPct = OperatorWarnings.filterRemovedPercent(removed, actualRows);
 		double filterPctThreshold = Database.loadWarningFilterPercent();
-		if (enoughRows && OperatorWarnings.warnFilterPercent(removed, actualRows, filterPctThreshold)) {
-			block.append("Filter removes a high share of rows");
-			if (filterPct != null) {
+		String filterMetric = Database.loadWarningFilterMetric();
+		Double filterPctForMetric = OperatorWarnings.filterRemovedPercent(filterMetric, removed, actualRows,
+				actualMass);
+		if (enoughRows && OperatorWarnings.warnFilterPercent(filterMetric, removed, actualRows, actualMass,
+				filterPctThreshold)) {
+			block.append("Filter removes a high share of ")
+					.append(OperatorWarnings.METRIC_MASS.equals(filterMetric) ? "mass" : "rows");
+			if (filterPctForMetric != null) {
 				block.append(" (")
-						.append(String.format(java.util.Locale.US, "%.0f", filterPct))
+						.append(String.format(java.util.Locale.US, "%.0f", filterPctForMetric))
 						.append("%)");
 			}
 			block.append(".\n");
@@ -8467,7 +8475,8 @@ order by id_explain_plan_property;
 				toDouble(row.get("total_rows_removed_by_join_filter")),
 				toDouble(row.get("total_rows_removed_by_index_recheck")));
 		boolean filterWarn = enoughRows && OperatorWarnings.warnFilterPercent(
-				removedRevised, totalActualRows, Database.loadWarningFilterPercent());
+				Database.loadWarningFilterMetric(), removedRevised, totalActualRows, actualDataSizeBytes,
+				Database.loadWarningFilterPercent());
 		Double heapFetches = toDouble(row.get("heap_fetches"));
 		Double heapPct = OperatorWarnings.heapFetchPercent(
 				heapFetches,
