@@ -9,7 +9,10 @@ Graphical viewer for PostgreSQL `EXPLAIN` plans.
 - <img src="docs/readme-icons/linux.svg" width="16" height="16" alt="Linux" /> Linux zip: [PostgreSQLExplainPlanStudio-0.0.31-linux-x64.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.31-linux-x64.zip)
 - <img src="docs/readme-icons/linux.svg" width="16" height="16" alt="Linux" /> Linux `.deb`: [PostgreSQLExplainPlanStudio-0.0.31-linux-x64.deb](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.31-linux-x64.deb)
 
-  To install the `.deb` on Linux: `sudo apt install ./PostgreSQLExplainPlanStudio-0.0.31-linux-x64.deb`
+  To install the `.deb` on Linux:
+  - Exact file: `sudo apt install ./PostgreSQLExplainPlanStudio-0.0.31-linux-x64.deb`
+  - Highest version in the current directory (when several `.deb` files are present):
+    `sudo apt install "./$(printf '%s\n' PostgreSQLExplainPlanStudio-*-linux-x64.deb | sort -V | tail -n1)"`
 - <img src="docs/readme-icons/apple.svg" width="16" height="16" alt="macOS" /> macOS app: [PostgreSQLExplainPlanStudio-0.0.31-mac-x64.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.31-mac-x64.zip)
 
   To install the `x64.zip` on macOS:
@@ -20,11 +23,11 @@ Graphical viewer for PostgreSQL `EXPLAIN` plans.
 - <img src="docs/readme-icons/apple.svg" width="16" height="16" alt="macOS" /> macOS (JAR): [PostgreSQLExplainPlanStudio-0.0.31-mac-jar.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-0.0.31-mac-jar.zip)
 
   To install the `jar.zip` on macOS:
+  - Install [Java 17 or later](https://adoptium.net/temurin/releases/?version=17) (Temurin or any JRE/JDK)
   - Unzip file
   - Open a terminal
   - Navigate to the unzipped file's new directory
   - `chmod +x peps.sh`
-  - Install [Java 17 or later](https://adoptium.net/temurin/releases/?version=17) (Temurin or any JRE/JDK)
   - To launch: `./peps.sh`
 
 All [releases](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases).
