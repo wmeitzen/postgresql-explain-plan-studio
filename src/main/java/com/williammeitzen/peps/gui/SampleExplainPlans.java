@@ -11,8 +11,8 @@ import java.nio.charset.StandardCharsets;
  */
 public final class SampleExplainPlans {
 
-	private static final String JSON_SAMPLE_RESOURCE = "/samples/all_cellline_view-explain.json";
-	private static final String TEXT_SAMPLE_RESOURCE = "/samples/all_cellline_view-explain.txt";
+	private static final String JSON_SAMPLE_RESOURCE = "/samples/gxd_genotype_summary_view-explain.json";
+	private static final String TEXT_SAMPLE_RESOURCE = "/samples/gxd_genotype_summary_view-explain.txt";
 
 	private static volatile String cachedJsonPlan;
 	private static volatile String cachedTextPlan;
@@ -20,7 +20,7 @@ public final class SampleExplainPlans {
 	private SampleExplainPlans() {
 	}
 
-	/** Real JSON EXPLAIN ANALYZE output for {@code all_cellline_view}. */
+	/** Real JSON EXPLAIN ANALYZE output for {@code gxd_genotype_summary_view}. */
 	public static String jsonPlanText() {
 		String cached = cachedJsonPlan;
 		if (cached != null) {
@@ -34,7 +34,7 @@ public final class SampleExplainPlans {
 		}
 	}
 
-	/** Real text EXPLAIN ANALYZE output for {@code all_cellline_view}. */
+	/** Real text EXPLAIN ANALYZE output for {@code gxd_genotype_summary_view}. */
 	public static String textPlanText() {
 		String cached = cachedTextPlan;
 		if (cached != null) {

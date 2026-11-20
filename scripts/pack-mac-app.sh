@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Build a drag-to-Applications macOS .app (+ .dmg) with a bundled JRE via jpackage.
+# Build a drag-to-Applications macOS .app (+ .dmg) with a bundled JRE.
+# .app via jpackage; .dmg via hdiutil (Applications symlink — works over SSH, no SetFile/CLT).
 #
 # Must run on macOS (Intel → mac-x64, Apple Silicon → mac-arm64). Cannot be built on Windows/Linux.
 #
@@ -180,40 +181,42 @@ log "Info.plist names:"
 /usr/libexec/PlistBuddy -c "Print :CFBundleName" "${INFO_PLIST}" || true
 /usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" "${INFO_PLIST}" || true
 
-# DMG: skip over SSH / when PEPS_SKIP_MAC_DMG=1 — jpackage calls SetFile, which pops a
-# GUI "install Command Line Tools" dialog and can hang headless remote builds.
+# DMG via hdiutil (not jpackage --type dmg). jpackage's DMG path calls SetFile, which
+# needs Xcode CLT and pops a GUI installer dialog that hangs headless SSH builds.
+# hdiutil needs no CLT and still gives the drag-.app-to-Applications volume.
+# Set PEPS_SKIP_MAC_DMG=1 to skip and ship .app zip only.
 SKIP_DMG=0
-if [[ "${PEPS_SKIP_MAC_DMG:-0}" == "1" || -n "${SSH_CONNECTION:-}" ]]; then
+if [[ "${PEPS_SKIP_MAC_DMG:-0}" == "1" ]]; then
   SKIP_DMG=1
-  log "Skipping DMG (SSH or PEPS_SKIP_MAC_DMG=1). Shipping .app zip instead."
+  log "Skipping DMG (PEPS_SKIP_MAC_DMG=1). Shipping .app zip instead."
 fi
 
 rm -f "${JPACKAGE_DEST}"/*.dmg "${DMG_PATH}"
 if [[ "$SKIP_DMG" -eq 0 ]]; then
-  log "jpackage DMG..."
-  # May briefly open a Finder window; SetFile may prompt for Xcode CLT (Cancel is OK if DMG appears).
-  if jpackage \
-    --type dmg \
-    --app-image "${APP_BUNDLE}" \
-    --name "${APP_NAME}" \
-    --app-version "${MAC_APP_VERSION}" \
-    --vendor "William Meitzen" \
-    --description "${DISPLAY_NAME}" \
-    --dest "${JPACKAGE_DEST}" \
-    --mac-package-identifier "com.williammeitzen.peps" \
-    --mac-package-name "${DISPLAY_NAME}"
-  then
-    shopt -s nullglob
-    dmgs=("${JPACKAGE_DEST}"/*.dmg)
-    shopt -u nullglob
-    if [[ ${#dmgs[@]} -eq 1 ]]; then
-      mv -f "${dmgs[0]}" "$DMG_PATH"
-    else
-      echo "WARNING: expected one .dmg from jpackage; found ${#dmgs[@]}. Continuing with .app zip." >&2
-    fi
-  else
-    echo "WARNING: jpackage DMG failed (often SetFile / Xcode CLT). Continuing with .app zip." >&2
+  log "Creating DMG with hdiutil (Applications symlink)..."
+  DMG_STAGE="${JPACKAGE_DEST}/dmg-stage"
+  rm -rf "${DMG_STAGE}"
+  mkdir -p "${DMG_STAGE}"
+  # Copy the .app (ditto preserves resource forks / Finder metadata better than cp -R).
+  if ! ditto "${APP_BUNDLE}" "${DMG_STAGE}/${DISPLAY_NAME}.app"; then
+    cp -R "${APP_BUNDLE}" "${DMG_STAGE}/${DISPLAY_NAME}.app"
   fi
+  ln -s /Applications "${DMG_STAGE}/Applications"
+  # Volname: keep short / no spaces for reliable /Volumes mount paths in scripts.
+  DMG_VOLNAME="PEPS-${VERSION}"
+  if hdiutil create \
+      -volname "${DMG_VOLNAME}" \
+      -srcfolder "${DMG_STAGE}" \
+      -ov \
+      -format UDZO \
+      "${DMG_PATH}"
+  then
+    log "Wrote ${DMG_PATH}"
+  else
+    echo "WARNING: hdiutil DMG failed. Continuing with .app zip." >&2
+    rm -f "${DMG_PATH}"
+  fi
+  rm -rf "${DMG_STAGE}"
 fi
 
 # Zip of the .app — required for remote/dev-release when DMG is skipped.

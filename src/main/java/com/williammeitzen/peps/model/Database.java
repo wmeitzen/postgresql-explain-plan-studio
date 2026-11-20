@@ -2123,6 +2123,7 @@ south_1_fontmetrics_width = null;
 		ensureTableColumn("explain_plan_operator_annotations", "warning_tags", "varchar(256)");
 		ensureTableColumn("explain_plan_operator_annotations", "warning_tags_fontmetrics_width", "int");
 		ensureTableColumn("explain_plan_operator_annotations", "warning_tags_fontmetrics_height", "int");
+		ensureTableColumn("explain_plan_operator_annotations", "operator_display_number", "int");
 	}
 
 	private static void ensureTableColumn(String tableName, String columnName, String columnSqlType) {

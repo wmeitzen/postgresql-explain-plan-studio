@@ -36,8 +36,9 @@ public class DiagramFindBar extends JPanel {
 
 	private static final long serialVersionUID = 1L;
 
-	/** Soft red; ColorUIResource so scheme swaps can replace it. */
-	private static final Color NO_MATCH_BG = new Color(0xFF, 0xDC, 0xDC);
+	/** High-contrast no-match pair (readable on light and dark schemes). */
+	private static final Color NO_MATCH_BG = new Color(0x9F, 0x12, 0x39);
+	private static final Color NO_MATCH_FG = new Color(0xFF, 0xF1, 0xF2);
 
 	private final JTextField queryField = new JTextField(18);
 	private final JCheckBox timeWarnBox = new JCheckBox("Time");
@@ -322,24 +323,28 @@ public class DiagramFindBar extends JPanel {
 		boolean noMatch = searching && matches.isEmpty();
 		if (noMatch) {
 			queryField.setBackground(UiTheme.uiColor(NO_MATCH_BG));
+			queryField.setForeground(UiTheme.uiColor(NO_MATCH_FG));
+			queryField.setCaretColor(NO_MATCH_FG);
+			queryField.setSelectedTextColor(NO_MATCH_FG);
+			queryField.setSelectionColor(new Color(0xBE, 0x12, 0x3C));
 		} else {
 			Color bg = UIManager.getColor("TextField.background");
 			if (bg != null) {
 				queryField.setBackground(UiTheme.uiColor(bg));
 			}
-		}
-		Color fg = UIManager.getColor("TextField.foreground");
-		if (fg != null) {
-			queryField.setForeground(UiTheme.uiColor(fg));
-			queryField.setCaretColor(fg);
-		}
-		Color selBg = UIManager.getColor("TextField.selectionBackground");
-		if (selBg != null) {
-			queryField.setSelectionColor(selBg);
-		}
-		Color selFg = UIManager.getColor("TextField.selectionForeground");
-		if (selFg != null) {
-			queryField.setSelectedTextColor(selFg);
+			Color fg = UIManager.getColor("TextField.foreground");
+			if (fg != null) {
+				queryField.setForeground(UiTheme.uiColor(fg));
+				queryField.setCaretColor(fg);
+			}
+			Color selBg = UIManager.getColor("TextField.selectionBackground");
+			if (selBg != null) {
+				queryField.setSelectionColor(selBg);
+			}
+			Color selFg = UIManager.getColor("TextField.selectionForeground");
+			if (selFg != null) {
+				queryField.setSelectedTextColor(selFg);
+			}
 		}
 	}
 }

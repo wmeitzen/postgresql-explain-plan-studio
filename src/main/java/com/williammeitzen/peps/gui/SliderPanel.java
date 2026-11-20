@@ -591,6 +591,7 @@ public class SliderPanel extends JPanel implements Scrollable {
 		int idExplainPlan = planGraphPanel.getIdExplainPlan().intValue();
 		// Span bar uses aligned annotation extents; label start/end use Property/Value grid strings.
 		String strSQL = "select EPOA.id_explain_plan_property, EPOA.south_1_text, EPOA.node_type\n"
+				+ ", coalesce(EPOA.operator_display_number, EPOA.id_explain_plan_property) as operator_display_number\n"
 				+ ", EPOA.min_actual_startup_time_ms as start_ms\n"
 				+ ", EPOA.max_actual_total_time_ms as end_ms\n"
 				+ ", EPOA.difference_time_ms\n"
@@ -704,7 +705,17 @@ public class SliderPanel extends JPanel implements Scrollable {
 			diffLabel = formatRoundedNumber(spanDiff, scale);
 		}
 
-		String label = buildSelectedOperatorLabel(operatorPropertyId.intValue(), south1,
+		int displayNumber = operatorPropertyId.intValue();
+		if (row.get("operator_display_number") instanceof Number) {
+			displayNumber = ((Number) row.get("operator_display_number")).intValue();
+		} else if (row.get("operator_display_number") != null) {
+			try {
+				displayNumber = Integer.parseInt(String.valueOf(row.get("operator_display_number")).trim());
+			} catch (NumberFormatException ignored) {
+				// keep sparse id
+			}
+		}
+		String label = buildSelectedOperatorLabel(displayNumber, south1,
 				startLabel, endLabel, diffLabel, calculated);
 		if (selectedOperatorLabel != null) {
 			selectedOperatorLabel.setText(label);

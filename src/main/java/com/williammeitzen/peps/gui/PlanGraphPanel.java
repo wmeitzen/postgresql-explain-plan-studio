@@ -710,6 +710,9 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 			if (bolShowTiming == true) { System.out.println("before nestInitPlansWithinAnnotationsTable: " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
 			nestInitPlansWithinAnnotationsTable(idExplainPlan);
 			if (bolShowTiming == true) { System.out.println("after nestInitPlansWithinAnnotationsTable: " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
+
+			// Dense 1..N labels for diagram operators (internal ids stay sparse)
+			assignOperatorDisplayNumbers(idExplainPlan);
 			
 			// generate initial cartesian coordinates
 			if (bolShowTiming == true) { System.out.println("before generateInitialCartesianData: " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
@@ -1464,6 +1467,59 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 			}
 		}
 
+	}
+
+	/**
+	 * Assign dense operator_display_number 1..N for real diagram operators
+	 * (excludes synthetic root -1). Keeps sparse id_explain_plan_property for joins.
+	 */
+	public void assignOperatorDisplayNumbers(int intIDExplainPlan) {
+		Database.ensureExplainPlanOperatorAnnotationsPev2Columns();
+		Database.dml("update explain_plan_operator_annotations set operator_display_number = null\n"
+				+ "where id_explain_plan = " + intIDExplainPlan + "\n"
+				+ "and id_explain_plan_property = -1");
+		Database.dml("with numbered as (\n"
+				+ "  select id_explain_plan, id_explain_plan_property,\n"
+				+ "    row_number() over (\n"
+				+ "      partition by id_explain_plan\n"
+				+ "      order by id_explain_plan_property\n"
+				+ "    ) as display_number\n"
+				+ "  from explain_plan_operator_annotations\n"
+				+ "  where id_explain_plan = " + intIDExplainPlan + "\n"
+				+ "  and id_explain_plan_property <> -1\n"
+				+ ")\n"
+				+ "update explain_plan_operator_annotations as EPOA set\n"
+				+ "operator_display_number = (\n"
+				+ "  select numbered.display_number from numbered\n"
+				+ "  where numbered.id_explain_plan = EPOA.id_explain_plan\n"
+				+ "  and numbered.id_explain_plan_property = EPOA.id_explain_plan_property\n"
+				+ ")\n"
+				+ "where EPOA.id_explain_plan = " + intIDExplainPlan + "\n"
+				+ "and EPOA.id_explain_plan_property <> -1");
+	}
+
+	/** Visible operator number for UI chrome; falls back to sparse id if unset. */
+	public int resolveOperatorDisplayNumber(int operatorPropertyId) {
+		if (idExplainPlan == null || operatorPropertyId < 0) {
+			return operatorPropertyId;
+		}
+		JsonObject row = Database.row(
+				"select coalesce(operator_display_number, id_explain_plan_property) as n\n"
+						+ "from explain_plan_operator_annotations\n"
+						+ "where id_explain_plan = " + idExplainPlan + "\n"
+						+ "and id_explain_plan_property = " + operatorPropertyId);
+		if (row == null || row.get("n") == null) {
+			return operatorPropertyId;
+		}
+		Object raw = row.get("n");
+		if (raw instanceof Number) {
+			return ((Number) raw).intValue();
+		}
+		try {
+			return Integer.parseInt(String.valueOf(raw).trim());
+		} catch (NumberFormatException ex) {
+			return operatorPropertyId;
+		}
 	}
 
 	// REFACTOR - set initial x- and y-coordinates from explain_plan_operator_annotations
@@ -2347,6 +2403,9 @@ select id_explain_plan_property, parent_id_explain_plan_property, x_cart, y_cart
 		boolean bolConcatenateSQL = false;
 		boolean bolUseTransaction = false;
 
+		// Ensure dense display numbers exist before building "(n) Cost: …" labels.
+		assignOperatorDisplayNumbers(intIDExplainPlan);
+
 		if (bolShowTiming == true) { System.out.println("before updateStringUnitsPercentageAnnotationsTextData (1): " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
 
 		if (bolConcatenateSQL == false && strSQL != "") { Database.dml(strSQL); strSQL = ""; }
@@ -2619,13 +2678,14 @@ from explain_plan_operator_annotations
 
 		// set labels and highlights
 		// SQLite: null || 'x' => null, so missing cost/time metrics must not erase the operator number.
-		// When a metric is unavailable, fall back to "(id) Node Type" above the icon.
+		// When a metric is unavailable, fall back to "(display#) Node Type" above the icon.
+		// Prefer dense operator_display_number; fall back to sparse id if unset.
 		strSQL += "update explain_plan_operator_annotations as EPOA set\n" +
 		
 				// cost
 				"cost_label_string = case\n" +
-				"    when cost_percentage_string is null then '(' || id_explain_plan_property || ')' || case when node_type is null or node_type = '' then '' else ' ' || node_type end\n" +
-				"    else '(' || id_explain_plan_property || ') Cost: ' || cost_percentage_string || '%'\n" +
+				"    when cost_percentage_string is null then '(' || coalesce(operator_display_number, id_explain_plan_property) || ')' || case when node_type is null or node_type = '' then '' else ' ' || node_type end\n" +
+				"    else '(' || coalesce(operator_display_number, id_explain_plan_property) || ') Cost: ' || cost_percentage_string || '%'\n" +
 				"  end\n" + 
 				", cost_highlight_1 = case\n" + 
 				"  	 when cost_percentage_string*1.0 = (select max(cost_percentage_string*1.0) from explain_plan_operator_annotations where id_explain_plan = EPOA.id_explain_plan and id_explain_plan_property <> -1) then 1\n" + 
@@ -2638,10 +2698,10 @@ from explain_plan_operator_annotations
 				
 				// time difference
 				", difference_time_label_string = case\n" +
-				"    when difference_time_percentage_string is null and difference_time_units_string is null then '(' || id_explain_plan_property || ')' || case when node_type is null or node_type = '' then '' else ' ' || node_type end\n" +
-				"    when difference_time_percentage_string is null then '(' || id_explain_plan_property || ') Time Diff: (' || difference_time_units_string || ')'\n" +
-				"    when difference_time_units_string is null then '(' || id_explain_plan_property || ') Time Diff: ' || difference_time_percentage_string || '%'\n" +
-				"    else '(' || id_explain_plan_property || ') Time Diff: ' || difference_time_percentage_string || '% (' || difference_time_units_string || ')'\n" +
+				"    when difference_time_percentage_string is null and difference_time_units_string is null then '(' || coalesce(operator_display_number, id_explain_plan_property) || ')' || case when node_type is null or node_type = '' then '' else ' ' || node_type end\n" +
+				"    when difference_time_percentage_string is null then '(' || coalesce(operator_display_number, id_explain_plan_property) || ') Time Diff: (' || difference_time_units_string || ')'\n" +
+				"    when difference_time_units_string is null then '(' || coalesce(operator_display_number, id_explain_plan_property) || ') Time Diff: ' || difference_time_percentage_string || '%'\n" +
+				"    else '(' || coalesce(operator_display_number, id_explain_plan_property) || ') Time Diff: ' || difference_time_percentage_string || '% (' || difference_time_units_string || ')'\n" +
 				"  end\n" + 
 				", difference_time_highlight_1 = case\n" + 
 				"    when difference_time_percentage_string*1.0 = (select max(difference_time_percentage_string*1.0) from explain_plan_operator_annotations where id_explain_plan = EPOA.id_explain_plan and id_explain_plan_property <> -1) then 1\n" + 
@@ -2654,10 +2714,10 @@ from explain_plan_operator_annotations
 				
 				// exclusive / operator time
 				", exclusive_time_label_string = case\n" +
-				"    when exclusive_time_percentage_string is null and exclusive_time_units_string is null then '(' || id_explain_plan_property || ')' || case when node_type is null or node_type = '' then '' else ' ' || node_type end\n" +
-				"    when exclusive_time_percentage_string is null then '(' || id_explain_plan_property || ') Opr Time: (' || exclusive_time_units_string || ')'\n" +
-				"    when exclusive_time_units_string is null then '(' || id_explain_plan_property || ') Opr Time: ' || exclusive_time_percentage_string || '%'\n" +
-				"    else '(' || id_explain_plan_property || ') Opr Time: ' || exclusive_time_percentage_string || '% (' || exclusive_time_units_string || ')'\n" +
+				"    when exclusive_time_percentage_string is null and exclusive_time_units_string is null then '(' || coalesce(operator_display_number, id_explain_plan_property) || ')' || case when node_type is null or node_type = '' then '' else ' ' || node_type end\n" +
+				"    when exclusive_time_percentage_string is null then '(' || coalesce(operator_display_number, id_explain_plan_property) || ') Opr Time: (' || exclusive_time_units_string || ')'\n" +
+				"    when exclusive_time_units_string is null then '(' || coalesce(operator_display_number, id_explain_plan_property) || ') Opr Time: ' || exclusive_time_percentage_string || '%'\n" +
+				"    else '(' || coalesce(operator_display_number, id_explain_plan_property) || ') Opr Time: ' || exclusive_time_percentage_string || '% (' || exclusive_time_units_string || ')'\n" +
 				"  end\n" + 
 				", exclusive_time_highlight_1 = case\n" + 
 				"    when exclusive_time_percentage_string*1.0 = (select max(exclusive_time_percentage_string*1.0) from explain_plan_operator_annotations where id_explain_plan = EPOA.id_explain_plan and id_explain_plan_property <> -1) then 1\n" + 
@@ -4588,12 +4648,14 @@ from explain_plan_operator_annotations order by id_explain_plan_property, worker
 				+ "and (\n"
 				+ "  north_1_text is null\n"
 				+ "  or (node_type is not null and node_type <> ''\n"
-				+ "      and north_1_text = '(' || id_explain_plan_property || ')')\n"
+				+ "      and (north_1_text = '(' || id_explain_plan_property || ')'\n"
+				+ "           or north_1_text = '(' || coalesce(operator_display_number, id_explain_plan_property) || ')'))\n"
 				+ ")";
 		JsonObject row = Database.row(strSQL);
 		if (row == null || row.get("c") == null || row.getInteger("c").intValue() == 0) {
 			return;
 		}
+		assignOperatorDisplayNumbers(intIDExplainPlan);
 		updateStringUnitsPercentageAnnotationsTextData(intIDExplainPlan);
 		updateFontMetricsNorthOptionsWidthAndHeight(intIDExplainPlan);
 		copyPercentageByForNorth1(intIDExplainPlan);
@@ -4638,9 +4700,9 @@ from explain_plan_operator_annotations order by id_explain_plan_property, worker
 				+ "end\n"
 				+ "where id_explain_plan = " + intIDExplainPlan + ";\n";
 
-		// Keep "(id) Node Type" visible when the selected metric has no value
+		// Keep "(display#) Node Type" visible when the selected metric has no value
 		strSQL += "update explain_plan_operator_annotations set\n"
-				+ "north_1_text = '(' || id_explain_plan_property || ')'"
+				+ "north_1_text = '(' || coalesce(operator_display_number, id_explain_plan_property) || ')'"
 				+ " || case when node_type is null or node_type = '' then '' else ' ' || node_type end\n"
 				+ ", north_1_fontmetrics_height = " + defaultMaxAscent + "\n"
 				+ ", north_1_highlight_1 = 0\n"
@@ -4680,7 +4742,8 @@ from explain_plan_operator_annotations order by id_explain_plan_property, worker
 						+ "where id_explain_plan = " + intIDExplainPlan + "\n"
 						+ "and id_explain_plan_property > -1\n"
 						+ "and north_1_text is not null\n"
-						+ "and north_1_text like '(' || id_explain_plan_property || '%'\n"
+						+ "and (north_1_text like '(' || id_explain_plan_property || '%'\n"
+						+ "     or north_1_text like '(' || coalesce(operator_display_number, id_explain_plan_property) || '%')\n"
 						+ "and north_1_text not like '%Cost:%'\n"
 						+ "and north_1_text not like '%Opr Time:%'\n"
 						+ "and north_1_text not like '%Time Diff:%'\n"
@@ -7970,6 +8033,11 @@ order by id_explain_plan_property;
 		String multiplierExplain;
 		JsonObject gather = findGatherAncestor(operatorId);
 		Integer gatherId = gather == null ? null : parseAnnotationInt(gather.get("id_explain_plan_property"));
+		Integer gatherDisplayId = gather == null ? null
+				: parseAnnotationInt(gather.get("operator_display_number"));
+		if (gatherDisplayId == null) {
+			gatherDisplayId = gatherId;
+		}
 		Integer gatherLaunched = gather == null ? null : parseAnnotationInt(gather.get("workers_launched"));
 		Integer gatherPlanned = gather == null ? null : parseAnnotationInt(gather.get("workers_planned"));
 		String gatherType = gather == null ? "Gather" : nullToEmpty(gather.getString("node_type"));
@@ -7993,9 +8061,9 @@ order by id_explain_plan_property;
 		} else if (ancestorLaunched != null
 				&& raw.intValue() * (1 + ancestorLaunched.intValue()) == total.intValue()) {
 			multiplier = 1 + ancestorLaunched.intValue();
-			if (gatherId != null) {
+			if (gatherDisplayId != null) {
 				multiplierExplain = multiplier + " (1 leader + " + ancestorLaunched
-						+ " Workers Launched on " + gatherType + " operator " + gatherId + ")";
+						+ " Workers Launched on " + gatherType + " operator " + gatherDisplayId + ")";
 			} else {
 				multiplierExplain = multiplier + " (1 leader + " + ancestorLaunched
 						+ " ancestor Workers Launched)";
@@ -8003,9 +8071,9 @@ order by id_explain_plan_property;
 		} else if (ancestorPlanned != null
 				&& raw.intValue() * (1 + ancestorPlanned.intValue()) == total.intValue()) {
 			multiplier = 1 + ancestorPlanned.intValue();
-			if (gatherId != null) {
+			if (gatherDisplayId != null) {
 				multiplierExplain = multiplier + " (1 leader + " + ancestorPlanned
-						+ " Workers Planned on " + gatherType + " operator " + gatherId + ")";
+						+ " Workers Planned on " + gatherType + " operator " + gatherDisplayId + ")";
 			} else {
 				multiplierExplain = multiplier + " (1 leader + " + ancestorPlanned
 						+ " ancestor Workers Planned)";
@@ -8018,12 +8086,12 @@ order by id_explain_plan_property;
 			if (actualLoops != null) {
 				fb.append("; Actual Loops=").append(actualLoops);
 			}
-			if (gatherId != null && gatherLaunched != null) {
+			if (gatherDisplayId != null && gatherLaunched != null) {
 				fb.append("; Workers Launched on ").append(gatherType).append(" operator ")
-						.append(gatherId).append("=").append(gatherLaunched);
-			} else if (gatherId != null && gatherPlanned != null) {
+						.append(gatherDisplayId).append("=").append(gatherLaunched);
+			} else if (gatherDisplayId != null && gatherPlanned != null) {
 				fb.append("; Workers Planned on ").append(gatherType).append(" operator ")
-						.append(gatherId).append("=").append(gatherPlanned);
+						.append(gatherDisplayId).append("=").append(gatherPlanned);
 			} else if (ancestorLaunched != null) {
 				fb.append("; ancestor Workers Launched=").append(ancestorLaunched);
 			}
@@ -8049,7 +8117,7 @@ order by id_explain_plan_property;
 		Integer currentId = operatorId;
 		for (int depth = 0; depth < 64 && currentId != null && currentId.intValue() >= 0; depth++) {
 			String strSQL = "select id_explain_plan_property, parent_id_explain_plan_property, node_type,\n"
-					+ "workers_planned, workers_launched\n"
+					+ "workers_planned, workers_launched, operator_display_number\n"
 					+ "from explain_plan_operator_annotations\n"
 					+ "where id_explain_plan = " + idExplainPlan + "\n"
 					+ "and id_explain_plan_property = " + currentId + "\n";
@@ -8170,7 +8238,12 @@ order by id_explain_plan_property;
 		}
 		// Root summaries (2-6) sit between Operator (1) and remaining EXPLAIN keys (10)
 		int propertySortKey = isRoot ? 10 : 2;
-		String operatorValueSql = isRoot ? "'User or Application'" : String.valueOf(intIDExplainPlanProperty);
+		String operatorValueSql = isRoot
+				? "'User or Application'"
+				: "(select coalesce(operator_display_number, id_explain_plan_property)\n"
+						+ " from explain_plan_operator_annotations\n"
+						+ " where id_explain_plan = " + idExplainPlan + "\n"
+						+ " and id_explain_plan_property = " + intIDExplainPlanProperty + ")";
 
 		strSQL = "select 0, 1, 'Operator' as operator_name, " + operatorValueSql + " as operator_value\n";
 		if (isRoot) {

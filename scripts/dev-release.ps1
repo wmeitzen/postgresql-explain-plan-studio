@@ -1,34 +1,32 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-  Prompt for a release version, build Windows + Ubuntu + macOS packages, and publish a GitHub release.
+  Prompt for Pre-release or Stable, build packages, and publish a GitHub release.
 
 .DESCRIPTION
-  1) Bumps version, commits/tags/pushes (unless -SkipGit)
-  2) Builds Windows zip (+ .exe installer when WiX is available) on this machine
-  3) SSHs to the Ubuntu VM, syncs from the VMware share into ~/peps, runs jpackage
-     (app-image zip + .deb), and copies both Linux artifacts back
-  4) Builds macOS JAR zip on Windows; SSHs to the Mac VM, runs pack-mac-app.sh,
-     and copies the .app zip (and .dmg if produced) back
-  5) Creates/uploads the GitHub release (private repos OK when `gh auth login` is done)
+  Interactive menu (unless -Action is set):
+    (1) Publish Pre-release — GitHub --prerelease; README Download links unchanged
+    (2) Promote to Stable — Latest full release; rewrite README; bump working tree to next patch
 
-  Default Ubuntu SSH target: administrator@192.168.163.156 (Ubuntu 20.04 release VM).
-  Default Mac SSH target: macosx@192.168.163.164 (Catalina release VM).
-  Day-to-day RECOMPILENOW sync stays on the newer Ubuntu VM (e.g. 154); Linux jpackage
-  must build on 20.04 so the zip runs on Ubuntu 20.04+ desktop.
-  Override with -UbuntuSsh / -MacSsh, $env:PEPS_UBUNTU_SSH / $env:PEPS_MAC_SSH, or
+  Then: bump version if needed, commit/tag/push (unless -SkipGit), build Windows + Ubuntu +
+  macOS assets, upload the GitHub release.
+
+  Override SSH with -UbuntuSsh / -MacSsh, $env:PEPS_UBUNTU_SSH / $env:PEPS_MAC_SSH, or
   scripts/dev-release.local.ps1 ($PepsUbuntuSsh / $PepsMacSsh / $PepsLastVersion).
   After each confirmed run, chosen SSH targets and release version are saved there
-  (gitignored). The version prompt defaults to the next patch after pom.xml
-  (e.g. 0.0.13 → 0.0.14); SSH targets still default to the last saved / env value.
+  (gitignored). The version prompt defaults to the current pom.xml version.
+  Linux jpackage for published assets should run on Ubuntu 20.04.
 
   Existing git tags / GitHub releases for the same version are overwritten.
 
+.PARAMETER Action
+  PreRelease or Stable. Prompted via menu if omitted.
+
 .PARAMETER Version
-  Release version like 0.0.9 (without a leading v). Prompted if omitted.
+  Release version like 1.0.0 (without a leading v). Prompted if omitted; default is current pom.
 
 .PARAMETER UbuntuSsh
-  SSH target for the Ubuntu 20.04 release VM (default: administrator@192.168.163.156)
+  SSH target for the Ubuntu 20.04 release VM
 
 .PARAMETER UbuntuLocalRepo
   Path on the VM for the local build tree (default: ~/peps)
@@ -37,7 +35,7 @@
   Path on the VM to the Windows share checkout (default: /mnt/hgfs/peps)
 
 .PARAMETER MacSsh
-  SSH target for the macOS release VM (default: macosx@192.168.163.164)
+  SSH target for the macOS release VM
 
 .PARAMETER MacLocalRepo
   Path on the Mac for the local build tree (default: ~/peps)
@@ -62,10 +60,12 @@
 
 .EXAMPLE
   .\scripts\dev-release.ps1
-  .\scripts\dev-release.ps1 -Version 0.0.9 -UbuntuSsh administrator@192.168.56.101
-  .\scripts\dev-release.ps1 -MacSsh macosx@192.168.163.164
+  .\scripts\dev-release.ps1 -Action Stable -Version 1.0.0 -Yes
+  .\scripts\dev-release.ps1 -Action PreRelease -Version 1.0.1
 #>
 param(
+	[ValidateSet("", "PreRelease", "Stable")]
+	[string]$Action = "",
 	[string]$Version,
 	[string]$UbuntuSsh,
 	[string]$UbuntuLocalRepo = "~/peps",
@@ -243,11 +243,14 @@ function Update-ReadmeDownloads([string]$NewVersion) {
   - To launch: ``./peps.sh``
 
 All [releases](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases).
+
+**Stable** is the GitHub **Latest** release (links above). **Pre-release** builds are marked Pre-release on the [releases](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases) page and do not replace Latest.
 "@
 	$raw = Get-Content -LiteralPath $readmePath -Raw
 	# Normalize newlines for a reliable match, then restore Windows CRLF on write.
 	$normalized = $raw -replace "`r`n", "`n"
-	$pattern = '(?s)## Download\n.*?\nAll \[releases\]\(https://github\.com/wmeitzen/postgresql-explain-plan-studio/releases\)\.\n'
+	# Match Download through All releases, plus the Stable/Pre-release blurb when present.
+	$pattern = '(?s)## Download\n.*?All \[releases\]\(https://github\.com/wmeitzen/postgresql-explain-plan-studio/releases\)\.\n(?:\n\*\*Stable\*\* is the GitHub \*\*Latest\*\* release \(links above\)\. \*\*Pre-release\*\* builds are marked Pre-release on the \[releases\]\(https://github\.com/wmeitzen/postgresql-explain-plan-studio/releases\) page and do not replace Latest\.\n)?'
 	$replacement = ($downloadBlock -replace "`r`n", "`n") + "`n"
 	if ($normalized -notmatch $pattern) {
 		throw "Failed to locate README ## Download section to update for version $NewVersion"
@@ -305,7 +308,31 @@ function Get-NextPatchVersion {
 
 function Get-DefaultReleaseVersion {
 	param([string]$PomVersion)
-	return Get-NextPatchVersion -Version $PomVersion
+	# Working tree holds the candidate version (Stable or Pre-release); do not auto-bump here.
+	if ([string]::IsNullOrWhiteSpace($PomVersion)) {
+		return $PomVersion
+	}
+	return $PomVersion.Trim()
+}
+
+function Resolve-ReleaseAction {
+	param([string]$Explicit)
+	if (-not [string]::IsNullOrWhiteSpace($Explicit)) {
+		$normalized = $Explicit.Trim()
+		if ($normalized -match '^(?i)pre-?release$') { return "PreRelease" }
+		if ($normalized -match '^(?i)stable$') { return "Stable" }
+		throw "Invalid -Action '$Explicit'. Use PreRelease or Stable."
+	}
+	Write-Host ""
+	Write-Host "Release action:"
+	Write-Host "  (1) Publish Pre-release   — build/upload as GitHub Pre-release (Latest unchanged)"
+	Write-Host "  (2) Promote to Stable     — publish as official Latest; then bump to next patch"
+	$choice = Read-Host "Choose [1/2]"
+	switch -Regex ($choice.Trim()) {
+		'^(1|pre)$' { return "PreRelease" }
+		'^(2|stable)$' { return "Stable" }
+		default { throw "Invalid choice '$choice'. Enter 1 or 2." }
+	}
 }
 
 function Save-DevReleaseLocalConfig {
@@ -376,7 +403,7 @@ function Resolve-ReleaseVersion {
 		return $Explicit.Trim()
 	}
 	$defaultVersion = Get-DefaultReleaseVersion -PomVersion $PomVersion
-	$entered = Read-Host "Release version (pom is $PomVersion; Enter = next) [$defaultVersion]"
+	$entered = Read-Host "Release version (pom is $PomVersion; Enter = current) [$defaultVersion]"
 	if ([string]::IsNullOrWhiteSpace($entered)) {
 		return $defaultVersion
 	}
@@ -920,7 +947,11 @@ echo "Built `$ZIP_ABS"
 	}
 }
 
-# --- version ---
+# --- action + version ---
+$ReleaseAction = Resolve-ReleaseAction -Explicit $Action
+$IsPrerelease = ($ReleaseAction -eq "PreRelease")
+Write-Status "Release action: $ReleaseAction"
+
 $current = Get-CurrentPomVersion
 $Version = Resolve-ReleaseVersion -Explicit $Version -PomVersion $current
 $Version = $Version.Trim()
@@ -928,7 +959,7 @@ if ($Version.StartsWith("v") -or $Version.StartsWith("V")) {
 	$Version = $Version.Substring(1)
 }
 if ($Version -notmatch '^\d+\.\d+\.\d+([.-][A-Za-z0-9.-]+)?$') {
-	throw "Invalid version '$Version'. Use forms like 0.0.9"
+	throw "Invalid version '$Version'. Use forms like 1.0.0"
 }
 $Tag = "v$Version"
 $WindowsZipName = "PostgreSQLExplainPlanStudio-$Version-windows-x64.zip"
@@ -957,8 +988,12 @@ if ($current -ne $Version) {
 } else {
 	Write-Status "pom.xml already at $Version"
 }
-Write-Status "Updating README download links for $Version"
-Update-ReadmeDownloads $Version
+if ($IsPrerelease) {
+	Write-Status "Pre-release: leaving README Download links on Latest Stable"
+} else {
+	Write-Status "Updating README download links for Stable $Version"
+	Update-ReadmeDownloads $Version
+}
 
 if (-not $SkipUbuntu -and -not $SkipBuild) {
 	$UbuntuSsh = Resolve-UbuntuSshTarget -Explicit $UbuntuSsh
@@ -980,6 +1015,7 @@ if (-not $SkipMacApp -and -not $SkipBuild) {
 
 Write-Host ""
 Write-Host "This will:"
+Write-Host "  - Action: $ReleaseAction$(if ($IsPrerelease) { ' (GitHub Pre-release)' } else { ' (Stable / Latest)' })"
 Write-Host "  - $(if ($SkipGit) { 'Skip git commit/tag/push' } else { "Commit/tag/push $Tag" })"
 if ($MacOnlyRelease) {
 	Write-Host "  - $(if ($SkipBuild) { 'Skip Mac JAR zip build' } else { 'Build macOS JAR zip (pack-mac-jar.ps1)' })  [TEMPORARY Mac-only]"
@@ -993,6 +1029,9 @@ if ($MacOnlyRelease) {
 	Write-Host "  - $(if ($SkipBuild -or $SkipMacApp) { 'Skip Mac .app build' } else { "Build macOS .app zip/DMG on $MacSsh" })"
 }
 Write-Host "  - Upload available release assets to GitHub release $Tag"
+if (-not $IsPrerelease) {
+	Write-Host "  - After Stable succeeds: bump working tree to next patch"
+}
 if (-not $Yes) {
 	$confirm = Read-Host "Continue? [Y/n]"
 	if ($confirm -match '^[Nn]') {
@@ -1177,10 +1216,10 @@ $dmgLine- First launch of an unsigned build: right-click the app → Open → Op
 "@
 	} else { "" }
 
-	$title = "v$Version"
+	$title = if ($IsPrerelease) { "v$Version (Pre-release)" } else { "v$Version" }
 	if ($MacOnlyRelease) {
 		$notes = @"
-## PostgreSQL Explain Plan Studio v$Version
+## PostgreSQL Explain Plan Studio v$Version$(if ($IsPrerelease) { ' (Pre-release)' } else { '' })
 
 TEMPORARY Mac-only release iteration (Windows/Linux assets not rebuilt this run).
 
@@ -1203,7 +1242,7 @@ $macAppNotes
 "@
 		}
 		$notes = @"
-## PostgreSQL Explain Plan Studio v$Version
+## PostgreSQL Explain Plan Studio v$Version$(if ($IsPrerelease) { ' (Pre-release)' } else { '' })
 
 Bundled Java runtime included (Windows/Linux/macOS app). macOS JAR zip requires a system JDK 17+.
 
@@ -1233,15 +1272,46 @@ $macAppNotes
 	$existing = gh release view $Tag 2>$null
 	$releaseExists = ($LASTEXITCODE -eq 0)
 	$ErrorActionPreference = $prevEa
+	$prereleaseArgs = @()
+	if ($IsPrerelease) {
+		$prereleaseArgs += "--prerelease"
+	}
 	if ($releaseExists) {
 		Write-Status "Release $Tag already exists — replacing assets"
 		gh release upload $Tag @assets --clobber
 		if ($LASTEXITCODE -ne 0) { throw "gh release upload failed" }
-		gh release edit $Tag --title $title --notes $notes | Out-Null
+		if ($IsPrerelease) {
+			gh release edit $Tag --title $title --notes $notes --prerelease | Out-Null
+		} else {
+			# Promote a prior Pre-release (or refresh Stable) to Latest.
+			gh release edit $Tag --title $title --notes $notes --prerelease=false | Out-Null
+		}
+		if ($LASTEXITCODE -ne 0) { throw "gh release edit failed" }
 	} else {
-		Write-Status "Creating release $Tag"
-		gh release create $Tag @assets --title $title --notes $notes
+		Write-Status "Creating release $Tag$(if ($IsPrerelease) { ' (Pre-release)' } else { '' })"
+		gh release create $Tag @assets --title $title --notes $notes @prereleaseArgs
 		if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
+	}
+
+	if (-not $IsPrerelease) {
+		$nextVersion = Get-NextPatchVersion -Version $Version
+		if ($nextVersion -ne $Version) {
+			Write-Status "Stable published — bumping working tree $Version -> $nextVersion"
+			Set-ProjectVersion $nextVersion
+			Save-DevReleaseLocalConfig -UbuntuSshTarget $UbuntuSsh -MacSshTarget $MacSsh -LastVersion $nextVersion
+			if (-not $SkipGit) {
+				git add pom.xml "src/main/java/com/williammeitzen/peps/gui/MainFrame.java"
+				$statusBump = git status --porcelain -- pom.xml "src/main/java/com/williammeitzen/peps/gui/MainFrame.java"
+				if ($statusBump) {
+					$bumpCommit = Invoke-Native -Command { git commit -m "Bump version to $nextVersion" }
+					if ($bumpCommit.Output) { $bumpCommit.Output | ForEach-Object { Write-Host $_ } }
+					if ($bumpCommit.ExitCode -ne 0) { throw "git commit (post-Stable bump) failed (exit $($bumpCommit.ExitCode))" }
+					$pushBump = Invoke-Native -Command { git push origin HEAD }
+					if ($pushBump.Output) { $pushBump.Output | ForEach-Object { Write-Host $_ } }
+					if ($pushBump.ExitCode -ne 0) { throw "git push (post-Stable bump) failed (exit $($pushBump.ExitCode))" }
+				}
+			}
+		}
 	}
 
 	Complete-ReleaseProgress "Done"
