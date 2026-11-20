@@ -55,7 +55,14 @@ public class DockingLayout {
 
 		plansDockable = createToolDockable(ID_PLANS, "Plans", plansPanel);
 
-		JPanel documentsHost = new JPanel(new BorderLayout());
+		// Cap shell minimum so nested diagram docks (Properties/Sliders mins) do not
+		// propagate up and lock the Plans|Documents divider when the frame is narrow.
+		JPanel documentsHost = new JPanel(new BorderLayout()) {
+			@Override
+			public java.awt.Dimension getMinimumSize() {
+				return new java.awt.Dimension(180, 100);
+			}
+		};
 		documentsHost.add(documentsContent, BorderLayout.CENTER);
 		documentsDockable = new DefaultSingleCDockable(ID_DOCUMENTS, "Documents", documentsHost);
 		documentsDockable.setCloseable(false);

@@ -12,6 +12,10 @@ public class PostgreSQLExplainPlanStudio {
 		System.setProperty("apple.awt.application.name", "PostgreSQL Explain Plan Studio");
 		System.setProperty("com.apple.mrj.application.apple.menu.about.name",
 				"PostgreSQL Explain Plan Studio");
+		// Ubuntu/VMware: the XRender pipeline caches same-size BufferedImage icons by
+		// dimensions only, so Plans toolbar glyphs all paint as the settings gear and
+		// Get Started cards all share one icon. Disable before Toolkit/Swing starts.
+		System.setProperty("sun.java2d.xrender", "false");
 
 		SwingUtilities.invokeLater(new Runnable() {
 			public void run() {

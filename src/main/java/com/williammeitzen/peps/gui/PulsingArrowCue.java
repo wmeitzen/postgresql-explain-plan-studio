@@ -1,6 +1,5 @@
 package com.williammeitzen.peps.gui;
 
-import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Font;
@@ -79,10 +78,15 @@ public class PulsingArrowCue extends JComponent {
 
 			int arrowLeft = Math.round(10 + slide);
 			int arrowRight = arrowLeft + 28;
-			g2.setStroke(new BasicStroke(3.2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-
-			// Shaft pointing left (toward the button).
-			g2.drawLine(arrowRight, cy, arrowLeft + 12, cy);
+			// Filled shaft + head (stroke drawLine often vanishes on Ubuntu 22 OpenJDK).
+			Path2D shaft = new Path2D.Float();
+			float half = 2.2f;
+			shaft.moveTo(arrowRight, cy - half);
+			shaft.lineTo(arrowLeft + 14, cy - half);
+			shaft.lineTo(arrowLeft + 14, cy + half);
+			shaft.lineTo(arrowRight, cy + half);
+			shaft.closePath();
+			g2.fill(shaft);
 			Path2D head = new Path2D.Float();
 			float headSize = 8f;
 			head.moveTo(arrowLeft + 1, cy);

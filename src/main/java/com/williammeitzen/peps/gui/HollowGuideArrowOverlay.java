@@ -214,22 +214,33 @@ public final class HollowGuideArrowOverlay extends JComponent {
 			curve.moveTo(fromPt.x, fromPt.y);
 			curve.quadTo(ctrl.x, ctrl.y, toPt.x, toPt.y);
 
-			float dashPhase = phase * 18f;
-			float[] dash = { 10f, 8f };
-			Stroke dashed = new BasicStroke(2.2f + 1.2f * pulse, BasicStroke.CAP_ROUND,
-					BasicStroke.JOIN_ROUND, 10f, dash, dashPhase);
-			g2.setStroke(dashed);
+			boolean linux = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("linux");
 			g2.setColor(new Color(strokeColor.getRed(), strokeColor.getGreen(), strokeColor.getBlue(), alpha));
-			g2.draw(curve);
+			if (linux) {
+				// Dashed Path2D strokes often clip to a stub on Ubuntu 22 — solid + polyline.
+				g2.setStroke(new BasicStroke(3.4f + pulse, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+				drawQuadAsSegments(g2, fromPt, ctrl, toPt, 24);
+			} else {
+				float dashPhase = phase * 18f;
+				float[] dash = { 10f, 8f };
+				Stroke dashed = new BasicStroke(2.2f + 1.2f * pulse, BasicStroke.CAP_ROUND,
+						BasicStroke.JOIN_ROUND, 10f, dash, dashPhase);
+				g2.setStroke(dashed);
+				g2.draw(curve);
+			}
 
 			double tipAngle = Math.atan2(toPt.y - ctrl.y, toPt.x - ctrl.x);
-			paintHollowArrowHead(g2, toPt.x, toPt.y, tipAngle, 16f + 4f * pulse, strokeColor, alpha);
+			paintHollowArrowHead(g2, toPt.x, toPt.y, tipAngle, 16f + 4f * pulse, strokeColor, alpha, linux);
 
 			float ringR = 14f + 8f * pulse;
 			g2.setStroke(new BasicStroke(2f + pulse, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
 			g2.setColor(new Color(strokeColor.getRed(), strokeColor.getGreen(), strokeColor.getBlue(),
 					Math.round(90 + 110 * (1f - pulse))));
-			g2.draw(new Ellipse2D.Float(end.x - ringR, end.y - ringR, ringR * 2f, ringR * 2f));
+			if (linux) {
+				g2.fill(new Ellipse2D.Float(end.x - 4f, end.y - 4f, 8f, 8f));
+			} else {
+				g2.draw(new Ellipse2D.Float(end.x - ringR, end.y - ringR, ringR * 2f, ringR * 2f));
+			}
 		} finally {
 			g2.dispose();
 		}
@@ -269,23 +280,52 @@ public final class HollowGuideArrowOverlay extends JComponent {
 		}
 	}
 
+	/** Approximate a quadratic Bezier with straight segments (reliable on Ubuntu OpenJDK). */
+	private static void drawQuadAsSegments(Graphics2D g2, Point2D.Float p0, Point2D.Float p1,
+			Point2D.Float p2, int steps) {
+		float prevX = p0.x;
+		float prevY = p0.y;
+		int n = Math.max(4, steps);
+		for (int i = 1; i <= n; i++) {
+			float t = i / (float) n;
+			float u = 1f - t;
+			float x = u * u * p0.x + 2f * u * t * p1.x + t * t * p2.x;
+			float y = u * u * p0.y + 2f * u * t * p1.y + t * t * p2.y;
+			g2.drawLine(Math.round(prevX), Math.round(prevY), Math.round(x), Math.round(y));
+			prevX = x;
+			prevY = y;
+		}
+	}
+
 	private static void paintHollowArrowHead(Graphics2D g2, float x, float y, double angle,
-			float size, Color color, int alpha) {
+			float size, Color color, int alpha, boolean filled) {
 		GeneralPath head = new GeneralPath();
-		head.moveTo(0, 0);
-		head.lineTo(-size, -size * 0.55f);
-		head.moveTo(0, 0);
-		head.lineTo(-size, size * 0.55f);
-		head.moveTo(-size * 0.72f, -size * 0.38f);
-		head.lineTo(-size * 0.72f, size * 0.38f);
+		if (filled) {
+			head.moveTo(0, 0);
+			head.lineTo(-size, -size * 0.55f);
+			head.lineTo(-size * 0.72f, 0);
+			head.lineTo(-size, size * 0.55f);
+			head.closePath();
+		} else {
+			head.moveTo(0, 0);
+			head.lineTo(-size, -size * 0.55f);
+			head.moveTo(0, 0);
+			head.lineTo(-size, size * 0.55f);
+			head.moveTo(-size * 0.72f, -size * 0.38f);
+			head.lineTo(-size * 0.72f, size * 0.38f);
+		}
 
 		AffineTransform at = AffineTransform.getTranslateInstance(x, y);
 		at.rotate(angle);
 		Path2D drawn = new Path2D.Float(head, at);
 
-		g2.setStroke(new BasicStroke(2.6f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
 		g2.setColor(new Color(color.getRed(), color.getGreen(), color.getBlue(), alpha));
-		g2.draw(drawn);
+		if (filled) {
+			g2.fill(drawn);
+		} else {
+			g2.setStroke(new BasicStroke(2.6f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+			g2.draw(drawn);
+		}
 	}
 
 	private static Color blend(Color a, Color b, float bWeight) {

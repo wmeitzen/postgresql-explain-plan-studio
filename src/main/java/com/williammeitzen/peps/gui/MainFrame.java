@@ -95,6 +95,7 @@ public class MainFrame extends JFrame {
 
 		if (bolShowProperties == true) { System.out.println("MainFrame(): Database.init()"); }
 		Database.init();
+		PlanGraphPanel.loadPreferredZoomFromConfig();
 		UiTheme.apply(UiTheme.loadSavedScheme());
 		installApplicationIcons();
 
@@ -215,7 +216,8 @@ public class MainFrame extends JFrame {
 		// Toolbar lives inside the Plan Diagram tab content (see FormPanel.createPlanDiagramTab)
 		add(dockingLayout.getContentArea(), BorderLayout.CENTER);
 		
-		setMinimumSize(new Dimension(100, 100));
+		// Leave room for Plans + Documents shell mins + docking divider travel.
+		setMinimumSize(new Dimension(640, 400));
 
 		// get application dimensions from config table
 		JsonObject jsnRow;

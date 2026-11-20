@@ -83,11 +83,23 @@ class OperatorWarningsTest {
 	}
 
 	@Test
-	void formatWarningWords_usesSingleWords() {
+	void formatWarningWords_usesPipeSeparatedWordsInChipOrder() {
 		assertEquals("", OperatorWarnings.formatWarningWords(false, false, false, false, false));
-		assertEquals("Time Cost Rows Filter Heap",
+		assertEquals("Time | Cost | Ratio | Filter | Heap",
 				OperatorWarnings.formatWarningWords(true, true, true, true, true));
-		assertEquals("Cost Filter", OperatorWarnings.formatWarningWords(false, true, false, true, false));
+		assertEquals("Cost | Filter", OperatorWarnings.formatWarningWords(false, true, false, true, false));
+	}
+
+	@Test
+	void formatWarningWordsFromTags_matchesDiagramChipOrder() {
+		String tags = OperatorWarnings.formatTags(true, true, true, true, false);
+		assertEquals("Time | Cost | Ratio | Filter",
+				OperatorWarnings.formatWarningWordsFromTags(tags));
+		assertEquals("Cost | Filter",
+				OperatorWarnings.formatWarningWordsFromTags(
+						OperatorWarnings.formatTags(false, true, false, true, false)));
+		assertEquals("", OperatorWarnings.formatWarningWordsFromTags(null));
+		assertEquals("", OperatorWarnings.formatWarningWordsFromTags(""));
 	}
 
 	@Test

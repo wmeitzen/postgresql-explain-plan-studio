@@ -167,6 +167,8 @@ Outputs:
 - `target/PostgreSQLExplainPlanStudio-<version>-linux-x64.zip`
 - `target/*.deb` (renamed by `dev-release.ps1` to `PostgreSQLExplainPlanStudio-<version>-linux-x64.deb`)
 
+The `.deb` is built on **Ubuntu 20.04** (glibc ≤ 2.31) so the bundled launcher runs on 20.04+. After jpackage, `scripts/linux-deb-widen-depends.sh` rewrites `Depends` (drops removed `libpcre3`, adds `*t64 | old` alternatives) so **one** `.deb` installs with `apt` on Ubuntu 20.04 through current.
+
 Run the app:
 
 ```bash

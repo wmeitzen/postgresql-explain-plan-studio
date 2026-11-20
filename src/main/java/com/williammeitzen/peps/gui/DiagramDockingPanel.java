@@ -14,6 +14,7 @@ import javax.swing.JComponent;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.KeyStroke;
+import javax.swing.SwingUtilities;
 
 import bibliothek.gui.dock.common.CControl;
 import bibliothek.gui.dock.common.CGrid;
@@ -71,15 +72,8 @@ public class DiagramDockingPanel extends JPanel {
 		findBar.setMaximumSize(new Dimension(Integer.MAX_VALUE, 48));
 		northStack.add(findBar);
 		add(northStack, BorderLayout.NORTH);
-		if (toolbar != null) {
-			toolbar.setFindVisibilityListener(show -> {
-				if (Boolean.TRUE.equals(show)) {
-					showFind();
-				} else {
-					hideFind();
-				}
-			});
-		}
+		// Find checkbox lives on the shared toolbar; FormPanel routes toggles to the
+		// active diagram. Do not overwrite that listener here (last-created panel won).
 		installFindShortcuts();
 
 		// Detached control: dockables stay inside this tab and cannot join the main shell.
@@ -360,9 +354,6 @@ public class DiagramDockingPanel extends JPanel {
 
 	/** Show Find bar and focus the query field (Ctrl/Cmd+F or Find checkbox). */
 	public void showFind() {
-		if (!isShowing()) {
-			return;
-		}
 		if (toolbar != null) {
 			toolbar.setFindCheckboxSelected(true);
 		}
@@ -383,8 +374,36 @@ public class DiagramDockingPanel extends JPanel {
 		}
 	}
 
+	/**
+	 * Match this tab's Find strip to the shared toolbar checkbox. Needed when
+	 * switching plans while Find is already checked — each diagram has its own bar.
+	 */
+	public void syncFindBarFromToolbar() {
+		if (toolbar == null || findBar == null) {
+			return;
+		}
+		boolean wantOpen = toolbar.isFindCheckboxSelected();
+		if (wantOpen) {
+			if (!findBar.isOpen()) {
+				findBar.openAndFocus();
+				revalidate();
+				repaint();
+			}
+		} else if (findBar.isOpen()) {
+			findBar.closeBar();
+			revalidate();
+			repaint();
+		}
+	}
+
 	public DiagramFindBar getFindBar() {
 		return findBar;
+	}
+
+	@Override
+	public void addNotify() {
+		super.addNotify();
+		SwingUtilities.invokeLater(this::syncFindBarFromToolbar);
 	}
 
 	/**

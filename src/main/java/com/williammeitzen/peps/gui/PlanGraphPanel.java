@@ -83,7 +83,10 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 	//private JTabbedPane tabPane;
 	private JTabbedPane objCurrentPlanTabs;
 	private int operatorCount;
-	private int intZoomPercentage = 100;
+	/** Session + config preference shared across all plan diagrams. */
+	private static int preferredZoomPercentage = 100;
+	private static boolean suppressZoomPreferenceSave = false;
+	private int intZoomPercentage = preferredZoomPercentage;
 	private PercentageBy percentageBy = PercentageBy.COST; // update MainFrame.java.JMenu percentageByItem, *.setSelected(true)
 	private LineThicknesses enmLineThicknessBy = LineThicknesses.ACTUAL_DATA_MASS; // update MainFrame.java.JMenu lineThicknessByItem, *.setSelected(true)
 	private Double dblPlanTimeSliderMs = 0d;
@@ -219,12 +222,37 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 	public PlanGraphPanel(JTabbedPane objCurrentPlanTabs) {
 		boolean bolShowProperties = false;
 		this.objCurrentPlanTabs = objCurrentPlanTabs;
+		this.intZoomPercentage = preferredZoomPercentage;
 		this.addMouseListener(this);
 		this.addMouseMotionListener(this);
 		// Empty string enables ToolTipManager without a panel-wide default tip.
 		setToolTipText("");
 		syncThemeSurface();
 		if (bolShowProperties == true) { System.out.println("PlanGraphPanel constructor"); }
+	}
+
+	/** Load shared zoom from config (call once after {@link Database#init()}). */
+	public static void loadPreferredZoomFromConfig() {
+		preferredZoomPercentage = Database.loadDiagramZoomPercent();
+	}
+
+	public static int getPreferredZoomPercentage() {
+		return preferredZoomPercentage;
+	}
+
+	/**
+	 * Apply the shared zoom preference without rewriting config (used when switching plans).
+	 */
+	public void applyPreferredZoom() {
+		if (intZoomPercentage == preferredZoomPercentage) {
+			return;
+		}
+		suppressZoomPreferenceSave = true;
+		try {
+			setZoomPercentage(preferredZoomPercentage);
+		} finally {
+			suppressZoomPreferenceSave = false;
+		}
 	}
 
 	@Override
@@ -4856,8 +4884,8 @@ select id_explain_plan_property, x_cart, y_cart, workers_fontmetrics_width, box_
 				"    , south_3_fontmetrics_width\n" + 
 				"    , south_4_fontmetrics_width\n" + 
 				"    , south_5_fontmetrics_width\n" + 
-				//"    , box_width + arrow_text_fontmetrics_width * 2 -- + " + withZoom(40) + "\n" + // not sure why the withZoom(40) or "* 2" works...
-				"    , box_width + max(arrow_text_fontmetrics_width, " + withZoom(ARROW_MINIMUM_HORIZONTAL_DISTANCE) + ") * 2 -- + " + withZoom(40) + "\n" + // not sure why the withZoom(40) or "* 2" works...
+				"    , box_width + max(coalesce(arrow_text_fontmetrics_width, 0), "
+				+ withZoom(ARROW_MINIMUM_HORIZONTAL_DISTANCE) + ") * 2\n" +
 				")\n" + 
 				"where id_explain_plan = " + intIDExplainPlan + "\n";
 		if (bolShowSQL == true) { System.out.println(strSQL); }
@@ -4868,32 +4896,33 @@ select id_explain_plan_property, north_1_fontmetrics_width, south_3_fontmetrics_
 , operator_width from explain_plan_operator_annotations where id_explain_plan_property in (10, 139, 342);
 select id_explain_plan_property, x_cart, y_cart, north_1_fontmetrics_width, south_4_fontmetrics_width, workers_fontmetrics_width, arrow_text_fontmetrics_width, box_width + arrow_text_fontmetrics_width, operator_width from explain_plan_operator_annotations where id_explain_plan_property = 342;
 */
-		// set column_widths, based on the max width of all operators in that column
+		// Column width is scoped to this x_cart only: max content width, and a west
+		// channel of max(west text in column) + max(arrow thickness in column).
 		strSQL = "with cteMaxWidth as (\n" + 
-				"  select SUB_EPOA.id_explain_plan, SUB_EPOA.id_explain_plan_property, SUB_EPOA.x_cart\n" + 
-				"  , max(SUB_EPOA.operator_width) as column_width\n" + // as max_width
+				"  select SUB_EPOA.id_explain_plan, SUB_EPOA.x_cart\n" + 
+				"  , max(SUB_EPOA.operator_width) as max_operator_width\n" +
+				"  , max(SUB_EPOA.box_width) as max_box_width\n" +
+				"  , max(coalesce(SUB_EPOA.arrow_text_fontmetrics_width, 0)) as max_arrow_text_width\n" +
+				"  , max(coalesce(SUB_EPOA.arrow_line_thickness, 0)) as max_arrow_thickness\n" +
 				"  from explain_plan_operator_annotations as SUB_EPOA\n" + 
+				"  where SUB_EPOA.id_explain_plan = " + intIDExplainPlan + "\n" +
 				"  group by SUB_EPOA.id_explain_plan, SUB_EPOA.x_cart\n" + 
 				")\n" +
 				"update explain_plan_operator_annotations as EPOA set\n" + 
 				"column_width = (\n" +
-				"  select column_width\n" +
-				"  from cteMaxWidth\n" +
-				"  where id_explain_plan = EPOA.id_explain_plan\n" +
-				"  and x_cart = EPOA.x_cart\n" +
+				"  select max(\n" +
+				"    CTE.max_operator_width\n" +
+				"    , CTE.max_box_width + max(\n" +
+				"        CTE.max_arrow_text_width + CTE.max_arrow_thickness\n" +
+				"        , " + withZoom(ARROW_MINIMUM_HORIZONTAL_DISTANCE) + "\n" +
+				"      ) * 2\n" +
+				"  )\n" +
+				"  from cteMaxWidth as CTE\n" +
+				"  where CTE.id_explain_plan = EPOA.id_explain_plan\n" +
+				"  and CTE.x_cart = EPOA.x_cart\n" +
 				")\n" +
-				"where exists (\n" + 
-				"  select column_width\n" +
-				"  from cteMaxWidth\n" +
-				"  where id_explain_plan = EPOA.id_explain_plan\n" +
-				"  and x_cart = EPOA.x_cart\n" +
-				")\n" + 
-				"and id_explain_plan = " + intIDExplainPlan + ";\n" + 
-				//"update explain_plan_operator_annotations set\n" +
-				//"column_width = operator_width where column_width is null and\n" +
-				//"id_explain_plan = " + intIDExplainPlan + "\n"
-				""
-				;
+				"where EPOA.id_explain_plan = " + intIDExplainPlan + ";\n" +
+				"";
 		if (bolShowSQL == true) { System.out.println(strSQL); }
 		Database.dml(strSQL);
 /*
@@ -6043,14 +6072,17 @@ order by id_explain_plan_property;
 		double xDelta = 0.866025 * Math.max(withZoom(OPERATOR_BOX_HEIGHT) / 1.8, arrow_line_thickness * 1.9);
         double yDelta = 0.5 * Math.max(withZoom(OPERATOR_BOX_HEIGHT) / 2.0, arrow_line_thickness * 1.9);
 		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-		// Flat shaft end flush against the child operator; tip against the parent.
-		// Overlap shaft into the arrowhead so antialiasing does not leave a hairline gap
-		int shaftIntoHead = Math.max(2, (int) (xDelta * 0.45));
+		// Flat shaft end at the child; tip against the parent. Use one integer head length
+		// for both shaft and triangle so zoom rounding cannot open a gap. Tuck the shaft
+		// several pixels into the head (not nearly to the tip — that caused shoulder bumps).
+		int headLength = Math.max(1, (int) Math.round(xDelta));
+		int headHalfHeight = Math.max(1, (int) Math.round(yDelta));
+		int shaftIntoHead = Math.max(5, Math.min(headLength / 3, Math.max(5, arrow_line_thickness / 3)));
 		int[] xLines = {
 			GRAPH_LEFT_MARGIN + box_left
 			, GRAPH_LEFT_MARGIN + column_boundary_left
 			, GRAPH_LEFT_MARGIN + previous_column_boundary_right
-			, GRAPH_LEFT_MARGIN + previous_box_right + shaftIntoHead
+			, GRAPH_LEFT_MARGIN + previous_box_right + headLength - shaftIntoHead
 		};
 		int[] yLines = {
 			GRAPH_TOP_MARGIN + box_top + withZoom(OPERATOR_BOX_HEIGHT) / 2
@@ -6063,30 +6095,41 @@ order by id_explain_plan_property;
 		for (int i = 1; i < xLines.length; i++) {
 			shaft.lineTo(xLines[i], yLines[i]);
 		}
-		// Light near the flat (operator) end; dark at the arrow tip
+		// Light near the flat (operator) end; dark at the arrow tip.
+		// Ubuntu 22 OpenJDK often drops LinearGradientPaint and even Path2D.draw with a
+		// thick stroke — use solid color + per-segment drawLine there.
 		Color arrowFlatEnd = UiTheme.isDark() ? new Color(0x93, 0xC5, 0xFD) : ARROW_LINE_COLOR_END;
 		Color arrowTip = UiTheme.isDark() ? new Color(0x1D, 0x4E, 0xD8) : ARROW_LINE_COLOR;
-		if (xLines[0] != xLines[xLines.length - 1] || yLines[0] != yLines[yLines.length - 1]) {
+		boolean linux = com.formdev.flatlaf.util.SystemInfo.isLinux
+				|| System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("linux");
+		boolean hasLength = xLines[0] != xLines[xLines.length - 1] || yLines[0] != yLines[yLines.length - 1];
+		g.setStroke(new BasicStroke(arrow_line_thickness, BasicStroke.CAP_BUTT, BasicStroke.JOIN_ROUND));
+		if (linux || !hasLength) {
+			g.setColor(arrowTip);
+			g.setPaint(arrowTip);
+			for (int i = 1; i < xLines.length; i++) {
+				g.drawLine(xLines[i - 1], yLines[i - 1], xLines[i], yLines[i]);
+			}
+		} else {
 			g.setPaint(new LinearGradientPaint(
 					(float) xLines[0], (float) yLines[0],
 					(float) xLines[xLines.length - 1], (float) yLines[yLines.length - 1],
 					new float[] { 0f, 1f },
 					new Color[] { arrowFlatEnd, arrowTip }));
-		} else {
-			g.setColor(arrowTip);
+			g.draw(shaft);
+			// Gradients leave Paint that can suppress later fills/strokes on Linux.
+			g.setPaint(arrowTip);
 		}
-		g.setStroke(new BasicStroke(arrow_line_thickness, BasicStroke.CAP_BUTT, BasicStroke.JOIN_ROUND));
-		g.draw(shaft);
 
 		int[] xTriangle = {
 			GRAPH_LEFT_MARGIN + previous_box_right
-			,GRAPH_LEFT_MARGIN + previous_box_right + (int) xDelta
-			,GRAPH_LEFT_MARGIN + previous_box_right + (int) xDelta
+			, GRAPH_LEFT_MARGIN + previous_box_right + headLength
+			, GRAPH_LEFT_MARGIN + previous_box_right + headLength
 		};
 		int[] yTriangle = {
 			GRAPH_TOP_MARGIN + previous_box_top + withZoom(OPERATOR_BOX_HEIGHT) / 2
-			,GRAPH_TOP_MARGIN + previous_box_top + withZoom(OPERATOR_BOX_HEIGHT) / 2 - (int) yDelta
-			,GRAPH_TOP_MARGIN + previous_box_top + withZoom(OPERATOR_BOX_HEIGHT) / 2 + (int) yDelta
+			, GRAPH_TOP_MARGIN + previous_box_top + withZoom(OPERATOR_BOX_HEIGHT) / 2 - headHalfHeight
+			, GRAPH_TOP_MARGIN + previous_box_top + withZoom(OPERATOR_BOX_HEIGHT) / 2 + headHalfHeight
 		};
 		g.setColor(arrowTip);
 		g.setStroke(new BasicStroke(1));
@@ -6117,12 +6160,18 @@ order by id_explain_plan_property;
 				arrowTextColor = PLAN_WIDTH_0_ARROW_FONT_COLOR;
 
 			g.setFont(arrowTextFont);
+			FontMetrics arrowFm = g.getFontMetrics();
 			int arrowWidth = arrowTextFont != null
-					? Math.max(g.getFontMetrics().stringWidth(arrow_text), arrow_text_fontmetrics_width)
+					? Math.max(arrowFm.stringWidth(arrow_text), arrow_text_fontmetrics_width)
 					: arrow_text_fontmetrics_width;
+			// Sit just above this arrow's stroke (thickness varies per operator).
+			int shaftCenterY = GRAPH_TOP_MARGIN + box_top + withZoom(OPERATOR_BOX_HEIGHT) / 2;
+			int shaftTopY = shaftCenterY - Math.max(1, arrow_line_thickness) / 2;
+			int gap = Math.max(1, arrow_text_bottom_margin);
+			int textBaseline = shaftTopY - gap;
 			drawStringWithFindHighlights(g, arrow_text,
 					GRAPH_LEFT_MARGIN + box_left - arrowWidth,
-					GRAPH_TOP_MARGIN + box_top + withZoom(OPERATOR_BOX_HEIGHT) / 2 - arrow_line_thickness / 2 - arrow_text_bottom_margin,
+					textBaseline,
 					arrowTextColor);
 		}
 	}
@@ -6945,6 +6994,7 @@ order by id_explain_plan_property;
 				+ ", arrow_text\n"
 				+ ", coalesce(arrow_text_fontmetrics_width, 0) as arrow_text_fontmetrics_width\n"
 				+ ", coalesce(arrow_text_fontmetrics_height, 0) as arrow_text_fontmetrics_height\n"
+				+ ", coalesce(arrow_line_thickness, 1) as arrow_line_thickness\n"
 				+ ", coalesce((select arrow_text_bottom_margin from config), 0) as arrow_text_bottom_margin\n"
 				+ ", coalesce((select outside_box_top_margin from config), 0) as outside_box_top_margin\n"
 				+ "from explain_plan_operator_annotations\n"
@@ -7178,6 +7228,10 @@ order by id_explain_plan_property;
 		}
 
 		this.intZoomPercentage = intZoomPercentage;
+		if (!suppressZoomPreferenceSave && preferredZoomPercentage != intZoomPercentage) {
+			preferredZoomPercentage = intZoomPercentage;
+			Database.saveDiagramZoomPercent(intZoomPercentage);
+		}
 
 		// plan graph needs to be repainted
 		PlanSourcePanel objComponent = (PlanSourcePanel) objCurrentPlanTabs.getComponentAt(0);
@@ -7333,8 +7387,14 @@ order by id_explain_plan_property;
 			int arrowW = Math.max(arrowFm.stringWidth(arrowText),
 					row.getInteger("arrow_text_fontmetrics_width"));
 			int arrowBottomMargin = row.getInteger("arrow_text_bottom_margin");
-			int arrowBaseline = GRAPH_TOP_MARGIN + boxTop + withZoom(OPERATOR_BOX_HEIGHT) / 2
-					- arrowBottomMargin;
+			int arrowThickness = 1;
+			if (row.get("arrow_line_thickness") != null) {
+				arrowThickness = Math.max(1, row.getInteger("arrow_line_thickness"));
+			}
+			int shaftCenterY = GRAPH_TOP_MARGIN + boxTop + withZoom(OPERATOR_BOX_HEIGHT) / 2;
+			int shaftTopY = shaftCenterY - arrowThickness / 2;
+			int gap = Math.max(1, arrowBottomMargin);
+			int arrowBaseline = shaftTopY - gap;
 			left = Math.min(left, GRAPH_LEFT_MARGIN + boxLeft - arrowW);
 			top = Math.min(top, arrowBaseline - arrowFm.getAscent());
 			bottom = Math.max(bottom, arrowBaseline + arrowFm.getDescent());
@@ -8489,8 +8549,12 @@ order by id_explain_plan_property;
 				toDouble(row.get("rows_removed_by_filter")),
 				toDouble(row.get("rows_removed_by_join_filter")),
 				Database.loadWarningHeapPercent());
-		String warningWords = OperatorWarnings.formatWarningWords(
-				timeWarn, costWarn, rowsWarn, filterWarn, heapWarn);
+		// Prefer stored diagram chips so Warnings matches icons exactly (same order).
+		String warningWords = OperatorWarnings.formatWarningWordsFromTags(row.getString("warning_tags"));
+		if (warningWords.isEmpty()) {
+			warningWords = OperatorWarnings.formatWarningWords(
+					timeWarn, costWarn, rowsWarn, filterWarn, heapWarn);
+		}
 		// Match diagram north Cost % (PEV2): exclusive_cost / max(total_cost), not
 		// inclusive total_cost / sum(all totals).
 		Double costPercent = Pev2Metrics.costPercentOfPlan(

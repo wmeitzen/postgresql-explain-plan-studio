@@ -288,17 +288,34 @@ public final class OperatorWarnings {
 	}
 
 	/**
-	 * Same selection as {@link #formatTags} but with single words for Calculated
-	 * Properties ({@code Time Cost Rows Filter Heap}).
+	 * Same selection/order as {@link #formatTags} for Calculated Properties
+	 * ({@code Time | Cost | Ratio | Filter | Heap}).
 	 */
 	public static String formatWarningWords(boolean time, boolean cost, boolean rows, boolean filter,
 			boolean heap) {
 		StringBuilder sb = new StringBuilder();
-		appendToken(sb, time, "Time");
-		appendToken(sb, cost, "Cost");
-		appendToken(sb, rows, "Rows");
-		appendToken(sb, filter, "Filter");
-		appendToken(sb, heap, "Heap");
+		appendWord(sb, time, "Time");
+		appendWord(sb, cost, "Cost");
+		appendWord(sb, rows, "Ratio");
+		appendWord(sb, filter, "Filter");
+		appendWord(sb, heap, "Heap");
+		return sb.toString();
+	}
+
+	/**
+	 * Map diagram {@code warning_tags} glyphs to the Warnings property value in the
+	 * same left-to-right chip order ({@code Time | Cost | Ratio | Filter | Heap}).
+	 */
+	public static String formatWarningWordsFromTags(String warningTags) {
+		if (warningTags == null || warningTags.isBlank()) {
+			return "";
+		}
+		StringBuilder sb = new StringBuilder();
+		appendWord(sb, tagsContain(warningTags, TAG_TIME), "Time");
+		appendWord(sb, tagsContain(warningTags, TAG_COST), "Cost");
+		appendWord(sb, tagsContain(warningTags, TAG_ROWS), "Ratio");
+		appendWord(sb, tagsContain(warningTags, TAG_FILTER), "Filter");
+		appendWord(sb, tagsContain(warningTags, TAG_HEAP), "Heap");
 		return sb.toString();
 	}
 
@@ -310,6 +327,16 @@ public final class OperatorWarnings {
 			sb.append(' ');
 		}
 		sb.append(token);
+	}
+
+	private static void appendWord(StringBuilder sb, boolean on, String word) {
+		if (!on) {
+			return;
+		}
+		if (sb.length() > 0) {
+			sb.append(" | ");
+		}
+		sb.append(word);
 	}
 
 	public static boolean tagsContain(String warningTags, String tag) {

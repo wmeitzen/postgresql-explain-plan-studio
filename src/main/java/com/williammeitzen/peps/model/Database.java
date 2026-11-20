@@ -562,6 +562,7 @@ public final class Database {
 				"varchar(8) not null default '" + OperatorWarnings.MASS_UNIT_MB + "'");
 		ensureConfigColumn("warning_ratio_metric",
 				"varchar(16) not null default '" + OperatorWarnings.METRIC_ROWS + "'");
+		ensureConfigColumn("diagram_zoom_percent", "int not null default 100");
 
 		// 4.09: factory color scheme is Dark (was Default). Migrate only the old factory value.
 		if (dblDBConfigVersion > 0.0 && dblDBConfigVersion < 4.09) {
@@ -1875,6 +1876,39 @@ south_1_fontmetrics_width = null;
 	/** Heap warning: fetch-share threshold percent (0 ⇒ any positive share). */
 	public static double loadWarningHeapPercent() {
 		return loadConfigDouble("warning_heap_percent", OperatorWarnings.HEAP_WARNING_PERCENT);
+	}
+
+	/** Shared Plan Diagram zoom (10–400); survives plan switches and app restarts. */
+	public static int loadDiagramZoomPercent() {
+		int zoom = (int) Math.round(loadConfigDouble("diagram_zoom_percent", 100.0));
+		if (zoom < 10) {
+			return 10;
+		}
+		if (zoom > 400) {
+			return 400;
+		}
+		return zoom;
+	}
+
+	public static void saveDiagramZoomPercent(int zoomPercent) {
+		if (objConnection == null) {
+			return;
+		}
+		int zoom = zoomPercent;
+		if (zoom < 10) {
+			zoom = 10;
+		}
+		if (zoom > 400) {
+			zoom = 400;
+		}
+		String sql = "update config set diagram_zoom_percent = ?";
+		try (PreparedStatement ps = objConnection.prepareStatement(sql)) {
+			ps.setInt(1, zoom);
+			ps.executeUpdate();
+		} catch (SQLException ex) {
+			System.out.println("function Database.saveDiagramZoomPercent()");
+			ex.printStackTrace();
+		}
 	}
 
 	public static void saveWarningHeapPreferences(double percentOrMore) {

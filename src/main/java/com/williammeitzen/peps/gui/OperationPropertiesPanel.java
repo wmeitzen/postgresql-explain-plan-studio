@@ -232,7 +232,7 @@ public class OperationPropertiesPanel extends JTable {
 				col.setMaxWidth(maxWidth);
 				col.setPreferredWidth(width);
 				col.setWidth(width);
-				rememberColumnWidths();
+				rememberColumnWidths(true);
 				revalidateAncestors();
 			}
 
@@ -246,13 +246,18 @@ public class OperationPropertiesPanel extends JTable {
 		getColumnModel().addColumnModelListener(new TableColumnModelListener() {
 			@Override
 			public void columnMarginChanged(ChangeEvent e) {
+				if (suppressingColumnWidthMemory) {
+					return;
+				}
 				if (headerMouseDown && !columnResizeDragActive) {
 					beginColumnResizeDrag();
 				}
-				rememberColumnWidths();
-				revalidateAncestors();
+				// Only persist while the user is dragging. Programmatic setWidth during
+				// operator refresh can report getWidth() = preferred+1 and grow forever.
 				if (columnResizeDragActive) {
+					rememberColumnWidths(false);
 					restoreFrozenHorizontalScroll();
+					revalidateAncestors();
 				}
 			}
 
@@ -290,8 +295,8 @@ public class OperationPropertiesPanel extends JTable {
 		if (!columnResizeDragActive) {
 			return;
 		}
+		rememberColumnWidths(false);
 		columnResizeDragActive = false;
-		rememberColumnWidths();
 		revalidateAncestors();
 	}
 
@@ -311,11 +316,22 @@ public class OperationPropertiesPanel extends JTable {
 	}
 
 	private void rememberColumnWidths() {
+		rememberColumnWidths(false);
+	}
+
+	/**
+	 * @param force true for double-click pack (not a drag); otherwise only while
+	 *        {@link #columnResizeDragActive} so operator refreshes cannot inflate widths.
+	 */
+	private void rememberColumnWidths(boolean force) {
 		if (suppressingColumnWidthMemory || getColumnCount() < 2) {
 			return;
 		}
+		if (!force && !columnResizeDragActive) {
+			return;
+		}
 		int maxWidth = maxColumnWidthPixels();
-		// Prefer the visible width; preferredWidth alone can lag or reset during model swaps.
+		// Prefer the visible width while dragging; preferredWidth alone can lag.
 		propertyColumnWidth = clampColumnWidth(rememberedColumnWidth(0), maxWidth);
 		valueColumnWidth = clampColumnWidth(rememberedColumnWidth(1), maxWidth);
 		enforceColumnMaxWidths(maxWidth);
@@ -564,7 +580,8 @@ public class OperationPropertiesPanel extends JTable {
 	public void setPropertiesDetails(Object[][] data, boolean[] highlights) {
 		boolean bolShowFunctionName = false;
 		if (bolShowFunctionName == true) { System.out.println("PlanPropertiesPanel.setPropertiesDetails(Object[][] data)"); }
-		rememberColumnWidths();
+		// Keep last user/applied widths — do not re-read getWidth() here (layout often
+		// reports preferred+1, so columns grew ~1px on every operator click).
 		int keepPropertyWidth = propertyColumnWidth;
 		int keepValueWidth = valueColumnWidth;
 		this.data = data;

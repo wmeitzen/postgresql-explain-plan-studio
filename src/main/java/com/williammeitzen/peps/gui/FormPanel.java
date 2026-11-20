@@ -164,6 +164,20 @@ public class FormPanel extends JPanel {
 		tabPaneToLink = tabPane;
 		this.planDiagramToolbar = planDiagramToolbar;
 		this.documentsHost = documentsHost;
+		// One shared Find checkbox → always the selected Plan Diagram tab's strip.
+		if (planDiagramToolbar != null) {
+			planDiagramToolbar.setFindVisibilityListener(show -> {
+				DiagramDockingPanel diagram = findActiveDiagramDockingPanel();
+				if (diagram == null) {
+					return;
+				}
+				if (Boolean.TRUE.equals(show)) {
+					diagram.showFind();
+				} else {
+					diagram.hideFind();
+				}
+			});
+		}
 		// Selecting Plan Diagram generates from JSON (same as "Show JSON Plan Diagram"),
 		// unless Execute-and-show already set a button action.
 		tabPaneToLink.addChangeListener(new ChangeListener() {
@@ -196,7 +210,9 @@ public class FormPanel extends JPanel {
 		Dimension dim = getPreferredSize();
 		dim.width = 220;
 		setPreferredSize(dim);
-		setMinimumSize(new Dimension(140, 120));
+		// Keep preferred width; small minimum so the Plans|Documents docking divider
+		// still has travel when the application window is narrow.
+		setMinimumSize(new Dimension(80, 80));
 		String strSQL;
 		JsonArray jsnRows;
 		//String strPlanName;
@@ -341,7 +357,7 @@ public class FormPanel extends JPanel {
 		planToolbar.add(settingsBtn);
 
 		planListScrollPane = new JScrollPane(planTree);
-		planListScrollPane.setMinimumSize(new Dimension(120, 100));
+		planListScrollPane.setMinimumSize(new Dimension(60, 60));
 		planListScrollPane.setBorder(BorderFactory.createEmptyBorder());
 		planTree.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
 		installPlansTreeContextMenu();
@@ -547,6 +563,7 @@ public class FormPanel extends JPanel {
 			// this is the same plan id (enable previously ran only when the id changed).
 			PlanGraphPanel.requestDiagramToolbarRefresh();
 			if (pEvent.getPlanGraphPanel() != null) {
+				applySharedZoomToGraph(pEvent.getPlanGraphPanel());
 				pEvent.getPlanGraphPanel().repaint();
 			}
 
@@ -3188,18 +3205,26 @@ public class FormPanel extends JPanel {
 			g.drawLine(8, 3, 8, 13);
 			g.drawLine(3, 8, 13, 8);
 			break;
-		case "delete":
-			g.drawLine(4, 5, 12, 5);
-			g.drawRect(5, 5, 6, 8);
-			g.drawLine(7, 7, 7, 11);
-			g.drawLine(9, 7, 9, 11);
-			g.drawLine(6, 5, 7, 3);
-			g.drawLine(10, 5, 9, 3);
+		case "delete": {
+			// Filled trash — stroke-only outlines often collapse to a red X on Ubuntu 22 OpenJDK.
+			g.fillRoundRect(5, 6, 6, 8, 1, 1);
+			g.fillRect(4, 5, 8, 2);
+			g.fillRect(7, 3, 2, 2);
+			g.setComposite(java.awt.AlphaComposite.Clear);
+			g.fillRect(7, 8, 1, 4);
+			g.fillRect(9, 8, 1, 4);
+			g.setComposite(java.awt.AlphaComposite.SrcOver);
 			break;
-		case "duplicate":
-			g.drawRect(5, 5, 8, 8);
-			g.drawRect(3, 3, 8, 8);
+		}
+		case "duplicate": {
+			// Filled stacked pages — more reliable than stroke drawRect on Linux HiDPI.
+			Color c = planToolbarIconColor(kind);
+			g.setColor(new Color(c.getRed(), c.getGreen(), c.getBlue(), 150));
+			g.fillRoundRect(3, 3, 8, 8, 2, 2);
+			g.setColor(c);
+			g.fillRoundRect(5, 5, 8, 8, 2, 2);
 			break;
+		}
 		case "addFolder":
 			// folder outline (tab on the upper left) with a small plus inside
 			g.setStroke(new BasicStroke(1.4f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
@@ -3357,11 +3382,15 @@ public class FormPanel extends JPanel {
 	}
 
 	public void syncDiagramViewMenuItems() {
-		if (propertiesViewMenuItem == null || slidersViewMenuItem == null || zoomViewMenuItem == null) {
-			return;
-		}
 		Runnable sync = () -> {
 			DiagramDockingPanel diagram = findActiveDiagramDockingPanel();
+			// Shared Find checkbox can stay checked across plans; each tab has its own bar.
+			if (diagram != null) {
+				diagram.syncFindBarFromToolbar();
+			}
+			if (propertiesViewMenuItem == null || slidersViewMenuItem == null || zoomViewMenuItem == null) {
+				return;
+			}
 			boolean hasDiagram = diagram != null;
 			suppressDiagramViewMenuEvents = true;
 			try {
@@ -3995,6 +4024,20 @@ public class FormPanel extends JPanel {
 	private static final int DIAGRAM_WHEEL_UNIT_INCREMENT = 48;
 
 	/**
+	 * Apply the shared diagram zoom preference to a plan graph and sync the toolbar slider.
+	 */
+	private void applySharedZoomToGraph(PlanGraphPanel graphPanel) {
+		if (graphPanel == null) {
+			return;
+		}
+		graphPanel.applyPreferredZoom();
+		graphPanel.refreshScrollableSizeAfterZoom(false);
+		if (planDiagramToolbar != null) {
+			planDiagramToolbar.syncZoomPercentage(graphPanel.getZoomPercentage());
+		}
+	}
+
+	/**
 	 * Plan Diagram tab: nested docking for Graph / Properties / Sliders
 	 * (reposition only within this tab).
 	 */
@@ -4007,6 +4050,7 @@ public class FormPanel extends JPanel {
 			int horizontalDivider, int verticalDivider, PlanSourcePanel sourcePanel) {
 		DiagramDockingPanel diagram = new DiagramDockingPanel(graphPanel, planDiagramToolbar, DIAGRAM_WHEEL_UNIT_INCREMENT);
 		diagram.setViewMenuSyncHook(this::syncDiagramViewMenuItems);
+		applySharedZoomToGraph(graphPanel);
 		SwingUtilities.invokeLater(this::syncDiagramViewMenuItems);
 
 		JPanel wrap = new JPanel(new BorderLayout());

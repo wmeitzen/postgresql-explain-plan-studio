@@ -636,6 +636,8 @@ fi
 mv -f "`${debs[0]}" "target/`$DEB_NAME"
 DEB_ABS="`$(pwd)/target/`$DEB_NAME"
 test -f "`$DEB_ABS"
+# Drop libpcre3 / add *t64 alternatives so apt can install on Ubuntu 20.04–26+.
+bash scripts/linux-deb-widen-depends.sh "`$DEB_ABS"
 
 printf '%s\n' "`$ZIP_ABS" > "`$ZIP_PATH_FILE"
 printf '%s\n' "`$DEB_ABS" > "`$DEB_PATH_FILE"
