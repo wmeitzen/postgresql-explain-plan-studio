@@ -224,7 +224,11 @@ function Update-ReadmeDownloads([string]$NewVersion) {
 
 - $winIcon Windows installer: [$winExe]($base/$winExe)
 
+&nbsp;
+
 - $winIcon Windows zip: [$winZip]($base/$winZip)
+
+&nbsp;
 
 - $linuxIcon Linux zip: [$linuxZip]($base/$linuxZip)
 
@@ -235,9 +239,13 @@ function Update-ReadmeDownloads([string]$NewVersion) {
   - ``chmod +x PostgreSQLExplainPlanStudio``
   - To launch: ``./PostgreSQLExplainPlanStudio``
 
+&nbsp;
+
 - $linuxIcon Linux ``.deb``: [$linuxDeb]($base/$linuxDeb)
 
   To install the ``.deb`` on Linux: ``sudo apt install ./$linuxDeb``
+
+&nbsp;
 
 - $macIcon macOS disk image: [$macDmg]($base/$macDmg)
 
@@ -247,6 +255,8 @@ function Update-ReadmeDownloads([string]$NewVersion) {
   - Eject the disk image when finished
   - First launch of an unsigned build: right-click the app / Open / Open
 
+&nbsp;
+
 - $macIcon macOS app zip: [$macAppZip]($base/$macAppZip)
 
   To install the ``x64.zip`` on macOS:
@@ -254,6 +264,8 @@ function Update-ReadmeDownloads([string]$NewVersion) {
   - Drag ``PostgreSQL Explain Plan Studio.app`` to Applications
   - No separate Java install needed (JRE is bundled)
   - First launch of an unsigned build: right-click the app / Open / Open
+
+&nbsp;
 
 - $macIcon macOS (JAR): [$macJar]($base/$macJar)
 

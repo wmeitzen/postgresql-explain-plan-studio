@@ -6,7 +6,11 @@ Graphical viewer for PostgreSQL `EXPLAIN` plans.
 
 - <img src="docs/readme-icons/windows.svg" width="16" height="16" alt="Windows" /> Windows installer: [PostgreSQLExplainPlanStudio-1.0.0-windows-x64-installer.exe](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-1.0.0-windows-x64-installer.exe)
 
+&nbsp;
+
 - <img src="docs/readme-icons/windows.svg" width="16" height="16" alt="Windows" /> Windows zip: [PostgreSQLExplainPlanStudio-1.0.0-windows-x64.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-1.0.0-windows-x64.zip)
+
+&nbsp;
 
 - <img src="docs/readme-icons/linux.svg" width="16" height="16" alt="Linux" /> Linux zip: [PostgreSQLExplainPlanStudio-1.0.0-linux-x64.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-1.0.0-linux-x64.zip)
 
@@ -17,9 +21,13 @@ Graphical viewer for PostgreSQL `EXPLAIN` plans.
   - `chmod +x PostgreSQLExplainPlanStudio`
   - To launch: `./PostgreSQLExplainPlanStudio`
 
+&nbsp;
+
 - <img src="docs/readme-icons/linux.svg" width="16" height="16" alt="Linux" /> Linux `.deb`: [PostgreSQLExplainPlanStudio-1.0.0-linux-x64.deb](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-1.0.0-linux-x64.deb)
 
   To install the `.deb` on Linux: `sudo apt install ./PostgreSQLExplainPlanStudio-1.0.0-linux-x64.deb`
+
+&nbsp;
 
 - <img src="docs/readme-icons/apple.svg" width="16" height="16" alt="macOS" /> macOS disk image: [PostgreSQLExplainPlanStudio-1.0.0-mac-x64.dmg](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-1.0.0-mac-x64.dmg)
 
@@ -29,6 +37,8 @@ Graphical viewer for PostgreSQL `EXPLAIN` plans.
   - Eject the disk image when finished
   - First launch of an unsigned build: right-click the app / Open / Open
 
+&nbsp;
+
 - <img src="docs/readme-icons/apple.svg" width="16" height="16" alt="macOS" /> macOS app zip: [PostgreSQLExplainPlanStudio-1.0.0-mac-x64.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-1.0.0-mac-x64.zip)
 
   To install the `x64.zip` on macOS:
@@ -36,6 +46,8 @@ Graphical viewer for PostgreSQL `EXPLAIN` plans.
   - Drag `PostgreSQL Explain Plan Studio.app` to Applications
   - No separate Java install needed (JRE is bundled)
   - First launch of an unsigned build: right-click the app / Open / Open
+
+&nbsp;
 
 - <img src="docs/readme-icons/apple.svg" width="16" height="16" alt="macOS" /> macOS (JAR): [PostgreSQLExplainPlanStudio-1.0.0-mac-jar.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-1.0.0-mac-jar.zip)
 
