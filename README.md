@@ -35,7 +35,11 @@ To install the <code>linux-x64.zip</code> on Linux:
 <li>
 <img src="docs/readme-icons/linux.svg" width="16" height="16" alt="Linux" /> Linux <code>.deb</code>: <a href="https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-1.0.0-linux-x64.deb">PostgreSQLExplainPlanStudio-1.0.0-linux-x64.deb</a>
 <br/>
-To install the <code>.deb</code> on Linux: <code>sudo apt install ./PostgreSQLExplainPlanStudio-1.0.0-linux-x64.deb</code>
+To install the <code>.deb</code> on Linux:
+<ul>
+<li>Navigate to the directory with the downloaded <code>.deb</code> file</li>
+<li><code>sudo apt install ./PostgreSQLExplainPlanStudio-1.0.0-linux-x64.deb</code></li>
+</ul>
 </li>
 </ul>
 

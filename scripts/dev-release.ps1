@@ -255,7 +255,11 @@ To install the <code>linux-x64.zip</code> on Linux:
 <li>
 $linuxIcon Linux <code>.deb</code>: <a href="$base/$linuxDeb">$linuxDeb</a>
 <br/>
-To install the <code>.deb</code> on Linux: <code>sudo apt install ./$linuxDeb</code>
+To install the <code>.deb</code> on Linux:
+<ul>
+<li>Navigate to the directory with the downloaded <code>.deb</code> file</li>
+<li><code>sudo apt install ./$linuxDeb</code></li>
+</ul>
 </li>
 </ul>
 
