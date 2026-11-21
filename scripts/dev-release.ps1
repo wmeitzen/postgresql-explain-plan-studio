@@ -1072,13 +1072,13 @@ try {
 			if ($commit.Output) { $commit.Output | ForEach-Object { Write-Host $_ } }
 			if ($commit.ExitCode -ne 0) { throw "git commit failed (exit $($commit.ExitCode))" }
 		}
+		# Force-move the annotated tag in place. Do NOT delete the remote tag first —
+		# deleting it turns an existing GitHub release into an untagged Draft, which
+		# never becomes Latest until published again.
 		$existingTag = git tag -l $Tag
 		if ($existingTag) {
-			Write-Status "Tag $Tag already exists — overwriting"
+			Write-Status "Tag $Tag already exists — moving with git tag -f (no remote delete)"
 			Invoke-Native -Command { git tag -d $Tag } | Out-Null
-			# Remote tag may or may not exist; ignore delete failures.
-			$del = Invoke-Native -Command { git push origin "refs/tags/${Tag}" --delete }
-			if ($del.Output) { $del.Output | ForEach-Object { Write-Host $_ } }
 		}
 		$tagResult = Invoke-Native -Command { git tag -a $Tag -m $Tag }
 		if ($tagResult.ExitCode -ne 0) {
@@ -1272,25 +1272,43 @@ $macAppNotes
 	$existing = gh release view $Tag 2>$null
 	$releaseExists = ($LASTEXITCODE -eq 0)
 	$ErrorActionPreference = $prevEa
-	$prereleaseArgs = @()
+	# Always clear draft on edit/create follow-up. Stable must not stay Draft or Latest
+	# remains on an older release (seen with v1.0.0 after remote tag delete).
+	$editFlags = @("--title", $title, "--notes", $notes, "--draft=false")
 	if ($IsPrerelease) {
-		$prereleaseArgs += "--prerelease"
+		$editFlags += "--prerelease"
+	} else {
+		$editFlags += "--prerelease=false"
+	}
+	$createFlags = @()
+	if ($IsPrerelease) {
+		$createFlags += "--prerelease"
 	}
 	if ($releaseExists) {
 		Write-Status "Release $Tag already exists — replacing assets"
 		gh release upload $Tag @assets --clobber
 		if ($LASTEXITCODE -ne 0) { throw "gh release upload failed" }
-		if ($IsPrerelease) {
-			gh release edit $Tag --title $title --notes $notes --prerelease | Out-Null
-		} else {
-			# Promote a prior Pre-release (or refresh Stable) to Latest.
-			gh release edit $Tag --title $title --notes $notes --prerelease=false | Out-Null
-		}
+		gh release edit $Tag @editFlags | Out-Null
 		if ($LASTEXITCODE -ne 0) { throw "gh release edit failed" }
 	} else {
 		Write-Status "Creating release $Tag$(if ($IsPrerelease) { ' (Pre-release)' } else { '' })"
-		gh release create $Tag @assets --title $title --notes $notes @prereleaseArgs
+		gh release create $Tag @assets --title $title --notes $notes @createFlags
 		if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
+		# Belt-and-suspenders: ensure we did not land as Draft.
+		gh release edit $Tag @editFlags | Out-Null
+		if ($LASTEXITCODE -ne 0) { throw "gh release edit (publish flags) failed" }
+	}
+	$isDraftNow = gh release view $Tag --json isDraft -q .isDraft 2>$null
+	$isPreNow = gh release view $Tag --json isPrerelease -q .isPrerelease 2>$null
+	if ($isDraftNow -eq "true") {
+		throw "GitHub release $Tag is still a Draft after publish (Latest will not move)."
+	}
+	if ($IsPrerelease) {
+		if ($isPreNow -ne "true") {
+			throw "Expected Pre-release flag on $Tag, got isPrerelease=$isPreNow"
+		}
+	} elseif ($isPreNow -eq "true") {
+		throw "Expected Stable $Tag (not Pre-release), got isPrerelease=$isPreNow"
 	}
 
 	if (-not $IsPrerelease) {
