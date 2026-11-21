@@ -596,6 +596,10 @@ public class OperationPropertiesPanel extends JTable {
 			model.setDataVector(data, columnNames);
 			this.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
 			applyColumnWidths(keepPropertyWidth, keepValueWidth);
+			// Avoid scrollRectToVisible chasing a leftover selection after Expand all.
+			clearSelection();
+			getSelectionModel().setAnchorSelectionIndex(-1);
+			getSelectionModel().setLeadSelectionIndex(-1);
 		} finally {
 			suppressingColumnWidthMemory = false;
 		}

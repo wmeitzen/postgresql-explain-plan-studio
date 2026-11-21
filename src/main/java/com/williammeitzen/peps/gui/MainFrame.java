@@ -439,7 +439,7 @@ public class MainFrame extends JFrame {
 		UiTheme.styleMenuBar(getJMenuBar());
 	}
 
-	/** Window / taskbar icon — Option D fan-in plan mark from {@code /images/app-icon.png}. */
+	/** Window / taskbar icon — plan-diagram mark from {@code /images/app-icon.png}. */
 	private void installApplicationIcons() {
 		URL url = getClass().getResource("/images/app-icon.png");
 		if (url == null) {
