@@ -7,13 +7,6 @@ Graphical viewer for PostgreSQL `EXPLAIN` plans.
 - <img src="docs/readme-icons/windows.svg" width="16" height="16" alt="Windows" /> Windows installer: [PostgreSQLExplainPlanStudio-1.0.0-windows-x64-installer.exe](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-1.0.0-windows-x64-installer.exe)
 - <img src="docs/readme-icons/windows.svg" width="16" height="16" alt="Windows" /> Windows zip: [PostgreSQLExplainPlanStudio-1.0.0-windows-x64.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-1.0.0-windows-x64.zip)
 - <img src="docs/readme-icons/linux.svg" width="16" height="16" alt="Linux" /> Linux zip: [PostgreSQLExplainPlanStudio-1.0.0-linux-x64.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-1.0.0-linux-x64.zip)
-  To install the `linux-x64.zip` on linux:
-  - Unzip file
-  - Open a terminal
-  - Navigate to the unzipped file's new directory
-  - `chmod +x PostgreSQLExplainPlanStudio`
-  - To launch: `./PostgreSQLExplainPlanStudio`
-
 - <img src="docs/readme-icons/linux.svg" width="16" height="16" alt="Linux" /> Linux `.deb`: [PostgreSQLExplainPlanStudio-1.0.0-linux-x64.deb](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-1.0.0-linux-x64.deb)
 
   To install the `.deb` on Linux: `sudo apt install ./PostgreSQLExplainPlanStudio-1.0.0-linux-x64.deb`
