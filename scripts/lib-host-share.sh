@@ -51,6 +51,8 @@ peps_known_share_repo_candidates() {
 
 # Resolve PEPS_HOST_REPO / $1 / auto-detect under HGFS or macOS Fusion shares.
 # Prints the absolute-ish path on success (exit 0), else exit 1.
+# If an explicit path is set but invalid, fall through to auto-detect (Fusion often
+# mounts as "/Volumes/VMware Shared Folders/peps", not /Volumes/peps).
 peps_find_host_repo() {
   local explicit="${1:-${PEPS_HOST_REPO:-}}"
   local candidate root
@@ -60,7 +62,6 @@ peps_find_host_repo() {
       printf '%s\n' "$explicit"
       return 0
     fi
-    return 1
   fi
 
   while IFS= read -r root; do
@@ -70,7 +71,7 @@ peps_find_host_repo() {
         printf '%s\n' "$candidate"
         return 0
       fi
-    done < <(find "$root" -maxdepth 8 -type d -name 'postgresql-explain-plan-studio' 2>/dev/null)
+    done < <(find "$root" -maxdepth 8 -type d \( -name 'postgresql-explain-plan-studio' -o -name 'peps' -o -name 'PEPS' \) 2>/dev/null)
   done < <(peps_share_search_roots)
 
   while IFS= read -r candidate; do

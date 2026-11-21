@@ -6150,11 +6150,16 @@ order by id_explain_plan_property;
 		return path;
 	}
 
-	/** Stroke a shape as short CAP_ROUND line segments (reliable on Ubuntu OpenJDK). */
-	private static void strokePathAsSegments(Graphics2D g, Shape shape, float flatness) {
+	/**
+	 * Stroke a shape as short CAP_BUTT segments (reliable on Ubuntu OpenJDK).
+	 * Interior joints overlap slightly so flattened curves do not show hairline gaps;
+	 * true path endpoints stay unextended so the shaft sits flat on the operator.
+	 */
+	private static void strokePathAsSegments(Graphics2D g, Shape shape, float flatness, float strokeWidth) {
 		if (shape == null) {
 			return;
 		}
+		java.util.ArrayList<float[]> points = new java.util.ArrayList<>();
 		PathIterator it = shape.getPathIterator(null, Math.max(0.5f, flatness));
 		float[] coords = new float[6];
 		float startX = 0f;
@@ -6169,18 +6174,18 @@ order by id_explain_plan_property;
 				startX = curX = coords[0];
 				startY = curY = coords[1];
 				hasPoint = true;
+				points.add(new float[] { curX, curY });
 				break;
 			case PathIterator.SEG_LINETO:
 				if (hasPoint) {
-					g.drawLine(Math.round(curX), Math.round(curY), Math.round(coords[0]), Math.round(coords[1]));
+					curX = coords[0];
+					curY = coords[1];
+					points.add(new float[] { curX, curY });
 				}
-				curX = coords[0];
-				curY = coords[1];
-				hasPoint = true;
 				break;
 			case PathIterator.SEG_CLOSE:
 				if (hasPoint) {
-					g.drawLine(Math.round(curX), Math.round(curY), Math.round(startX), Math.round(startY));
+					points.add(new float[] { startX, startY });
 				}
 				curX = startX;
 				curY = startY;
@@ -6189,6 +6194,37 @@ order by id_explain_plan_property;
 				break;
 			}
 			it.next();
+		}
+		if (points.size() < 2) {
+			return;
+		}
+		float overlap = Math.max(1.25f, strokeWidth * 0.35f);
+		for (int i = 0; i < points.size() - 1; i++) {
+			float x0 = points.get(i)[0];
+			float y0 = points.get(i)[1];
+			float x1 = points.get(i + 1)[0];
+			float y1 = points.get(i + 1)[1];
+			float dx = x1 - x0;
+			float dy = y1 - y0;
+			float len = (float) Math.hypot(dx, dy);
+			if (len < 0.01f) {
+				continue;
+			}
+			float ux = dx / len;
+			float uy = dy / len;
+			float ox0 = x0;
+			float oy0 = y0;
+			float ox1 = x1;
+			float oy1 = y1;
+			if (i > 0) {
+				ox0 -= ux * overlap;
+				oy0 -= uy * overlap;
+			}
+			if (i < points.size() - 2) {
+				ox1 += ux * overlap;
+				oy1 += uy * overlap;
+			}
+			g.draw(new java.awt.geom.Line2D.Float(ox0, oy0, ox1, oy1));
 		}
 	}
 
@@ -6241,7 +6277,8 @@ order by id_explain_plan_property;
 		Path2D shaft = roundedPolyline(xLines, yLines, cornerRadius);
 		// Light near the flat (operator) end; dark at the arrow tip.
 		// Ubuntu OpenJDK often drops LinearGradientPaint and thick Path2D.draw — stroke a
-		// flattened polyline with CAP_ROUND instead (curves survive as short segments).
+		// flattened polyline as short CAP_BUTT segments with interior overlap (curves from
+		// fillets; flat ends at the operator; no hairline gaps between segments).
 		Color arrowFlatEnd = UiTheme.isDark() ? new Color(0x93, 0xC5, 0xFD) : ARROW_LINE_COLOR_END;
 		Color arrowTip = UiTheme.isDark() ? new Color(0x1D, 0x4E, 0xD8) : ARROW_LINE_COLOR;
 		boolean linux = com.formdev.flatlaf.util.SystemInfo.isLinux
@@ -6250,8 +6287,8 @@ order by id_explain_plan_property;
 		if (linux || !hasLength) {
 			g.setColor(arrowTip);
 			g.setPaint(arrowTip);
-			g.setStroke(new BasicStroke(arrow_line_thickness, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-			strokePathAsSegments(g, shaft, 0.75f);
+			g.setStroke(new BasicStroke(arrow_line_thickness, BasicStroke.CAP_BUTT, BasicStroke.JOIN_ROUND));
+			strokePathAsSegments(g, shaft, 0.75f, arrow_line_thickness);
 		} else {
 			g.setStroke(new BasicStroke(arrow_line_thickness, BasicStroke.CAP_BUTT, BasicStroke.JOIN_ROUND));
 			g.setPaint(new LinearGradientPaint(

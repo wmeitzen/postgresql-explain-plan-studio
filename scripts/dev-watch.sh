@@ -18,8 +18,8 @@
 #   bash /mnt/hgfs/peps/scripts/dev-watch.sh
 #
 # First boot on macOS (Fusion Shared Folders already enabled):
-#   bash "/Volumes/peps/scripts/dev-watch.sh"
-#   # or: bash "/Volumes/VMware Shared Folders/peps/scripts/dev-watch.sh"
+#   bash "/Volumes/VMware Shared Folders/peps/scripts/dev-watch.sh"
+#   # (some Fusion setups also expose /Volumes/peps — either works)
 #
 # Local-only checkout (no host share):
 #   ./scripts/dev-watch.sh
@@ -231,10 +231,11 @@ Linux: share the repo (often named \"peps\"), then:
   ls /mnt/hgfs
   export PEPS_HOST_REPO=/mnt/hgfs/peps
   bash /mnt/hgfs/peps/scripts/dev-watch.sh
-macOS (Fusion Shared Folders):
+macOS (Fusion Shared Folders — path is usually NOT /Volumes/peps):
   ls /Volumes
   ls \"/Volumes/VMware Shared Folders\"
-  export PEPS_HOST_REPO=/Volumes/peps
+  unset PEPS_HOST_REPO
+  export PEPS_HOST_REPO=\"/Volumes/VMware Shared Folders/peps\"
   bash \"\$PEPS_HOST_REPO/scripts/dev-watch.sh\""
 
   host_real="$(readlink -f "$HOST_REPO" 2>/dev/null || printf '%s' "$HOST_REPO")"

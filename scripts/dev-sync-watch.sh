@@ -152,8 +152,9 @@ fi
 
 HOST_REPO="$(find_host_repo)" || die "Could not find the Windows PEPS repo on a VMware share.
 Mount / enable Shared Folders, then either:
-  export PEPS_HOST_REPO=/mnt/hgfs/peps          # Linux
-  export PEPS_HOST_REPO=/Volumes/peps           # macOS Fusion
+  unset PEPS_HOST_REPO
+  export PEPS_HOST_REPO=/mnt/hgfs/peps                              # Linux
+  export PEPS_HOST_REPO=\"/Volumes/VMware Shared Folders/peps\"    # macOS Fusion
   ./scripts/dev-sync-watch.sh
 or:
   ./scripts/dev-sync-watch.sh \"\$PEPS_HOST_REPO\"
