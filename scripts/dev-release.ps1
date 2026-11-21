@@ -7,6 +7,7 @@
   Interactive menu (unless -Action is set):
     (1) Publish Pre-release — GitHub --prerelease; README Download links unchanged
     (2) Promote to Stable — Latest full release; rewrite README; bump working tree to next patch
+    (3) Publish to Stable — Latest full release; rewrite README; keep working version (no bump)
 
   Then: bump version if needed, commit/tag/push (unless -SkipGit), build Windows + Ubuntu +
   macOS assets, upload the GitHub release.
@@ -20,7 +21,7 @@
   Existing git tags / GitHub releases for the same version are overwritten.
 
 .PARAMETER Action
-  PreRelease or Stable. Prompted via menu if omitted.
+  PreRelease, PromoteStable, or Stable. Prompted via menu if omitted.
 
 .PARAMETER Version
   Release version like 1.0.0 (without a leading v). Prompted if omitted; default is current pom.
@@ -61,10 +62,11 @@
 .EXAMPLE
   .\scripts\dev-release.ps1
   .\scripts\dev-release.ps1 -Action Stable -Version 1.0.0 -Yes
+  .\scripts\dev-release.ps1 -Action PromoteStable -Version 1.0.0 -Yes
   .\scripts\dev-release.ps1 -Action PreRelease -Version 1.0.1
 #>
 param(
-	[ValidateSet("", "PreRelease", "Stable")]
+	[ValidateSet("", "PreRelease", "PromoteStable", "Stable")]
 	[string]$Action = "",
 	[string]$Version,
 	[string]$UbuntuSsh,
@@ -320,18 +322,21 @@ function Resolve-ReleaseAction {
 	if (-not [string]::IsNullOrWhiteSpace($Explicit)) {
 		$normalized = $Explicit.Trim()
 		if ($normalized -match '^(?i)pre-?release$') { return "PreRelease" }
+		if ($normalized -match '^(?i)promote(-?stable)?$') { return "PromoteStable" }
 		if ($normalized -match '^(?i)stable$') { return "Stable" }
-		throw "Invalid -Action '$Explicit'. Use PreRelease or Stable."
+		throw "Invalid -Action '$Explicit'. Use PreRelease, PromoteStable, or Stable."
 	}
 	Write-Host ""
 	Write-Host "Release action:"
 	Write-Host "  (1) Publish Pre-release   — build/upload as GitHub Pre-release (Latest unchanged)"
 	Write-Host "  (2) Promote to Stable     — publish as official Latest; then bump to next patch"
-	$choice = Read-Host "Choose [1/2]"
+	Write-Host "  (3) Publish to Stable     — publish as official Latest; keep working version (no bump)"
+	$choice = Read-Host "Choose [1/2/3]"
 	switch -Regex ($choice.Trim()) {
 		'^(1|pre)$' { return "PreRelease" }
-		'^(2|stable)$' { return "Stable" }
-		default { throw "Invalid choice '$choice'. Enter 1 or 2." }
+		'^(2|promote)$' { return "PromoteStable" }
+		'^(3|stable)$' { return "Stable" }
+		default { throw "Invalid choice '$choice'. Enter 1, 2, or 3." }
 	}
 }
 
@@ -950,10 +955,14 @@ echo "Built `$ZIP_ABS"
 # --- action + version ---
 $ReleaseAction = Resolve-ReleaseAction -Explicit $Action
 $IsPrerelease = ($ReleaseAction -eq "PreRelease")
+$IsStableChannel = ($ReleaseAction -eq "Stable" -or $ReleaseAction -eq "PromoteStable")
+$BumpAfterStable = ($ReleaseAction -eq "PromoteStable")
 Write-Status "Release action: $ReleaseAction"
 
 $current = Get-CurrentPomVersion
-$Version = Resolve-ReleaseVersion -Explicit $Version -PomVersion $current
+# (3) Publish to Stable: prefer staying on 1.0.0 for the public-launch cut.
+$versionPromptDefault = if ($ReleaseAction -eq "Stable") { "1.0.0" } else { $current }
+$Version = Resolve-ReleaseVersion -Explicit $Version -PomVersion $versionPromptDefault
 $Version = $Version.Trim()
 if ($Version.StartsWith("v") -or $Version.StartsWith("V")) {
 	$Version = $Version.Substring(1)
@@ -990,7 +999,7 @@ if ($current -ne $Version) {
 }
 if ($IsPrerelease) {
 	Write-Status "Pre-release: leaving README Download links on Latest Stable"
-} else {
+} elseif ($IsStableChannel) {
 	Write-Status "Updating README download links for Stable $Version"
 	Update-ReadmeDownloads $Version
 }
@@ -1015,7 +1024,7 @@ if (-not $SkipMacApp -and -not $SkipBuild) {
 
 Write-Host ""
 Write-Host "This will:"
-Write-Host "  - Action: $ReleaseAction$(if ($IsPrerelease) { ' (GitHub Pre-release)' } else { ' (Stable / Latest)' })"
+Write-Host "  - Action: $ReleaseAction$(if ($IsPrerelease) { ' (GitHub Pre-release)' } elseif ($IsStableChannel) { ' (Stable / Latest)' } else { '' })"
 Write-Host "  - $(if ($SkipGit) { 'Skip git commit/tag/push' } else { "Commit/tag/push $Tag" })"
 if ($MacOnlyRelease) {
 	Write-Host "  - $(if ($SkipBuild) { 'Skip Mac JAR zip build' } else { 'Build macOS JAR zip (pack-mac-jar.ps1)' })  [TEMPORARY Mac-only]"
@@ -1029,8 +1038,10 @@ if ($MacOnlyRelease) {
 	Write-Host "  - $(if ($SkipBuild -or $SkipMacApp) { 'Skip Mac .app build' } else { "Build macOS .app zip/DMG on $MacSsh" })"
 }
 Write-Host "  - Upload available release assets to GitHub release $Tag"
-if (-not $IsPrerelease) {
-	Write-Host "  - After Stable succeeds: bump working tree to next patch"
+if ($BumpAfterStable) {
+	Write-Host "  - After Promote to Stable succeeds: bump working tree to next patch"
+} elseif ($ReleaseAction -eq "Stable") {
+	Write-Host "  - After Publish to Stable succeeds: keep working version at $Version (no bump)"
 }
 if (-not $Yes) {
 	$confirm = Read-Host "Continue? [Y/n]"
@@ -1311,10 +1322,10 @@ $macAppNotes
 		throw "Expected Stable $Tag (not Pre-release), got isPrerelease=$isPreNow"
 	}
 
-	if (-not $IsPrerelease) {
+	if ($BumpAfterStable) {
 		$nextVersion = Get-NextPatchVersion -Version $Version
 		if ($nextVersion -ne $Version) {
-			Write-Status "Stable published — bumping working tree $Version -> $nextVersion"
+			Write-Status "Promote to Stable published — bumping working tree $Version -> $nextVersion"
 			Set-ProjectVersion $nextVersion
 			Save-DevReleaseLocalConfig -UbuntuSshTarget $UbuntuSsh -MacSshTarget $MacSsh -LastVersion $nextVersion
 			if (-not $SkipGit) {
@@ -1330,6 +1341,9 @@ $macAppNotes
 				}
 			}
 		}
+	} elseif ($ReleaseAction -eq "Stable") {
+		Write-Status "Publish to Stable done — leaving working version at $Version"
+		Save-DevReleaseLocalConfig -UbuntuSshTarget $UbuntuSsh -MacSshTarget $MacSsh -LastVersion $Version
 	}
 
 	Complete-ReleaseProgress "Done"
