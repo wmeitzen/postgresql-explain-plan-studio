@@ -133,7 +133,13 @@ Outputs:
 - `target/PostgreSQLExplainPlanStudio-<version>-mac-x64.zip` (or `mac-arm64`) — unzip and drag the `.app` to Applications
 - matching `.dmg` (hdiutil + Applications symlink; works over SSH, no Xcode CLT)
 
-Unsigned builds may need right-click → Open the first time. Signing/notarization is still deferred.
+Unsigned builds may need right-click → Open the first time. If macOS says the app is **damaged**, clear quarantine after installing to Applications:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/PostgreSQL Explain Plan Studio.app"
+```
+
+Signing/notarization is still deferred.
 
 ## Maintainers: publishing a GitHub release
 

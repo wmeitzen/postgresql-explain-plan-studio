@@ -248,3 +248,4 @@ else
 fi
 echo "Finder label: ${DISPLAY_NAME}.app (download zip filename stays ${ZIP_NAME})."
 echo "Note: unsigned builds may need right-click -> Open the first time (Gatekeeper)."
+echo "If macOS says the app is damaged: xattr -dr com.apple.quarantine \"/Applications/${DISPLAY_NAME}.app\""

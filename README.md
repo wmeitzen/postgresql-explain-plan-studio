@@ -54,7 +54,8 @@ To install the <code>.dmg</code> on macOS:
 <li>Open the <code>.dmg</code></li>
 <li>Drag <code>PostgreSQL Explain Plan Studio.app</code> to Applications</li>
 <li>Eject the disk image when finished</li>
-<li>First launch of an unsigned build: right-click the app / Open / Open</li>
+<li>First launch of an unsigned build: right-click the app in Applications / Open / Open</li>
+<li>If macOS says the app is <strong>damaged</strong> (Gatekeeper quarantine on unsigned downloads), run:<br/><code>xattr -dr com.apple.quarantine "/Applications/PostgreSQL Explain Plan Studio.app"</code><br/>then open the app again</li>
 </ul>
 </li>
 </ul>
@@ -68,7 +69,8 @@ To install the <code>x64.zip</code> on macOS:
 <li>Unzip file</li>
 <li>Drag <code>PostgreSQL Explain Plan Studio.app</code> to Applications</li>
 <li>No separate Java install needed (JRE is bundled)</li>
-<li>First launch of an unsigned build: right-click the app / Open / Open</li>
+<li>First launch of an unsigned build: right-click the app in Applications / Open / Open</li>
+<li>If macOS says the app is <strong>damaged</strong> (Gatekeeper quarantine on unsigned downloads), run:<br/><code>xattr -dr com.apple.quarantine "/Applications/PostgreSQL Explain Plan Studio.app"</code><br/>then open the app again</li>
 </ul>
 </li>
 </ul>
