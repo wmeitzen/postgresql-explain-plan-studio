@@ -1,0 +1,2 @@
+Index Scan using all_allele_pkey on all_allele a2  (cost=0.42..1.03 rows=1 width=23) (actual time=0.001..0.001 rows=0.83 loops=420547)
+  Index Cond: (a2._allele_key = ap_1._allele_key_2)

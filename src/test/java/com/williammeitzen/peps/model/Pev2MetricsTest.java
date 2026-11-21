@@ -19,6 +19,11 @@ class Pev2MetricsTest {
 	}
 
 	@Test
+	void revisedRows_keepsSubIntegerFractionAcrossLoops() {
+		assertEquals(349054.01, Pev2Metrics.revisedRows(0.83, 420547.0), 0.0001);
+	}
+
+	@Test
 	void revisedRows_loopsOne_unchanged() {
 		assertEquals(50.0, Pev2Metrics.revisedRows(50.0, 1.0));
 	}

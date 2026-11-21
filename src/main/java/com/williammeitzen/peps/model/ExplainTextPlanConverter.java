@@ -613,12 +613,24 @@ public final class ExplainTextPlanConverter {
 		node.put("Node Type", capitalizeWords(t));
 	}
 
-	/** Postgres may print {@code rows=10} or {@code rows=10.00}. */
-	private static Long parseRowCount(String raw) {
+	/**
+	 * Postgres may print {@code rows=10}, {@code rows=10.00}, or (PG18+) a true
+	 * fraction such as {@code rows=0.83}. Keep full precision here — totals are
+	 * {@code rows × loops}; rounding belongs only at display time.
+	 */
+	private static Number parseRowCount(String raw) {
 		if (raw == null || raw.isBlank()) {
 			return null;
 		}
-		return Long.valueOf(Math.round(Double.parseDouble(raw.trim())));
+		double value = Double.parseDouble(raw.trim());
+		if (Double.isNaN(value) || Double.isInfinite(value)) {
+			return null;
+		}
+		// Whole numbers as Long to match typical EXPLAIN JSON; keep fractions as Double.
+		if (value == Math.rint(value) && value >= Long.MIN_VALUE && value <= Long.MAX_VALUE) {
+			return Long.valueOf((long) value);
+		}
+		return Double.valueOf(value);
 	}
 
 	private static String aggregateTextLabel(String token) {

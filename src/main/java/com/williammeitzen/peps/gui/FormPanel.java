@@ -284,7 +284,8 @@ public class FormPanel extends JPanel {
 			
 			tabPaneToLink.removeAll();
 			
-			tabPaneToLink.addTab(getPlanSourceTabName(newPlanName), pEvent.getPlanSourcePanel());
+			tabPaneToLink.addTab(getPlanSourceTabName(newPlanName, pEvent.getPlanSourcePanel()),
+					pEvent.getPlanSourcePanel());
 			
 			// add "Plan Statistics" tab
 			// by stas
@@ -307,7 +308,7 @@ public class FormPanel extends JPanel {
 			});
 
 			// Properties full height on the right; graph + sliders on the left
-			tabPaneToLink.addTab(getPlanDiagramTabName(newPlanName),
+			tabPaneToLink.addTab(getPlanDiagramTabName(newPlanName, pEvent.getPlanSourcePanel()),
 					createPlanDiagramTab(pEvent.getPlanGraphPanel(), 600, 600));
 			
 			newPlanSourcePanel.setPlanSourceFromQueryPlanNameField(jsnRow.getString("plan_name"));
@@ -334,7 +335,6 @@ public class FormPanel extends JPanel {
 
 			newPlanGraphPanel.setIDExplainPlan(newPlanId);
 			
-			// Plan Diagram is enabled only for a single selected plan
 			updatePlanDiagramTabEnabled();
 		}
 		planTreeModel.reload();
@@ -515,13 +515,21 @@ public class FormPanel extends JPanel {
 		if (pEvent != null) {
 
 			PlanSourcePanel sourcePanel = pEvent.getPlanSourcePanel();
-			tabPaneToLink.addTab(getPlanSourceTabName(selectedPlanName, sourcePanel), sourcePanel);
+			boolean multiPlan = selectedPlans.size() > 1;
 
-			// Translate sits between Plan Source and Compare Plans, only when Anonymize is on.
-			if (sourcePanel.isAnonymizeEnabled()) {
-				TranslateAnonymizedPanel translatePanel = new TranslateAnonymizedPanel();
-				translatePanel.setPlanSourcePanel(sourcePanel);
-				tabPaneToLink.addTab(getTranslateTabName(), translatePanel);
+			// Multi-select: empty/disabled Plan Source (one plan's connection info is confusing).
+			if (multiPlan) {
+				tabPaneToLink.addTab(getPlanSourceTabName(null), new JPanel());
+				tabPaneToLink.setEnabledAt(0, false);
+			} else {
+				tabPaneToLink.addTab(getPlanSourceTabName(selectedPlanName, sourcePanel), sourcePanel);
+
+				// Translate sits between Plan Source and Compare Plans, only when Anonymize is on.
+				if (sourcePanel.isAnonymizeEnabled()) {
+					TranslateAnonymizedPanel translatePanel = new TranslateAnonymizedPanel();
+					translatePanel.setPlanSourcePanel(sourcePanel);
+					tabPaneToLink.addTab(getTranslateTabName(), translatePanel);
+				}
 			}
 
 			// add "Plan Statistics" tab
@@ -552,12 +560,25 @@ public class FormPanel extends JPanel {
 			});
 
 			JPanel diagramTab = createPlanDiagramTab(pEvent.getPlanGraphPanel(), 1000, 500, sourcePanel);
-			tabPaneToLink.addTab(getPlanDiagramTabName(selectedPlanName, sourcePanel), diagramTab);
+			tabPaneToLink.addTab(
+					multiPlan ? getPlanDiagramTabName(null, sourcePanel)
+							: getPlanDiagramTabName(selectedPlanName, sourcePanel),
+					diagramTab);
 
-			sourcePanel.setAnonymizeModeListener(() ->
-					syncAnonymizeChrome(selectedPlanName, sourcePanel, diagramTab));
+			if (!multiPlan) {
+				sourcePanel.setAnonymizeModeListener(() ->
+						syncAnonymizeChrome(selectedPlanName, sourcePanel, diagramTab));
+			}
 
 			updatePlanDiagramTabEnabled();
+
+			if (multiPlan) {
+				// Prefer Compare Plans when several plans are selected (Source is disabled).
+				int compareIdx = indexOfTabTitle(getPlanStatisticsTabName());
+				if (compareIdx >= 0) {
+					tabPaneToLink.setSelectedIndex(compareIdx);
+				}
+			}
 
 			// Folder-only blanks the toolbar; force a refresh on next diagram paint even if
 			// this is the same plan id (enable previously ran only when the id changed).
@@ -567,7 +588,9 @@ public class FormPanel extends JPanel {
 				pEvent.getPlanGraphPanel().repaint();
 			}
 
-			sourcePanel.refreshFolderChooser();
+			if (!multiPlan) {
+				sourcePanel.refreshFolderChooser();
+			}
 		}
 	}
 
@@ -589,7 +612,7 @@ public class FormPanel extends JPanel {
 
 		tabPaneToLink.removeAll();
 
-		tabPaneToLink.addTab("Plan Source", new JPanel());
+		tabPaneToLink.addTab(getPlanSourceTabName(null), new JPanel());
 		tabPaneToLink.setEnabledAt(0, false);
 
 		PlanStatisticsPanel statisticsPanel = new PlanStatisticsPanel();
@@ -619,7 +642,7 @@ public class FormPanel extends JPanel {
 			}
 		});
 
-		tabPaneToLink.addTab("Plan Diagram", new JPanel());
+		tabPaneToLink.addTab(getPlanDiagramTabName(null), new JPanel());
 		int diagramIdx = indexOfTabContaining("Plan Diagram");
 		if (diagramIdx >= 0) {
 			tabPaneToLink.setEnabledAt(diagramIdx, false);
@@ -3443,7 +3466,11 @@ public class FormPanel extends JPanel {
 		}
 	}
 	
+	/** Plan name only when exactly one plan is selected; null/blank → plain "Plan Source". */
 	private String getPlanSourceTabName(String planName) {
+		if (planName == null || planName.isBlank()) {
+			return "Plan Source";
+		}
 		return planName + " - Plan Source";
 	}
 
@@ -3456,7 +3483,11 @@ public class FormPanel extends JPanel {
 		return "Compare Plans";
 	}
 	
+	/** Plan name only when exactly one plan is selected; null/blank → plain "Plan Diagram". */
 	private String getPlanDiagramTabName(String planName) {
+		if (planName == null || planName.isBlank()) {
+			return "Plan Diagram";
+		}
 		return planName + " - Plan Diagram";
 	}
 
@@ -3517,12 +3548,14 @@ public class FormPanel extends JPanel {
 			}
 		}
 
+		// Titles include the plan name only for a single selected plan.
+		String titleName = isSinglePlanSelected() ? planName : null;
 		if (tabPaneToLink.getTabCount() > 0) {
-			tabPaneToLink.setTitleAt(0, getPlanSourceTabName(planName, sourcePanel));
+			tabPaneToLink.setTitleAt(0, getPlanSourceTabName(titleName, sourcePanel));
 		}
 		int diagramIdx = indexOfTabContaining("Plan Diagram");
 		if (diagramIdx >= 0) {
-			tabPaneToLink.setTitleAt(diagramIdx, getPlanDiagramTabName(planName, sourcePanel));
+			tabPaneToLink.setTitleAt(diagramIdx, getPlanDiagramTabName(titleName, sourcePanel));
 		}
 		refreshDiagramAnonymizeBadge(diagramTab, sourcePanel);
 		updatePlanDiagramTabEnabled();
@@ -3533,7 +3566,7 @@ public class FormPanel extends JPanel {
 		return indexOfTabContaining("Plan Diagram");
 	}
 
-	/** Plan Diagram is only meaningful for a single selected plan. */
+	/** True when exactly one plan node is selected (folders ignored). */
 	public boolean isSinglePlanSelected() {
 		return planTree != null && getSelectedPlanNodes().size() == 1;
 	}
@@ -3546,17 +3579,26 @@ public class FormPanel extends JPanel {
 		PlansTreeNode primaryPlan = getPrimarySelectedPlan();
 		PlanEvent pEvent = primaryPlan == null ? null : plansMapper.get(primaryPlan.getPlanId());
 		PlanSourcePanel source = pEvent == null ? null : pEvent.getPlanSourcePanel();
-		boolean enableDiagram = isSinglePlanSelected()
+		boolean singlePlan = isSinglePlanSelected();
+		boolean enableDiagram = primaryPlan != null
 				&& source != null
 				&& source.hasUsableJsonPlan();
 		tabPaneToLink.setEnabledAt(diagramIdx, enableDiagram);
+
+		int sourceIdx = indexOfTabContaining("Plan Source");
+		if (sourceIdx >= 0) {
+			// Multi-select / folder-only: Plan Source stays disabled (empty panel).
+			tabPaneToLink.setEnabledAt(sourceIdx, singlePlan);
+		}
+
 		if (source != null) {
-			source.setShowPlanGraphButton(enableDiagram);
+			// Show-diagram button lives on Plan Source — only for a single selection.
+			source.setShowPlanGraphButton(singlePlan && enableDiagram);
 		}
 		if (!enableDiagram && tabPaneToLink.getSelectedIndex() == diagramIdx) {
-			// No JSON → Plan Source; multi-select → Compare Plans
+			// No JSON → Plan Source (single) or Compare Plans (multi)
 			int compareIdx = indexOfTabTitle(getPlanStatisticsTabName());
-			tabPaneToLink.setSelectedIndex(isSinglePlanSelected() ? 0
+			tabPaneToLink.setSelectedIndex(singlePlan ? 0
 					: (compareIdx >= 0 ? compareIdx : 0));
 		}
 	}

@@ -11,8 +11,8 @@ public final class OperatorWarnings {
 	public static final String TAG_TIME = "\uF017";
 	/** Dollar sign — cost warning. */
 	public static final String TAG_COST = "$";
-	/** Font Awesome {@code fa-thumbs-down} — actual vs estimated rows. */
-	public static final String TAG_ROWS = "\uF165";
+	/** Font Awesome {@code fa-scale-balanced} / {@code fa-balance-scale} — actual vs estimated ratio. */
+	public static final String TAG_ROWS = "\uF24E";
 	/**
 	 * Font Awesome Free Solid {@code fa-filter} (U+F0B0) — rows-removed warning.
 	 * Requires {@code /fonts/fa-solid-900.ttf} when painting.

@@ -778,6 +778,15 @@ public class OperationPropertiesPanel extends JTable {
 		}
 	}
 
+	/** Expanded Workers block: the {@code Worker Number} row (label + value). */
+	private boolean isWorkerNumberPropertyRow(int row) {
+		Object property = getValueAt(row, 0);
+		if (property == null) {
+			return false;
+		}
+		return "Worker Number".equals(property.toString().trim());
+	}
+
 	@Override
 	public Component prepareRenderer(TableCellRenderer renderer, int row, int column) {
 		Component component = super.prepareRenderer(renderer, row, column);
@@ -802,6 +811,14 @@ public class OperationPropertiesPanel extends JTable {
 					}
 				}
 			}
+		}
+		// Renderers are reused — always set bold/plain explicitly.
+		Font base = component.getFont();
+		if (base == null) {
+			base = getFont();
+		}
+		if (base != null) {
+			component.setFont(base.deriveFont(isWorkerNumberPropertyRow(row) ? Font.BOLD : Font.PLAIN));
 		}
 		// Always set colors: renderers are reused, so a prior red row would otherwise stick.
 		if (isRowHighlighted(row)) {

@@ -1559,7 +1559,6 @@ public class PlanSourcePanel extends JPanel {
 	public void setPlanTextIsDirty(boolean planTextIsDirty) {
 		boolean bolShowProperties = false;
 		if (bolShowProperties == true) { System.out.println("setPlanTextIsDirty(" + planTextIsDirty + ")"); }
-		// Keep Plan Diagram enabled only for a single selection (multi-select stays greyed out).
 		FormPanel formPanel = findFormPanel();
 		if (formPanel != null) {
 			formPanel.updatePlanDiagramTabEnabled();

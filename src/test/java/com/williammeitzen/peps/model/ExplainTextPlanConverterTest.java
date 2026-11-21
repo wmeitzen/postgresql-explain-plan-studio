@@ -171,6 +171,20 @@ class ExplainTextPlanConverterTest {
 	}
 
 	@Test
+	void preservesSubIntegerFractionalActualRowsUntilTotals() throws Exception {
+		// PG18+ can emit rows=0.83; must not round to 1 before × loops (PEV2-aligned).
+		JsonObject plan = planFromFixture("explain-text/08-fractional-sub-integer-actual-rows.txt");
+		assertEquals("Index Scan", plan.get("Node Type"));
+		assertEquals(0.83d, ((Number) plan.get("Actual Rows")).doubleValue(), 0.0001);
+		assertEquals(420547L, ((Number) plan.get("Actual Loops")).longValue());
+		assertEquals(349054.01d,
+				Pev2Metrics.revisedRows(
+						((Number) plan.get("Actual Rows")).doubleValue(),
+						((Number) plan.get("Actual Loops")).doubleValue()),
+				0.0001);
+	}
+
+	@Test
 	void preservesTextNativeNodeTypeAndEmitsIconSiblings() {
 		JsonObject left = new JsonObject();
 		ExplainTextPlanConverter.applyNormalizedNodeType(left, "Nested Loop Left Join");
