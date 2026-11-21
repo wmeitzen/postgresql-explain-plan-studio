@@ -35,11 +35,11 @@ Graphical viewer for PostgreSQL `EXPLAIN` plans.
 - <img src="docs/readme-icons/apple.svg" width="16" height="16" alt="macOS" /> macOS (JAR): [PostgreSQLExplainPlanStudio-1.0.0-mac-jar.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-1.0.0-mac-jar.zip)
 
   To install the `jar.zip` on macOS:
+  - Install [Java 17 or later](https://adoptium.net/temurin/releases/?version=17) (Temurin or any JRE/JDK)
   - Unzip file
   - Open a terminal
   - Navigate to the unzipped file's new directory
   - `chmod +x peps.sh`
-  - Install [Java 17 or later](https://adoptium.net/temurin/releases/?version=17) (Temurin or any JRE/JDK)
   - To launch: `./peps.sh`
 
 All [releases](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases).
