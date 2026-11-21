@@ -28,6 +28,7 @@ import java.awt.event.MouseEvent;
 import java.awt.event.MouseListener;
 import java.awt.event.MouseMotionListener;
 import java.awt.geom.Path2D;
+import java.awt.geom.PathIterator;
 import java.awt.geom.Rectangle2D;
 import java.awt.geom.RectangularShape;
 import java.awt.geom.RoundRectangle2D;
@@ -6110,6 +6111,87 @@ order by id_explain_plan_property;
 		}
 	}
 	
+	/**
+	 * Polyline with quadratic fillets at interior vertices so thick connector strokes
+	 * look curved instead of sharp-cornered.
+	 */
+	private static Path2D roundedPolyline(int[] x, int[] y, float radius) {
+		Path2D path = new Path2D.Float();
+		if (x == null || y == null || x.length < 2 || x.length != y.length) {
+			return path;
+		}
+		path.moveTo(x[0], y[0]);
+		if (x.length == 2) {
+			path.lineTo(x[1], y[1]);
+			return path;
+		}
+		for (int i = 1; i < x.length - 1; i++) {
+			float x0 = x[i - 1];
+			float y0 = y[i - 1];
+			float x1 = x[i];
+			float y1 = y[i];
+			float x2 = x[i + 1];
+			float y2 = y[i + 1];
+			float d0 = (float) Math.hypot(x1 - x0, y1 - y0);
+			float d1 = (float) Math.hypot(x2 - x1, y2 - y1);
+			float r = Math.min(radius, Math.min(d0, d1) * 0.5f);
+			if (r < 1.5f || d0 < 1f || d1 < 1f) {
+				path.lineTo(x1, y1);
+				continue;
+			}
+			float ux0 = (x1 - x0) / d0;
+			float uy0 = (y1 - y0) / d0;
+			float ux1 = (x2 - x1) / d1;
+			float uy1 = (y2 - y1) / d1;
+			path.lineTo(x1 - ux0 * r, y1 - uy0 * r);
+			path.quadTo(x1, y1, x1 + ux1 * r, y1 + uy1 * r);
+		}
+		path.lineTo(x[x.length - 1], y[y.length - 1]);
+		return path;
+	}
+
+	/** Stroke a shape as short CAP_ROUND line segments (reliable on Ubuntu OpenJDK). */
+	private static void strokePathAsSegments(Graphics2D g, Shape shape, float flatness) {
+		if (shape == null) {
+			return;
+		}
+		PathIterator it = shape.getPathIterator(null, Math.max(0.5f, flatness));
+		float[] coords = new float[6];
+		float startX = 0f;
+		float startY = 0f;
+		float curX = 0f;
+		float curY = 0f;
+		boolean hasPoint = false;
+		while (!it.isDone()) {
+			int type = it.currentSegment(coords);
+			switch (type) {
+			case PathIterator.SEG_MOVETO:
+				startX = curX = coords[0];
+				startY = curY = coords[1];
+				hasPoint = true;
+				break;
+			case PathIterator.SEG_LINETO:
+				if (hasPoint) {
+					g.drawLine(Math.round(curX), Math.round(curY), Math.round(coords[0]), Math.round(coords[1]));
+				}
+				curX = coords[0];
+				curY = coords[1];
+				hasPoint = true;
+				break;
+			case PathIterator.SEG_CLOSE:
+				if (hasPoint) {
+					g.drawLine(Math.round(curX), Math.round(curY), Math.round(startX), Math.round(startY));
+				}
+				curX = startX;
+				curY = startY;
+				break;
+			default:
+				break;
+			}
+			it.next();
+		}
+	}
+
 	public void drawArrowAndText(Graphics2D g, int id_explain_plan_property, int arrow_line_thickness, int column_boundary_left
 			, int column_boundary_right, int box_top, int box_bottom, int box_left
 			, String arrow_text, int arrow_text_fontmetrics_width, int arrow_text_fontmetrics_height, int arrow_text_bottom_margin
@@ -6153,27 +6235,25 @@ order by id_explain_plan_property;
 			, GRAPH_TOP_MARGIN + previous_box_top + withZoom(OPERATOR_BOX_HEIGHT) / 2
 			, GRAPH_TOP_MARGIN + previous_box_top + withZoom(OPERATOR_BOX_HEIGHT) / 2
 		};
-		Path2D shaft = new Path2D.Float();
-		shaft.moveTo(xLines[0], yLines[0]);
-		for (int i = 1; i < xLines.length; i++) {
-			shaft.lineTo(xLines[i], yLines[i]);
-		}
+		// Fillet elbows so connectors read as curves (JOIN_ROUND alone is not enough when
+		// Linux falls back to per-segment drawLine — that path never joins corners).
+		float cornerRadius = Math.max(10f, Math.max(arrow_line_thickness * 1.25f, withZoom(12)));
+		Path2D shaft = roundedPolyline(xLines, yLines, cornerRadius);
 		// Light near the flat (operator) end; dark at the arrow tip.
-		// Ubuntu 22 OpenJDK often drops LinearGradientPaint and even Path2D.draw with a
-		// thick stroke — use solid color + per-segment drawLine there.
+		// Ubuntu OpenJDK often drops LinearGradientPaint and thick Path2D.draw — stroke a
+		// flattened polyline with CAP_ROUND instead (curves survive as short segments).
 		Color arrowFlatEnd = UiTheme.isDark() ? new Color(0x93, 0xC5, 0xFD) : ARROW_LINE_COLOR_END;
 		Color arrowTip = UiTheme.isDark() ? new Color(0x1D, 0x4E, 0xD8) : ARROW_LINE_COLOR;
 		boolean linux = com.formdev.flatlaf.util.SystemInfo.isLinux
 				|| System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("linux");
 		boolean hasLength = xLines[0] != xLines[xLines.length - 1] || yLines[0] != yLines[yLines.length - 1];
-		g.setStroke(new BasicStroke(arrow_line_thickness, BasicStroke.CAP_BUTT, BasicStroke.JOIN_ROUND));
 		if (linux || !hasLength) {
 			g.setColor(arrowTip);
 			g.setPaint(arrowTip);
-			for (int i = 1; i < xLines.length; i++) {
-				g.drawLine(xLines[i - 1], yLines[i - 1], xLines[i], yLines[i]);
-			}
+			g.setStroke(new BasicStroke(arrow_line_thickness, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+			strokePathAsSegments(g, shaft, 0.75f);
 		} else {
+			g.setStroke(new BasicStroke(arrow_line_thickness, BasicStroke.CAP_BUTT, BasicStroke.JOIN_ROUND));
 			g.setPaint(new LinearGradientPaint(
 					(float) xLines[0], (float) yLines[0],
 					(float) xLines[xLines.length - 1], (float) yLines[yLines.length - 1],
