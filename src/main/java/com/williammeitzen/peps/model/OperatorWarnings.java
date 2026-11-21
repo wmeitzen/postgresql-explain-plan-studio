@@ -28,7 +28,7 @@ public final class OperatorWarnings {
 	public static final double FILTER_WARNING_PERCENT = 50.0;
 
 	/** Default shared gate: indicators require Actual calculated rows ≥ this (Settings-overridable). */
-	public static final double WARNING_MIN_ACTUAL_ROWS = 5000.0;
+	public static final double WARNING_MIN_ACTUAL_ROWS = 500.0;
 
 	/** @deprecated use {@link #WARNING_MIN_ACTUAL_ROWS} */
 	public static final double FILTER_WARNING_MIN_ACTUAL_ROWS = WARNING_MIN_ACTUAL_ROWS;

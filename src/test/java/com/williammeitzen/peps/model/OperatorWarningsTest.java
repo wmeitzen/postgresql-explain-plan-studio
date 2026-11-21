@@ -31,19 +31,19 @@ class OperatorWarningsTest {
 	void filter_requiresPercentOrMoreAndMinActualRows() {
 		assertEquals(50.0, OperatorWarnings.filterRemovedPercent(50.0, 50.0));
 		assertEquals(90.0, OperatorWarnings.filterRemovedPercent(900.0, 100.0));
-		// Defaults: ≥50% and Actual rows ≥ 5000
-		assertFalse(OperatorWarnings.warnFilter(900.0, 100.0)); // below min rows
-		assertFalse(OperatorWarnings.warnFilter(4000.0, 6000.0)); // 40% < 50%
-		assertTrue(OperatorWarnings.warnFilter(5000.0, 5000.0)); // 50% and 5000 rows
+		// Defaults: ≥50% and Actual rows ≥ 500
+		assertFalse(OperatorWarnings.warnFilter(200.0, 100.0)); // below min rows (300 total)
+		assertFalse(OperatorWarnings.warnFilter(400.0, 600.0)); // 40% < 50%
+		assertTrue(OperatorWarnings.warnFilter(500.0, 500.0)); // 50% and 500 rows
 		assertTrue(OperatorWarnings.warnFilter(9000.0, 1000.0, 50.0, 500.0)); // custom thresholds
 		assertFalse(OperatorWarnings.warnFilter(9000.0, 1000.0, 50.0, 5001.0));
-		assertTrue(OperatorWarnings.warnFilterPercent(5000.0, 5000.0, 50.0));
-		assertFalse(OperatorWarnings.meetsMinActualRows(4999.0, 5000.0));
-		assertTrue(OperatorWarnings.meetsMinActualRows(5000.0, 5000.0));
+		assertTrue(OperatorWarnings.warnFilterPercent(500.0, 500.0, 50.0));
+		assertFalse(OperatorWarnings.meetsMinActualRows(499.0, 500.0));
+		assertTrue(OperatorWarnings.meetsMinActualRows(500.0, 500.0));
 		assertTrue(OperatorWarnings.meetsMinCalculated(OperatorWarnings.METRIC_ROWS,
-				5000.0, null, 5000.0, OperatorWarnings.MASS_UNIT_MB));
+				500.0, null, 500.0, OperatorWarnings.MASS_UNIT_MB));
 		assertFalse(OperatorWarnings.meetsMinCalculated(OperatorWarnings.METRIC_MASS,
-				5000.0, 1024.0 * 1024.0, 2.0, OperatorWarnings.MASS_UNIT_MB)); // 1MB < 2MB
+				500.0, 1024.0 * 1024.0, 2.0, OperatorWarnings.MASS_UNIT_MB)); // 1MB < 2MB
 		assertTrue(OperatorWarnings.meetsMinCalculated(OperatorWarnings.METRIC_MASS,
 				1.0, 2.0 * 1024.0 * 1024.0, 2.0, OperatorWarnings.MASS_UNIT_MB));
 		assertTrue(OperatorWarnings.warnEstimateRatio(100.0, 10.0, 10.0));

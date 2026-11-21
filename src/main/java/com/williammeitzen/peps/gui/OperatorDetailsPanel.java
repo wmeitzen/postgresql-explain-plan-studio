@@ -95,8 +95,8 @@ public class OperatorDetailsPanel extends JPanel {
 		expandAllCheckbox.setOpaque(false);
 		expandAllCheckbox.setFocusable(false);
 		expandAllCheckbox.setSelected(expandAllPreference);
-		expandAllCheckbox.addActionListener(e -> withPreservedScroll(() ->
-				propertiesPanel.setExpandAll(expandAllCheckbox.isSelected())));
+		expandAllCheckbox.addActionListener(e ->
+				propertiesPanel.setExpandAll(expandAllCheckbox.isSelected()));
 
 		calculatedFieldsCheckbox = new JCheckBox("Calculated properties");
 		calculatedFieldsCheckbox.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
@@ -353,34 +353,6 @@ public class OperatorDetailsPanel extends JPanel {
 			scroll.getHorizontalScrollBar().setValue(0);
 			scroll.getViewport().setViewPosition(new Point(0, 0));
 			updateNotesWrapToViewport();
-		});
-	}
-
-	/**
-	 * Keep the viewport where it is across a content rebuild (e.g. Expand all).
-	 * Without this, the taller table/notes layout jumps the scroll to the bottom.
-	 */
-	private void withPreservedScroll(Runnable action) {
-		JViewport viewport = scroll.getViewport();
-		final int vert = scroll.getVerticalScrollBar().getValue();
-		final int horiz = scroll.getHorizontalScrollBar().getValue();
-		final Point pos = viewport.getViewPosition();
-		action.run();
-		Runnable restore = () -> {
-			Dimension viewSize = viewport.getViewSize();
-			Dimension extent = viewport.getExtentSize();
-			int maxX = Math.max(0, viewSize.width - extent.width);
-			int maxY = Math.max(0, viewSize.height - extent.height);
-			int x = Math.min(Math.max(pos.x, 0), maxX);
-			int y = Math.min(Math.max(pos.y, 0), maxY);
-			scroll.getHorizontalScrollBar().setValue(Math.min(horiz, maxX));
-			scroll.getVerticalScrollBar().setValue(Math.min(vert, maxY));
-			viewport.setViewPosition(new Point(x, y));
-		};
-		// Layout (notes wrap + table preferred size) often finishes after this listener.
-		SwingUtilities.invokeLater(() -> {
-			restore.run();
-			SwingUtilities.invokeLater(restore);
 		});
 	}
 

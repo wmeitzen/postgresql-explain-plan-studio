@@ -131,8 +131,8 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 	private Set<Integer> neverExecutedOperatorIds = Collections.emptySet();
 	private Integer OPERATOR_BOX_WIDTH = 40; // zoom affects box dimensions
 	private Integer OPERATOR_BOX_HEIGHT = 40; // zoom affects box dimensions
-	private Integer HORIZONTAL_SPACE = 40; // zoom affects empty space between operators
-	private Integer VERTICAL_SPACE = 60; // zoom affects empty space between operators
+	private Integer HORIZONTAL_SPACE = 40; // gutters between operators (see withZoomSpacing)
+	private Integer VERTICAL_SPACE = 60; // gutters between operators (see withZoomSpacing)
 	private String OPERATOR_FONT_NAME = Font.DIALOG; // matched to Plan Source labels via Label.font
 	private int OPERATOR_FONT_STYLE = Font.PLAIN;
 	private int OPERATOR_FONT_SIZE = 12;
@@ -5038,7 +5038,7 @@ select id_explain_plan_property, x_cart, y_cart, column_boundary_left from expla
 */
 		// bump over column_boundary_left by HORIZONTAL_SPACE
 		strSQL = "update explain_plan_operator_annotations as EPOA set\n" +
-				"column_boundary_left = column_boundary_left + " + withZoom(HORIZONTAL_SPACE) + " * x_cart\n" +
+				"column_boundary_left = column_boundary_left + " + withZoomSpacing(HORIZONTAL_SPACE) + " * x_cart\n" +
 				"where id_explain_plan = " + intIDExplainPlan + ";\n";
 		if (bolShowSQL == true) { System.out.println(strSQL); }
 		Database.dml(strSQL);
@@ -5307,7 +5307,7 @@ select id_explain_plan_property, x_cart, y_cart, column_boundary_left from expla
 */
 		// bump over row_boundary_top by VERTICAL_SPACE
 		strSQL = "update explain_plan_operator_annotations as EPOA set\n" +
-				"row_boundary_top = row_boundary_top + " + withZoom(VERTICAL_SPACE) + " * (y_cart - 1)\n" +
+				"row_boundary_top = row_boundary_top + " + withZoomSpacing(VERTICAL_SPACE) + " * (y_cart - 1)\n" +
 				"where id_explain_plan = " + intIDExplainPlan + ";\n";
 		if (bolShowSQL == true) { System.out.println(strSQL); }
 		Database.dml(strSQL);
@@ -7110,6 +7110,17 @@ order by id_explain_plan_property;
 		//double fltValueZoomed = (double) intValue * (double) (intZoomPercentage / 100.0);
 		//return (int) fltValueZoomed;
 		return (int) ((double) intValue * (double) (getZoomPercentage() / 100.0));
+	}
+
+	/**
+	 * Scale inter-operator gutters. When zoomed out (&lt;100%), compress gaps faster than
+	 * boxes ({@code zoom²}) so the diagram packs denser; at/above 100% match {@link #withZoom}.
+	 */
+	public int withZoomSpacing(int intValue) {
+		double z = getZoomPercentage() / 100.0;
+		double factor = (z < 1.0) ? (z * z) : z;
+		int result = (int) (intValue * factor);
+		return Math.max(0, result);
 	}
 	
 	public int withZoomMinimumOne(int intValue) {

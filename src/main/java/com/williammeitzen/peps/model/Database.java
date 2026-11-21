@@ -28,7 +28,7 @@ import com.williammeitzen.peps.gui.Utils;
 
 public final class Database {
 	
-	private static double SQLITE_DB_SCHEMA_VERSION = 4.13;
+	private static double SQLITE_DB_SCHEMA_VERSION = 4.14;
 	private static Connection objConnection = null;
 	private static Connection objPGConnection = null;
 	
@@ -567,6 +567,12 @@ public final class Database {
 		// 4.09: factory color scheme is Dark (was Default). Migrate only the old factory value.
 		if (dblDBConfigVersion > 0.0 && dblDBConfigVersion < 4.09) {
 			Database.dml("update config set color_scheme = 'dark' where color_scheme = 'default';");
+		}
+		// 4.14: Warning indicators minimum Actual rows factory default 5000 → 500.
+		if (dblDBConfigVersion > 0.0 && dblDBConfigVersion < 4.14) {
+			Database.dml("update config set warning_min_actual_rows = 500 where warning_min_actual_rows = 5000;");
+			Database.dml("update config set warning_filter_min_actual_rows = 500"
+					+ " where warning_filter_min_actual_rows = 5000;");
 		}
 		
 		// just in case the db schema minor version changed

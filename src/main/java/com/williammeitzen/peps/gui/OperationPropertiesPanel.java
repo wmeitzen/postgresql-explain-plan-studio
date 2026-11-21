@@ -4,10 +4,12 @@ import java.awt.Color;
 import java.awt.Component;
 import java.awt.Container;
 import java.awt.Cursor;
+import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
@@ -15,14 +17,13 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.function.Consumer;
 
-import java.awt.Dimension;
-
 import javax.swing.DefaultCellEditor;
 import javax.swing.JLabel;
 import javax.swing.JScrollBar;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
 import javax.swing.JTextField;
+import javax.swing.JViewport;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import javax.swing.event.ChangeEvent;
@@ -471,7 +472,7 @@ public class OperationPropertiesPanel extends JTable {
 		} else {
 			expandedLists.add(propertyName);
 		}
-		refreshFromGraph();
+		withPreservedScroll(this::refreshFromGraph);
 	}
 
 	private void toggleWorkersExpanded() {
@@ -479,7 +480,39 @@ public class OperationPropertiesPanel extends JTable {
 		if (!workersExpanded) {
 			clearExpandAllFlag();
 		}
-		refreshFromGraph();
+		withPreservedScroll(this::refreshFromGraph);
+	}
+
+	/**
+	 * Keep the enclosing Properties scroll viewport stable across expand/collapse
+	 * rebuilds (Output / Workers / Expand all). Otherwise the taller table jumps to the bottom.
+	 */
+	private void withPreservedScroll(Runnable action) {
+		JScrollPane scroll = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class, this);
+		if (scroll == null) {
+			action.run();
+			return;
+		}
+		JViewport viewport = scroll.getViewport();
+		final int vert = scroll.getVerticalScrollBar().getValue();
+		final int horiz = scroll.getHorizontalScrollBar().getValue();
+		final Point pos = viewport.getViewPosition();
+		action.run();
+		Runnable restore = () -> {
+			Dimension viewSize = viewport.getViewSize();
+			Dimension extent = viewport.getExtentSize();
+			int maxX = Math.max(0, viewSize.width - extent.width);
+			int maxY = Math.max(0, viewSize.height - extent.height);
+			int x = Math.min(Math.max(pos.x, 0), maxX);
+			int y = Math.min(Math.max(pos.y, 0), maxY);
+			scroll.getHorizontalScrollBar().setValue(Math.min(horiz, maxX));
+			scroll.getVerticalScrollBar().setValue(Math.min(vert, maxY));
+			viewport.setViewPosition(new Point(x, y));
+		};
+		SwingUtilities.invokeLater(() -> {
+			restore.run();
+			SwingUtilities.invokeLater(restore);
+		});
 	}
 
 	private void applyExpandAll() {
@@ -520,7 +553,7 @@ public class OperationPropertiesPanel extends JTable {
 			expandedLists.clear();
 			workersExpanded = false;
 		}
-		refreshFromGraph();
+		withPreservedScroll(this::refreshFromGraph);
 	}
 
 	/** Apply the session Expand all preference without requiring a checkbox event. */

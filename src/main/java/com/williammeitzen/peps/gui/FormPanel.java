@@ -2809,7 +2809,27 @@ public class FormPanel extends JPanel {
 		return parent instanceof DefaultMutableTreeNode ? (DefaultMutableTreeNode) parent : planTreeRoot;
 	}
 
-	/** Destination folder for a drop (null = root), or null marker via Optional-like: use boolean. */
+	/**
+	 * True when the drop is ON a plan node (not an insert gap, not ON a folder).
+	 * Plans are leaves — dropping ON one must not reorder/append in the parent.
+	 */
+	private boolean isPlansTreeDropOntoPlan(JTree.DropLocation loc) {
+		if (loc == null || loc.getChildIndex() >= 0) {
+			return false;
+		}
+		TreePath path = loc.getPath();
+		if (path == null) {
+			return false;
+		}
+		DefaultMutableTreeNode node = (DefaultMutableTreeNode) path.getLastPathComponent();
+		if (node == null || node == planTreeRoot) {
+			return false;
+		}
+		PlansTreeNode d = data(node);
+		return d != null && d.isPlan();
+	}
+
+	/** Destination folder for a drop (null = root). Valid for INSERT gaps and ON folder only. */
 	private Integer resolveDropTargetFolderId(JTree.DropLocation loc) {
 		if (loc == null) {
 			return null;
@@ -2828,18 +2848,14 @@ public class FormPanel extends JPanel {
 		}
 		int childIndex = loc.getChildIndex();
 		if (childIndex >= 0) {
-			// Inserting as a child of this path node
-			if (d.isFolder()) {
-				return d.getFolderId();
-			}
-			// Inserting relative to a plan → that plan's parent folder
+			// Inserting as a child of this path node (folder) or relative to a plan under its parent folder
 			return d.getFolderId();
 		}
-		// Dropped ON the node
+		// Dropped ON the node — only folders are valid targets (plans rejected by isPlansTreeDropOntoPlan)
 		if (d.isFolder()) {
 			return d.getFolderId();
 		}
-		return d.getFolderId(); // ON a plan → its containing folder
+		return d.getFolderId();
 	}
 
 	private boolean canDropPayloadOnFolder(PlansTreeDragPayload payload, Integer targetFolderId) {
@@ -3056,13 +3072,19 @@ public class FormPanel extends JPanel {
 			if (!support.isDrop() || !support.isDataFlavorSupported(PLANS_TREE_NODES_FLAVOR)) {
 				return false;
 			}
-			support.setShowDropLocation(true);
 			JTree.DropLocation loc;
 			try {
 				loc = (JTree.DropLocation) support.getDropLocation();
 			} catch (ClassCastException ex) {
 				return false;
 			}
+			// ON a plan: no insert/ON indicator and no "not allowed" cursor (drop is a no-op in importData).
+			// Insert gaps and ON folder keep normal drop feedback.
+			if (isPlansTreeDropOntoPlan(loc)) {
+				support.setShowDropLocation(false);
+				return true;
+			}
+			support.setShowDropLocation(true);
 			Integer targetFolderId = resolveDropTargetFolderId(loc);
 			PlansTreeDragPayload payload = peekPayload(support);
 			if (payload == null) {
@@ -3113,6 +3135,9 @@ public class FormPanel extends JPanel {
 				return false;
 			}
 			JTree.DropLocation loc = (JTree.DropLocation) support.getDropLocation();
+			if (isPlansTreeDropOntoPlan(loc)) {
+				return false;
+			}
 			Integer targetFolderId = resolveDropTargetFolderId(loc);
 			int childIndex = loc == null ? -1 : loc.getChildIndex();
 			return importPlansTreePayload(payload, targetFolderId, childIndex);
