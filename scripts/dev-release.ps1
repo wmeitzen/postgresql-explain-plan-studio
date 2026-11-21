@@ -259,6 +259,8 @@ To install the <code>.deb</code> on Linux:
 <ul>
 <li>Navigate to the directory with the downloaded <code>.deb</code> file</li>
 <li><code>sudo apt install ./$linuxDeb</code></li>
+<li>If apt prints an <code>N:</code> note about <code>_apt</code> / Permission denied while installing from your home folder (for example <code>Downloads</code>), you can ignore it when the package finishes with <code>Setting up postgresql-explain-plan-studio</code></li>
+<li>To launch: open <strong>PostgreSQL Explain Plan Studio</strong> from the applications menu, or run <code>PostgreSQLExplainPlanStudio</code></li>
 </ul>
 </li>
 </ul>
