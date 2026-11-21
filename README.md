@@ -24,14 +24,14 @@ Graphical viewer for PostgreSQL `EXPLAIN` plans.
   - Open the `.dmg`
   - Drag `PostgreSQL Explain Plan Studio.app` to Applications
   - Eject the disk image when finished
-  - First launch of an unsigned build: right-click the app → Open → Open
+  - First launch of an unsigned build: right-click the app / Open / Open
 - <img src="docs/readme-icons/apple.svg" width="16" height="16" alt="macOS" /> macOS app zip: [PostgreSQLExplainPlanStudio-1.0.0-mac-x64.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-1.0.0-mac-x64.zip)
 
   To install the `x64.zip` on macOS:
   - Unzip file
   - Drag `PostgreSQL Explain Plan Studio.app` to Applications
   - No separate Java install needed (JRE is bundled)
-  - First launch of an unsigned build: right-click the app → Open → Open
+  - First launch of an unsigned build: right-click the app / Open / Open
 - <img src="docs/readme-icons/apple.svg" width="16" height="16" alt="macOS" /> macOS (JAR): [PostgreSQLExplainPlanStudio-1.0.0-mac-jar.zip](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-1.0.0-mac-jar.zip)
 
   To install the `jar.zip` on macOS:

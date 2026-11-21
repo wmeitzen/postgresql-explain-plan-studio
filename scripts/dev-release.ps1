@@ -242,14 +242,14 @@ function Update-ReadmeDownloads([string]$NewVersion) {
   - Open the ``.dmg``
   - Drag ``PostgreSQL Explain Plan Studio.app`` to Applications
   - Eject the disk image when finished
-  - First launch of an unsigned build: right-click the app → Open → Open
+  - First launch of an unsigned build: right-click the app / Open / Open
 - $macIcon macOS app zip: [$macAppZip]($base/$macAppZip)
 
   To install the ``x64.zip`` on macOS:
   - Unzip file
   - Drag ``PostgreSQL Explain Plan Studio.app`` to Applications
   - No separate Java install needed (JRE is bundled)
-  - First launch of an unsigned build: right-click the app → Open → Open
+  - First launch of an unsigned build: right-click the app / Open / Open
 - $macIcon macOS (JAR): [$macJar]($base/$macJar)
 
   To install the ``jar.zip`` on macOS:
@@ -1239,7 +1239,7 @@ try {
 		@"
 ### macOS app (bundled JRE)
 - App zip: ``$MacAppZipName`` — unzip and drag ``PostgreSQL Explain Plan Studio.app`` to Applications
-$dmgLine- First launch of an unsigned build: right-click the app → Open → Open
+$dmgLine- First launch of an unsigned build: right-click the app / Open / Open
 "@
 	} else { "" }
 

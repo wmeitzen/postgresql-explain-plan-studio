@@ -23,7 +23,7 @@ PostgreSQL Explain Plan Studio — macOS packaging
    Or from Windows: .\scripts\dev-release.ps1 SSHs to the Mac VM, runs pack-mac-app.sh,
    and uploads the .app zip (+ DMG if present) with the GitHub release.
 
-   First launch of an unsigned build: right-click the app → Open → Open.
+   First launch of an unsigned build: right-click the app / Open / Open.
    Signing/notarization can remove that Gatekeeper step later.
 
 peps.icns is generated from src/main/resources/images/app-icon.png by pack-mac-app.sh.
