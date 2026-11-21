@@ -219,63 +219,89 @@ function Update-ReadmeDownloads([string]$NewVersion) {
 	# Catalina Intel release VM produces mac-x64; arm64 can be added later if built.
 	$macAppZip = "PostgreSQLExplainPlanStudio-$NewVersion-mac-x64.zip"
 	$macDmg = "PostgreSQLExplainPlanStudio-$NewVersion-mac-x64.dmg"
+	# HTML lists (one <ul> per download) keep consistent disc bullets and a modest gap
+	# between major items. Markdown list + <br>/&nbsp; hacks break markers or spacing.
 	$downloadBlock = @"
 ## Download
 
-- $winIcon Windows installer: [$winExe]($base/$winExe)
+<ul>
+<li>
+$winIcon Windows installer: <a href="$base/$winExe">$winExe</a>
+</li>
+</ul>
 
-&nbsp;
+<ul>
+<li>
+$winIcon Windows zip: <a href="$base/$winZip">$winZip</a>
+</li>
+</ul>
 
-- $winIcon Windows zip: [$winZip]($base/$winZip)
+<ul>
+<li>
+$linuxIcon Linux zip: <a href="$base/$linuxZip">$linuxZip</a>
+<br/>
+To install the <code>linux-x64.zip</code> on Linux:
+<ul>
+<li>Unzip file</li>
+<li>Open a terminal</li>
+<li>Navigate to the unzipped <code>PostgreSQLExplainPlanStudio/bin</code> directory</li>
+<li><code>chmod +x PostgreSQLExplainPlanStudio</code></li>
+<li>To launch: <code>./PostgreSQLExplainPlanStudio</code></li>
+</ul>
+</li>
+</ul>
 
-&nbsp;
+<ul>
+<li>
+$linuxIcon Linux <code>.deb</code>: <a href="$base/$linuxDeb">$linuxDeb</a>
+<br/>
+To install the <code>.deb</code> on Linux: <code>sudo apt install ./$linuxDeb</code>
+</li>
+</ul>
 
-- $linuxIcon Linux zip: [$linuxZip]($base/$linuxZip)
+<ul>
+<li>
+$macIcon macOS disk image: <a href="$base/$macDmg">$macDmg</a>
+<br/>
+To install the <code>.dmg</code> on macOS:
+<ul>
+<li>Open the <code>.dmg</code></li>
+<li>Drag <code>PostgreSQL Explain Plan Studio.app</code> to Applications</li>
+<li>Eject the disk image when finished</li>
+<li>First launch of an unsigned build: right-click the app / Open / Open</li>
+</ul>
+</li>
+</ul>
 
-  To install the ``linux-x64.zip`` on Linux:
-  - Unzip file
-  - Open a terminal
-  - Navigate to the unzipped ``PostgreSQLExplainPlanStudio/bin`` directory
-  - ``chmod +x PostgreSQLExplainPlanStudio``
-  - To launch: ``./PostgreSQLExplainPlanStudio``
+<ul>
+<li>
+$macIcon macOS app zip: <a href="$base/$macAppZip">$macAppZip</a>
+<br/>
+To install the <code>x64.zip</code> on macOS:
+<ul>
+<li>Unzip file</li>
+<li>Drag <code>PostgreSQL Explain Plan Studio.app</code> to Applications</li>
+<li>No separate Java install needed (JRE is bundled)</li>
+<li>First launch of an unsigned build: right-click the app / Open / Open</li>
+</ul>
+</li>
+</ul>
 
-&nbsp;
-
-- $linuxIcon Linux ``.deb``: [$linuxDeb]($base/$linuxDeb)
-
-  To install the ``.deb`` on Linux: ``sudo apt install ./$linuxDeb``
-
-&nbsp;
-
-- $macIcon macOS disk image: [$macDmg]($base/$macDmg)
-
-  To install the ``.dmg`` on macOS:
-  - Open the ``.dmg``
-  - Drag ``PostgreSQL Explain Plan Studio.app`` to Applications
-  - Eject the disk image when finished
-  - First launch of an unsigned build: right-click the app / Open / Open
-
-&nbsp;
-
-- $macIcon macOS app zip: [$macAppZip]($base/$macAppZip)
-
-  To install the ``x64.zip`` on macOS:
-  - Unzip file
-  - Drag ``PostgreSQL Explain Plan Studio.app`` to Applications
-  - No separate Java install needed (JRE is bundled)
-  - First launch of an unsigned build: right-click the app / Open / Open
-
-&nbsp;
-
-- $macIcon macOS (JAR): [$macJar]($base/$macJar)
-
-  To install the ``jar.zip`` on macOS:
-  - Install [Java 17 or later](https://adoptium.net/temurin/releases/?version=17) (Temurin or any JRE/JDK)
-  - Unzip file
-  - Open a terminal
-  - Navigate to the unzipped file's new directory
-  - ``chmod +x peps.sh``
-  - To launch: ``./peps.sh``
+<ul>
+<li>
+$macIcon macOS (JAR): <a href="$base/$macJar">$macJar</a>
+<br/>
+To install the <code>jar.zip</code> on macOS:
+<ul>
+<li>Install <a href="https://adoptium.net/temurin/releases/?version=17">Java 17 or later</a> (Temurin or any JRE/JDK)</li>
+<li>Unzip file</li>
+<li>Open a terminal</li>
+<li>Navigate to the unzipped file's new directory</li>
+<li><code>chmod +x peps.sh</code></li>
+<li>To launch: <code>./peps.sh</code></li>
+</ul>
+</li>
+</ul>
 
 All [releases](https://github.com/wmeitzen/postgresql-explain-plan-studio/releases).
 
