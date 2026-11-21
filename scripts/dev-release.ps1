@@ -218,6 +218,7 @@ function Update-ReadmeDownloads([string]$NewVersion) {
 	$macJar = "PostgreSQLExplainPlanStudio-$NewVersion-mac-jar.zip"
 	# Catalina Intel release VM produces mac-x64; arm64 can be added later if built.
 	$macAppZip = "PostgreSQLExplainPlanStudio-$NewVersion-mac-x64.zip"
+	$macDmg = "PostgreSQLExplainPlanStudio-$NewVersion-mac-x64.dmg"
 	$downloadBlock = @"
 ## Download
 
@@ -227,7 +228,15 @@ function Update-ReadmeDownloads([string]$NewVersion) {
 - $linuxIcon Linux ``.deb``: [$linuxDeb]($base/$linuxDeb)
 
   To install the ``.deb`` on Linux: ``sudo apt install ./$linuxDeb``
-- $macIcon macOS app: [$macAppZip]($base/$macAppZip)
+- $macIcon macOS disk image: [$macDmg]($base/$macDmg)
+
+  To install the ``.dmg`` on macOS:
+  - Open the ``.dmg``
+  - Drag ``PostgreSQL Explain Plan Studio.app`` to Applications
+  - Eject the disk image when finished
+  - No separate Java install needed (JRE is bundled)
+  - First launch of an unsigned build: right-click the app → Open → Open
+- $macIcon macOS app zip: [$macAppZip]($base/$macAppZip)
 
   To install the ``x64.zip`` on macOS:
   - Unzip file

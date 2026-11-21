@@ -147,7 +147,8 @@ Interactive menu:
 
 1. **Publish Pre-release** — GitHub Pre-release; does **not** rewrite README Download links (Latest stays on the last Stable).
 2. **Promote to Stable** — full Latest release; rewrites README Download links; then auto-bumps the working tree to the next patch version.
+3. **Publish to Stable** — full Latest release; rewrites README Download links; **keeps** the working version (default prompt `1.0.0`, no bump).
 
-Non-interactive: `-Action PreRelease` or `-Action Stable`, plus `-Version`, `-Yes`, and the usual `-Skip*` switches.
+Non-interactive: `-Action PreRelease`, `-Action PromoteStable`, or `-Action Stable`, plus `-Version`, `-Yes`, and the usual `-Skip*` switches.
 
 SSH targets and last version default from gitignored `scripts/dev-release.local.ps1` (`$PepsUbuntuSsh`, `$PepsMacSsh`, `$PepsLastVersion`), or `-UbuntuSsh` / `-MacSsh` / environment variables `PEPS_UBUNTU_SSH` / `PEPS_MAC_SSH`. Linux jpackage for published zips/`.deb` should run on **Ubuntu 20.04**.
