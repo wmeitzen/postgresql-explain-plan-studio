@@ -1351,31 +1351,41 @@ $macAppNotes
 	$existing = gh release view $Tag 2>$null
 	$releaseExists = ($LASTEXITCODE -eq 0)
 	$ErrorActionPreference = $prevEa
-	# Always clear draft on edit/create follow-up. Stable must not stay Draft or Latest
-	# remains on an older release (seen with v1.0.0 after remote tag delete).
-	$editFlags = @("--title", $title, "--notes", $notes, "--draft=false")
-	if ($IsPrerelease) {
-		$editFlags += "--prerelease"
-	} else {
-		$editFlags += "--prerelease=false"
-	}
-	$createFlags = @()
-	if ($IsPrerelease) {
-		$createFlags += "--prerelease"
-	}
-	if ($releaseExists) {
-		Write-Status "Release $Tag already exists — replacing assets"
-		gh release upload $Tag @assets --clobber
-		if ($LASTEXITCODE -ne 0) { throw "gh release upload failed" }
-		gh release edit $Tag @editFlags | Out-Null
-		if ($LASTEXITCODE -ne 0) { throw "gh release edit failed" }
-	} else {
-		Write-Status "Creating release $Tag$(if ($IsPrerelease) { ' (Pre-release)' } else { '' })"
-		gh release create $Tag @assets --title $title --notes $notes @createFlags
-		if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
-		# Belt-and-suspenders: ensure we did not land as Draft.
-		gh release edit $Tag @editFlags | Out-Null
-		if ($LASTEXITCODE -ne 0) { throw "gh release edit (publish flags) failed" }
+	# PowerShell passes each line of a multiline string as a separate native argv
+	# entry, so `gh ... --notes $notes` becomes "accepts 1 arg(s), received N".
+	# Always use --notes-file instead.
+	$notesFile = Join-Path ([System.IO.Path]::GetTempPath()) ("peps-release-notes-{0}.md" -f [guid]::NewGuid().ToString("n"))
+	$utf8NoBom = New-Object System.Text.UTF8Encoding $false
+	[System.IO.File]::WriteAllText($notesFile, $notes, $utf8NoBom)
+	try {
+		# Always clear draft on edit/create follow-up. Stable must not stay Draft or Latest
+		# remains on an older release (seen with v1.0.0 after remote tag delete).
+		$editFlags = @("--title", $title, "--notes-file", $notesFile, "--draft=false")
+		if ($IsPrerelease) {
+			$editFlags += "--prerelease"
+		} else {
+			$editFlags += "--prerelease=false"
+		}
+		$createFlags = @()
+		if ($IsPrerelease) {
+			$createFlags += "--prerelease"
+		}
+		if ($releaseExists) {
+			Write-Status "Release $Tag already exists — replacing assets"
+			gh release upload $Tag @assets --clobber
+			if ($LASTEXITCODE -ne 0) { throw "gh release upload failed" }
+			gh release edit $Tag @editFlags | Out-Null
+			if ($LASTEXITCODE -ne 0) { throw "gh release edit failed" }
+		} else {
+			Write-Status "Creating release $Tag$(if ($IsPrerelease) { ' (Pre-release)' } else { '' })"
+			gh release create $Tag @assets --title $title --notes-file $notesFile @createFlags
+			if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
+			# Belt-and-suspenders: ensure we did not land as Draft.
+			gh release edit $Tag @editFlags | Out-Null
+			if ($LASTEXITCODE -ne 0) { throw "gh release edit (publish flags) failed" }
+		}
+	} finally {
+		Remove-Item -LiteralPath $notesFile -Force -ErrorAction SilentlyContinue
 	}
 	$isDraftNow = gh release view $Tag --json isDraft -q .isDraft 2>$null
 	$isPreNow = gh release view $Tag --json isPrerelease -q .isPrerelease 2>$null
