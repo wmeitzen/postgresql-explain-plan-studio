@@ -6,6 +6,8 @@ import java.awt.Toolkit;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseWheelListener;
+import java.io.StringReader;
+import java.io.StringWriter;
 
 import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
@@ -16,21 +18,34 @@ import javax.swing.JScrollPane;
 import javax.swing.KeyStroke;
 import javax.swing.SwingUtilities;
 
+import com.williammeitzen.peps.model.Database;
+
 import bibliothek.gui.dock.common.CControl;
 import bibliothek.gui.dock.common.CGrid;
 import bibliothek.gui.dock.common.DefaultSingleCDockable;
 import bibliothek.gui.dock.common.event.CDockableAdapter;
+import bibliothek.gui.dock.common.event.CDockableLocationEvent;
+import bibliothek.gui.dock.common.event.CDockableLocationListener;
 import bibliothek.gui.dock.common.intern.CDockable;
 import bibliothek.gui.dock.util.Priority;
 import bibliothek.gui.dock.util.TextManager;
+import bibliothek.util.xml.XElement;
+import bibliothek.util.xml.XIO;
 
 /**
  * Nested docking host for a single Plan Diagram tab: Graph, Zoom, Properties, and
  * Sliders can be rearranged only inside this panel (no float out to the desktop).
+ * Layout XML is shared via {@code config.diagram_docking_layout}.
  */
 public class DiagramDockingPanel extends JPanel {
 
 	private static final long serialVersionUID = 1L;
+
+	/** Stable IDs so layout XML restores across sessions and new plan tabs. */
+	private static final String ID_GRAPH = "diagram-graph";
+	private static final String ID_ZOOM = "diagram-zoom";
+	private static final String ID_PROPERTIES = "diagram-properties";
+	private static final String ID_SLIDERS = "diagram-sliders";
 
 	private final CControl control;
 	private final PlanDiagramToolbar toolbar;
@@ -47,6 +62,8 @@ public class DiagramDockingPanel extends JPanel {
 	private boolean wantProperties = true;
 	private boolean wantSliders = true;
 	private boolean suppressVisibilityTracking;
+	private boolean suppressLayoutSave;
+	private boolean layoutSaveScheduled;
 
 	public DiagramDockingPanel(PlanGraphPanel graphPanel, PlanDiagramToolbar toolbar, int wheelUnitIncrement) {
 		super(new BorderLayout(0, 4));
@@ -113,13 +130,12 @@ public class DiagramDockingPanel extends JPanel {
 		SliderPanel sliders = new SliderPanel(graphPanel);
 		JScrollPane slidersScroll = new JScrollPane(sliders,
 				JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
-		// Short dock: radio row + thumb label + slider (~140px) without empty band.
-		slidersScroll.setMinimumSize(new Dimension(320, 140));
+		// Bottom dock: short strip. Side dock: keep wide enough for vertical thumb + tick labels.
+		slidersScroll.setMinimumSize(new Dimension(SliderPanel.PANEL_MINIMUM_WIDTH, 140));
 		slidersScroll.setPreferredSize(new Dimension(320, 148));
 		slidersScroll.getVerticalScrollBar().setUnitIncrement(wheelUnitIncrement);
 
-		String suffix = Integer.toHexString(System.identityHashCode(graphPanel));
-		graphDockable = createInnerDockable("diagram-graph-" + suffix, "Plan Diagram", graphScroll);
+		graphDockable = createInnerDockable(ID_GRAPH, "Plan Diagram", graphScroll);
 		graphDockable.setCloseable(false);
 
 		DefaultSingleCDockable createdZoom = null;
@@ -129,7 +145,7 @@ public class DiagramDockingPanel extends JPanel {
 				zoomSide.getParent().remove(zoomSide);
 			}
 			zoomSide.setVisible(true);
-			createdZoom = createInnerDockable("diagram-zoom-" + suffix, "Zoom", zoomSide);
+			createdZoom = createInnerDockable(ID_ZOOM, "Zoom", zoomSide);
 			createdZoom.setCloseable(true);
 			createdZoom.setMaximizable(false);
 			toolbar.refreshZoomSliderFromGraph(graphPanel);
@@ -152,13 +168,14 @@ public class DiagramDockingPanel extends JPanel {
 						toolbar.refreshZoomSliderFromGraph(graphPanel);
 					}
 					fireViewMenuSync();
+					scheduleSaveLayout();
 				}
 			});
 		}
 		this.zoomDockable = createdZoom;
 
-		propertiesDockable = createInnerDockable("diagram-properties-" + suffix, "Properties", properties);
-		slidersDockable = createInnerDockable("diagram-sliders-" + suffix, "Sliders", slidersScroll);
+		propertiesDockable = createInnerDockable(ID_PROPERTIES, "Properties", properties);
+		slidersDockable = createInnerDockable(ID_SLIDERS, "Sliders", slidersScroll);
 		propertiesDockable.addCDockableStateListener(visibilitySyncListener(true));
 		slidersDockable.addCDockableStateListener(visibilitySyncListener(false));
 
@@ -169,23 +186,130 @@ public class DiagramDockingPanel extends JPanel {
 		control.addDockable(propertiesDockable);
 		control.addDockable(slidersDockable);
 
+		installLayoutPersistenceListeners(graphDockable);
+		installLayoutPersistenceListeners(propertiesDockable);
+		installLayoutPersistenceListeners(slidersDockable);
+		if (zoomDockable != null) {
+			installLayoutPersistenceListeners(zoomDockable);
+		}
+
 		wantZoom = true;
 		wantProperties = true;
 		wantSliders = true;
-		redeployDefaultLayout();
+		if (!restoreLayout()) {
+			redeployDefaultLayout();
+		} else {
+			syncWantsFromDockables();
+		}
 
 		add(control.getContentArea(), BorderLayout.CENTER);
 	}
 
 	/**
 	 * Fresh-install diagram layout: Graph, Zoom strip, Properties, Sliders — all visible.
+	 * Clears any persisted diagram docking XML so the next launch stays reset too.
 	 */
 	public void resetToDefaultLayout() {
+		clearSavedLayout();
 		wantZoom = true;
 		wantProperties = true;
 		wantSliders = true;
 		redeployDefaultLayout();
+		saveLayout();
 		fireViewMenuSync();
+	}
+
+	/** Persist current Graph / Zoom / Properties / Sliders arrangement. */
+	public void saveLayout() {
+		if (suppressLayoutSave) {
+			return;
+		}
+		try {
+			XElement root = new XElement("root");
+			control.writeXML(root);
+			StringWriter writer = new StringWriter();
+			XIO.write(root, writer);
+			Database.saveDiagramDockingLayout(writer.toString());
+		} catch (Exception ex) {
+			System.out.println("DiagramDockingPanel.saveLayout()");
+			ex.printStackTrace();
+		}
+	}
+
+	private boolean restoreLayout() {
+		String xml = Database.loadDiagramDockingLayout();
+		if (xml == null || xml.isBlank()) {
+			return false;
+		}
+		suppressLayoutSave = true;
+		suppressVisibilityTracking = true;
+		try {
+			XElement root = XIO.read(new StringReader(xml));
+			control.readXML(root);
+			if (!graphDockable.isVisible()) {
+				clearSavedLayout();
+				return false;
+			}
+			return true;
+		} catch (Exception ex) {
+			System.out.println("DiagramDockingPanel.restoreLayout(): using default layout");
+			ex.printStackTrace();
+			clearSavedLayout();
+			return false;
+		} finally {
+			suppressVisibilityTracking = false;
+			suppressLayoutSave = false;
+		}
+	}
+
+	private void clearSavedLayout() {
+		try {
+			Database.saveDiagramDockingLayout(null);
+		} catch (Exception ignored) {
+			// best-effort
+		}
+	}
+
+	private void syncWantsFromDockables() {
+		wantProperties = propertiesDockable.isVisible();
+		wantSliders = slidersDockable.isVisible();
+		if (zoomDockable != null) {
+			wantZoom = zoomDockable.isVisible();
+			if (toolbar != null) {
+				toolbar.setZoomSliderCheckboxSelected(wantZoom);
+			}
+		}
+	}
+
+	private void installLayoutPersistenceListeners(DefaultSingleCDockable dockable) {
+		if (dockable == null) {
+			return;
+		}
+		dockable.addCDockableLocationListener(new CDockableLocationListener() {
+			@Override
+			public void changed(CDockableLocationEvent event) {
+				if (suppressLayoutSave || suppressVisibilityTracking) {
+					return;
+				}
+				if (event == null) {
+					return;
+				}
+				scheduleSaveLayout();
+			}
+		});
+	}
+
+	private void scheduleSaveLayout() {
+		if (suppressLayoutSave || layoutSaveScheduled) {
+			return;
+		}
+		layoutSaveScheduled = true;
+		SwingUtilities.invokeLater(() -> {
+			layoutSaveScheduled = false;
+			if (!suppressLayoutSave) {
+				saveLayout();
+			}
+		});
 	}
 
 	/**
@@ -235,6 +359,7 @@ public class DiagramDockingPanel extends JPanel {
 	public void setPropertiesVisible(boolean visible) {
 		wantProperties = visible;
 		redeployDefaultLayout();
+		scheduleSaveLayout();
 		fireViewMenuSync();
 	}
 
@@ -245,6 +370,7 @@ public class DiagramDockingPanel extends JPanel {
 	public void setSlidersVisible(boolean visible) {
 		wantSliders = visible;
 		redeployDefaultLayout();
+		scheduleSaveLayout();
 		fireViewMenuSync();
 	}
 
@@ -262,6 +388,7 @@ public class DiagramDockingPanel extends JPanel {
 		}
 		wantZoom = visible;
 		redeployDefaultLayout();
+		scheduleSaveLayout();
 		if (toolbar != null) {
 			toolbar.setZoomSliderCheckboxSelected(visible);
 		}
@@ -273,7 +400,16 @@ public class DiagramDockingPanel extends JPanel {
 	 * can leave panels painted while flags are wrong. Redeploy from intended wants.
 	 */
 	public void repairAfterThemeChange() {
-		redeployDefaultLayout();
+		suppressLayoutSave = true;
+		try {
+			if (!restoreLayout()) {
+				redeployDefaultLayout();
+			} else {
+				syncWantsFromDockables();
+			}
+		} finally {
+			suppressLayoutSave = false;
+		}
 		syncThemeColors();
 		fireViewMenuSync();
 	}
@@ -309,6 +445,7 @@ public class DiagramDockingPanel extends JPanel {
 					wantSliders = dockable.isVisible();
 				}
 				fireViewMenuSync();
+				scheduleSaveLayout();
 			}
 		};
 	}

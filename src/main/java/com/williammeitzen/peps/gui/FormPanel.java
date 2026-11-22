@@ -1523,6 +1523,11 @@ public class FormPanel extends JPanel {
 		body.add(warnLabel);
 		body.add(Box.createVerticalStrut(6));
 
+		JComboBox<String> minBasisCombo = new JComboBox<>(new String[] {
+				OperatorWarnings.BASIS_LABEL_ACTUAL, OperatorWarnings.BASIS_LABEL_ESTIMATE });
+		minBasisCombo.setSelectedItem(OperatorWarnings.basisLabel(Database.loadWarningMinBasis()));
+		minBasisCombo.setMaximumSize(minBasisCombo.getPreferredSize());
+
 		String minMetric = Database.loadWarningMinMetric();
 		JComboBox<String> minMetricCombo = new JComboBox<>(new String[] {
 				OperatorWarnings.METRIC_ROWS, OperatorWarnings.METRIC_MASS });
@@ -1533,8 +1538,7 @@ public class FormPanel extends JPanel {
 		JSpinner minAmountSpinner = new JSpinner(
 				new SpinnerNumberModel(Long.valueOf(minAmount), Long.valueOf(0L),
 						Long.valueOf(1_000_000_000L), Long.valueOf(100L)));
-		// Two columns wider than the ratio spinner so "5,000" is not clipped.
-		sizeWarningSpinnerColumns(minAmountSpinner, 6);
+		sizeWarningSpinnerColumns(minAmountSpinner, 4);
 
 		JLabel minRowsUnitLabel = new JLabel("rows");
 		JComboBox<String> minMassUnitCombo = new JComboBox<>(new String[] {
@@ -1544,7 +1548,7 @@ public class FormPanel extends JPanel {
 		minMassUnitCombo.setMaximumSize(minMassUnitCombo.getPreferredSize());
 
 		JPanel minRow = warningIndicatorsRow(
-				new JLabel("Actual calculated"),
+				minBasisCombo,
 				minMetricCombo,
 				new JLabel("minimum:"),
 				minAmountSpinner,
@@ -1572,14 +1576,15 @@ public class FormPanel extends JPanel {
 		JSpinner ratioFactorSpinner = new JSpinner(new SpinnerNumberModel(ratioFactor, 1, 1_000_000, 1));
 		sizeWarningSpinnerColumns(ratioFactorSpinner, 4);
 
+		JLabel ratioLabel = new JLabel("Actual vs. Estimated ratio");
+		JLabel ratioAtLeastLabel = new JLabel("at least");
+		JLabel ratioTimesLabel = new JLabel("times");
 		JPanel ratioRow = warningIndicatorsRow(
-				new JLabel("Actual vs. Estimated ratio"),
+				ratioLabel,
 				ratioMetricCombo,
-				new JLabel("at least"),
+				ratioAtLeastLabel,
 				ratioFactorSpinner,
-				new JLabel("times"));
-		body.add(ratioRow);
-		body.add(Box.createVerticalStrut(10));
+				ratioTimesLabel);
 
 		int filterPct = (int) Math.round(Database.loadWarningFilterPercent());
 		JSpinner filterPercentSpinner = new JSpinner(new SpinnerNumberModel(filterPct, 0, 100, 1));
@@ -1589,22 +1594,54 @@ public class FormPanel extends JPanel {
 		filterMetricCombo.setSelectedItem(Database.loadWarningFilterMetric());
 		filterMetricCombo.setMaximumSize(filterMetricCombo.getPreferredSize());
 
+		JLabel filterLabel = new JLabel("Filter removes at least");
+		JLabel filterOfLabel = new JLabel("% of");
 		JPanel filterRow = warningIndicatorsRow(
-				new JLabel("Filter removes at least"),
+				filterLabel,
 				filterPercentSpinner,
-				new JLabel("% of"),
+				filterOfLabel,
 				filterMetricCombo);
-		body.add(filterRow);
-		body.add(Box.createVerticalStrut(10));
 
 		int heapPct = (int) Math.round(Database.loadWarningHeapPercent());
 		JSpinner heapPercentSpinner = new JSpinner(new SpinnerNumberModel(heapPct, 0, 100, 1));
 		heapPercentSpinner.setMaximumSize(heapPercentSpinner.getPreferredSize());
 
+		JLabel heapLabel = new JLabel("Heap fetch % at least");
 		JPanel heapRow = warningIndicatorsRow(
-				new JLabel("Heap fetch % at least"),
+				heapLabel,
 				heapPercentSpinner);
-		body.add(heapRow);
+
+		JPanel gatedBox = new JPanel();
+		gatedBox.setLayout(new BoxLayout(gatedBox, BoxLayout.Y_AXIS));
+		gatedBox.setOpaque(false);
+		gatedBox.setAlignmentX(Component.LEFT_ALIGNMENT);
+		gatedBox.setBorder(BorderFactory.createCompoundBorder(
+				BorderFactory.createEmptyBorder(0, 8, 0, 0),
+				BorderFactory.createTitledBorder("When minimum is met")));
+		gatedBox.add(ratioRow);
+		gatedBox.add(Box.createVerticalStrut(8));
+		gatedBox.add(filterRow);
+		gatedBox.add(Box.createVerticalStrut(8));
+		gatedBox.add(heapRow);
+		body.add(gatedBox);
+
+		Runnable syncGatedEnabled = () -> {
+			boolean actualBasis = !OperatorWarnings.isEstimateBasis(
+					OperatorWarnings.basisFromLabel(String.valueOf(minBasisCombo.getSelectedItem())));
+			ratioLabel.setEnabled(actualBasis);
+			ratioMetricCombo.setEnabled(actualBasis);
+			ratioAtLeastLabel.setEnabled(actualBasis);
+			ratioFactorSpinner.setEnabled(actualBasis);
+			ratioTimesLabel.setEnabled(actualBasis);
+			filterLabel.setEnabled(actualBasis);
+			filterPercentSpinner.setEnabled(actualBasis);
+			filterOfLabel.setEnabled(actualBasis);
+			filterMetricCombo.setEnabled(actualBasis);
+			heapLabel.setEnabled(actualBasis);
+			heapPercentSpinner.setEnabled(actualBasis);
+		};
+		minBasisCombo.addActionListener(e -> syncGatedEnabled.run());
+		syncGatedEnabled.run();
 
 		Runnable syncEnabled = () -> {
 			boolean byName = modeByName.isSelected();
@@ -1636,6 +1673,7 @@ public class FormPanel extends JPanel {
 			}
 			savePlansSortPreferences();
 			Database.saveWarningMinPreferences(
+					OperatorWarnings.basisFromLabel(String.valueOf(minBasisCombo.getSelectedItem())),
 					String.valueOf(minMetricCombo.getSelectedItem()),
 					((Number) minAmountSpinner.getValue()).doubleValue(),
 					String.valueOf(minMassUnitCombo.getSelectedItem()));
@@ -1891,6 +1929,25 @@ public class FormPanel extends JPanel {
 		}
 		Database.saveSelectedPlanId(primary.getPlanId());
 		Database.saveSelectedPlanName(primary.getName());
+	}
+
+	/** Persist Plan Diagram docking (Graph / Zoom / Properties / Sliders) on exit. */
+	public void saveDiagramDockingLayoutForExit() {
+		DiagramDockingPanel diagram = findActiveDiagramDockingPanel();
+		if (diagram != null) {
+			diagram.saveLayout();
+			return;
+		}
+		if (tabPaneToLink == null) {
+			return;
+		}
+		for (int i = 0; i < tabPaneToLink.getTabCount(); i++) {
+			DiagramDockingPanel other = findDiagramDockingPanel(tabPaneToLink.getComponentAt(i));
+			if (other != null) {
+				other.saveLayout();
+				return;
+			}
+		}
 	}
 
 	public void layoutComponents() {

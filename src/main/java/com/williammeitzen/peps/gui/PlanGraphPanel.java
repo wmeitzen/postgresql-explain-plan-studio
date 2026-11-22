@@ -167,10 +167,17 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 	
 	private Color PLAN_WIDTH_0_ARROW_FONT_COLOR = new Color(0x33, 0x41, 0x55);
 	
-	/** Shared hotspot fill for diagram operator text and Calculated Properties rows. */
-	public static final Color HOTSPOT_HIGHLIGHT_BACKGROUND = new Color(0x3B, 0x0A, 0x0A);
+	/**
+	 * Shared hotspot fill for diagram 1st-place / Calculated Properties hotspots
+	 * (loud yellow so 1st place outranks 2nd on dark UI).
+	 */
+	public static final Color HOTSPOT_HIGHLIGHT_BACKGROUND = Color.yellow;
 	/** Shared hotspot text on {@link #HOTSPOT_HIGHLIGHT_BACKGROUND}. */
-	public static final Color HOTSPOT_HIGHLIGHT_FOREGROUND = Color.yellow;
+	public static final Color HOTSPOT_HIGHLIGHT_FOREGROUND = Color.red;
+	/** Quiet 2nd-place fill (yellow text on dark red). */
+	public static final Color HOTSPOT_SECOND_BACKGROUND = new Color(0x3B, 0x0A, 0x0A);
+	/** Quiet 2nd-place text on {@link #HOTSPOT_SECOND_BACKGROUND}. */
+	public static final Color HOTSPOT_SECOND_FOREGROUND = Color.yellow;
 
 	/**
 	 * When {@code true}, Execute embeds a PEPS-built {@code "PostgreSQL Environment"}
@@ -183,8 +190,8 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 
 	private Color HIGHLIGHT_1_FONT_FOREGROUND_COLOR = HOTSPOT_HIGHLIGHT_FOREGROUND;
 	private Color HIGHLIGHT_1_FONT_BACKGROUND_COLOR = HOTSPOT_HIGHLIGHT_BACKGROUND;
-	private Color HIGHLIGHT_2_FONT_FOREGROUND_COLOR = Color.red;
-	private Color HIGHLIGHT_2_FONT_BACKGROUND_COLOR = Color.yellow;
+	private Color HIGHLIGHT_2_FONT_FOREGROUND_COLOR = HOTSPOT_SECOND_FOREGROUND;
+	private Color HIGHLIGHT_2_FONT_BACKGROUND_COLOR = HOTSPOT_SECOND_BACKGROUND;
 
 	/** Yellow find-match underline fill (substring highlights from Ctrl+F / Find). */
 	private static final Color FIND_MATCH_BACKGROUND = new Color(0xFF, 0xEB, 0x3B);
@@ -286,7 +293,11 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 				&& (intOldIDExplainPlan == null || !intOldIDExplainPlan.equals(idExplainPlan)
 						|| needsDiagramToolbarRefresh)) {
 			if (bolShowProperties == true) { System.out.println("enableLineThicknessByAndPercentageByButtons()"); }
-			enableLineThicknessByAndPercentageByButtons(idExplainPlan);
+			// Plan switch: prefer first enabled thickness. Same-plan rebuild (e.g. Execute
+			// ANALYZE after estimate-only): refresh enablement but keep selection if still valid.
+			boolean preferFirstEnabled = intOldIDExplainPlan == null
+					|| !intOldIDExplainPlan.equals(idExplainPlan);
+			enableLineThicknessByAndPercentageByButtons(idExplainPlan, preferFirstEnabled);
 			intOldIDExplainPlan = idExplainPlan;
 			needsDiagramToolbarRefresh = false;
 		}
@@ -886,11 +897,12 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 			clearClickableShapes();
 		}
 		
-		// activate line thickness by buttons
-		//if (objComponent.getPlanTextIsDirty() == true) {
-		//	enableLineThicknessByAndPercentageByButtons(idExplainPlan);
-		//} 
-		
+		// Same plan id after Execute/rebuild: refresh Line Thickness / Percentage By
+		// enablement (paint() otherwise skips when intOldIDExplainPlan matches).
+		if (rebuiltPlanData) {
+			requestDiagramToolbarRefresh();
+		}
+
 		// the plan's clean now, so minimize work to draw plan on screen
 		boolean percentageByWasDirty = objComponent.getPercentageByIsDirty();
 		if (rebuiltPlanData) {
@@ -2801,6 +2813,7 @@ from explain_plan_operator_annotations
 						+ ", actual_rows\n"
 						+ ", plan_rows\n"
 						+ ", total_actual_rows\n"
+						+ ", total_estimated_rows\n"
 						+ ", actual_data_size_bytes\n"
 						+ ", estimated_data_size_bytes\n"
 						+ ", total_rows_removed_by_filter\n"
@@ -2814,6 +2827,8 @@ from explain_plan_operator_annotations
 		if (rows == null) {
 			return;
 		}
+		String minBasis = Database.loadWarningMinBasis();
+		boolean actualDependentEnabled = !OperatorWarnings.isEstimateBasis(minBasis);
 		String minMetric = Database.loadWarningMinMetric();
 		double minAmount = Database.loadWarningMinActualRows();
 		String minMassUnit = Database.loadWarningMinMassUnit();
@@ -2853,16 +2868,20 @@ from explain_plan_operator_annotations
 			String tags = "";
 			if (id.intValue() != -1) {
 				Double totalActualRows = toDouble(row.get("total_actual_rows"));
+				Double totalEstimatedRows = toDouble(row.get("total_estimated_rows"));
 				Double actualMassBytes = toDouble(row.get("actual_data_size_bytes"));
-				boolean enoughRows = OperatorWarnings.meetsMinCalculated(minMetric, totalActualRows,
-						actualMassBytes, minAmount, minMassUnit);
+				Double estimatedMassBytes = toDouble(row.get("estimated_data_size_bytes"));
+				boolean enoughRows = OperatorWarnings.meetsMinCalculated(minBasis, minMetric,
+						totalActualRows, actualMassBytes, totalEstimatedRows, estimatedMassBytes,
+						minAmount, minMassUnit);
 				boolean time = enoughRows && OperatorWarnings.warnTimeAmongTop(
 						toDouble(row.get("exclusive_time_percentage_string")), allTimePercents, timeTopN);
 				boolean cost = enoughRows && OperatorWarnings.warnCostAmongTop(
 						toDouble(row.get("cost_percentage_string")), allCostPercents, costTopN);
-				boolean rowsWarn = enoughRows && (OperatorWarnings.METRIC_MASS.equals(ratioMetric)
+				boolean rowsWarn = actualDependentEnabled && enoughRows
+						&& (OperatorWarnings.METRIC_MASS.equals(ratioMetric)
 						? OperatorWarnings.warnEstimateRatio(actualMassBytes,
-								toDouble(row.get("estimated_data_size_bytes")), rowsFactor)
+								estimatedMassBytes, rowsFactor)
 						: OperatorWarnings.warnRows(
 								toDouble(row.get("actual_rows")), toDouble(row.get("plan_rows")),
 								rowsFactor));
@@ -2870,9 +2889,10 @@ from explain_plan_operator_annotations
 						toDouble(row.get("total_rows_removed_by_filter")),
 						toDouble(row.get("total_rows_removed_by_join_filter")),
 						toDouble(row.get("total_rows_removed_by_index_recheck")));
-				boolean filter = enoughRows && OperatorWarnings.warnFilterPercent(
+				boolean filter = actualDependentEnabled && enoughRows
+						&& OperatorWarnings.warnFilterPercent(
 						filterMetric, removed, totalActualRows, actualMassBytes, filterPctThreshold);
-				boolean heap = enoughRows && OperatorWarnings.warnHeap(
+				boolean heap = actualDependentEnabled && enoughRows && OperatorWarnings.warnHeap(
 						toDouble(row.get("heap_fetches")),
 						toDouble(row.get("actual_rows")),
 						toDouble(row.get("rows_removed_by_filter")),
@@ -7931,8 +7951,13 @@ order by id_explain_plan_property;
 		StringBuilder block = new StringBuilder();
 		Double actualRows = toDouble(row.get("total_actual_rows"));
 		Double actualMass = toDouble(row.get("actual_data_size_bytes"));
+		Double estimatedRows = toDouble(row.get("total_estimated_rows"));
+		Double estimatedMass = toDouble(row.get("estimated_data_size_bytes"));
+		String minBasis = Database.loadWarningMinBasis();
+		boolean actualDependentEnabled = !OperatorWarnings.isEstimateBasis(minBasis);
 		boolean enoughRows = OperatorWarnings.meetsMinCalculated(
-				Database.loadWarningMinMetric(), actualRows, actualMass,
+				minBasis, Database.loadWarningMinMetric(),
+				actualRows, actualMass, estimatedRows, estimatedMass,
 				Database.loadWarningMinActualRows(), Database.loadWarningMinMassUnit());
 
 		boolean time = enoughRows && OperatorWarnings.warnTimeAmongTop(
@@ -7958,11 +7983,9 @@ order by id_explain_plan_property;
 			block.append(".\n");
 		}
 
-		Double estimatedRows = toDouble(row.get("total_estimated_rows"));
-		Double estimatedMass = toDouble(row.get("estimated_data_size_bytes"));
 		double rowsFactorThreshold = Database.loadWarningRowsFactor();
 		boolean ratioMass = OperatorWarnings.METRIC_MASS.equals(Database.loadWarningRatioMetric());
-		boolean rowsWarn = enoughRows && (ratioMass
+		boolean rowsWarn = actualDependentEnabled && enoughRows && (ratioMass
 				? OperatorWarnings.warnEstimateRatio(actualMass, estimatedMass, rowsFactorThreshold)
 				: OperatorWarnings.warnRows(
 						toDouble(row.get("actual_rows")), toDouble(row.get("plan_rows")),
@@ -7982,7 +8005,7 @@ order by id_explain_plan_property;
 			}
 			block.append(".\n");
 		}
-		if (Pev2Metrics.isExcessiveEstimateMismatch(actualRows, estimatedRows)) {
+		if (actualDependentEnabled && Pev2Metrics.isExcessiveEstimateMismatch(actualRows, estimatedRows)) {
 			String ratio = formatCalculatedRatio(actualRows.doubleValue(), estimatedRows.doubleValue());
 			block.append("Actual vs estimated rows ratio is excessive (")
 					.append(ratio == null ? ">" + (int) Pev2Metrics.EXCESSIVE_ESTIMATE_MISMATCH_FACTOR + ":1" : ratio)
@@ -7990,7 +8013,7 @@ order by id_explain_plan_property;
 					.append((int) Pev2Metrics.EXCESSIVE_ESTIMATE_MISMATCH_FACTOR)
 					.append(":1).\n");
 		}
-		if (Pev2Metrics.isExcessiveEstimateMismatch(actualMass, estimatedMass)) {
+		if (actualDependentEnabled && Pev2Metrics.isExcessiveEstimateMismatch(actualMass, estimatedMass)) {
 			String ratio = formatCalculatedRatio(actualMass.doubleValue(), estimatedMass.doubleValue());
 			block.append("Actual vs estimated mass ratio is excessive (")
 					.append(ratio == null ? ">" + (int) Pev2Metrics.EXCESSIVE_ESTIMATE_MISMATCH_FACTOR + ":1" : ratio)
@@ -8007,7 +8030,8 @@ order by id_explain_plan_property;
 		String filterMetric = Database.loadWarningFilterMetric();
 		Double filterPctForMetric = OperatorWarnings.filterRemovedPercent(filterMetric, removed, actualRows,
 				actualMass);
-		if (enoughRows && OperatorWarnings.warnFilterPercent(filterMetric, removed, actualRows, actualMass,
+		if (actualDependentEnabled && enoughRows
+				&& OperatorWarnings.warnFilterPercent(filterMetric, removed, actualRows, actualMass,
 				filterPctThreshold)) {
 			block.append("Filter removes a high share of ")
 					.append(OperatorWarnings.METRIC_MASS.equals(filterMetric) ? "mass" : "rows");
@@ -8025,7 +8049,8 @@ order by id_explain_plan_property;
 				toDouble(row.get("actual_rows")),
 				toDouble(row.get("rows_removed_by_filter")),
 				toDouble(row.get("rows_removed_by_join_filter")));
-		if (enoughRows && OperatorWarnings.warnHeap(heapFetches, toDouble(row.get("actual_rows")),
+		if (actualDependentEnabled && enoughRows
+				&& OperatorWarnings.warnHeap(heapFetches, toDouble(row.get("actual_rows")),
 				toDouble(row.get("rows_removed_by_filter")),
 				toDouble(row.get("rows_removed_by_join_filter")),
 				Database.loadWarningHeapPercent())) {
@@ -8716,8 +8741,11 @@ order by id_explain_plan_property;
 		Double actualDataSizeBytes = toDouble(row.get("actual_data_size_bytes"));
 		Double estimatedDataSizeBytes = toDouble(row.get("estimated_data_size_bytes"));
 		Double executionTimeMs = toDouble(row.get("execution_time_ms"));
+		String minBasis = Database.loadWarningMinBasis();
+		boolean actualDependentEnabled = !OperatorWarnings.isEstimateBasis(minBasis);
 		boolean enoughRows = OperatorWarnings.meetsMinCalculated(
-				Database.loadWarningMinMetric(), totalActualRows, actualDataSizeBytes,
+				minBasis, Database.loadWarningMinMetric(),
+				totalActualRows, actualDataSizeBytes, totalEstimatedRows, estimatedDataSizeBytes,
 				Database.loadWarningMinActualRows(), Database.loadWarningMinMassUnit());
 		boolean costWarn = enoughRows && OperatorWarnings.warnCostAmongTop(
 				toDouble(row.get("cost_percentage_string")), loadPlanCostPercents(),
@@ -8725,7 +8753,8 @@ order by id_explain_plan_property;
 		boolean timeWarn = enoughRows && OperatorWarnings.warnTimeAmongTop(
 				toDouble(row.get("exclusive_time_percentage_string")), loadPlanTimePercents(),
 				Database.loadWarningTimeTopN());
-		boolean rowsWarn = enoughRows && (OperatorWarnings.METRIC_MASS.equals(Database.loadWarningRatioMetric())
+		boolean rowsWarn = actualDependentEnabled && enoughRows
+				&& (OperatorWarnings.METRIC_MASS.equals(Database.loadWarningRatioMetric())
 				? OperatorWarnings.warnEstimateRatio(actualDataSizeBytes, estimatedDataSizeBytes,
 						Database.loadWarningRowsFactor())
 				: OperatorWarnings.warnRows(
@@ -8735,7 +8764,8 @@ order by id_explain_plan_property;
 				toDouble(row.get("total_rows_removed_by_filter")),
 				toDouble(row.get("total_rows_removed_by_join_filter")),
 				toDouble(row.get("total_rows_removed_by_index_recheck")));
-		boolean filterWarn = enoughRows && OperatorWarnings.warnFilterPercent(
+		boolean filterWarn = actualDependentEnabled && enoughRows
+				&& OperatorWarnings.warnFilterPercent(
 				Database.loadWarningFilterMetric(), removedRevised, totalActualRows, actualDataSizeBytes,
 				Database.loadWarningFilterPercent());
 		Double heapFetches = toDouble(row.get("heap_fetches"));
@@ -8744,7 +8774,7 @@ order by id_explain_plan_property;
 				toDouble(row.get("actual_rows")),
 				toDouble(row.get("rows_removed_by_filter")),
 				toDouble(row.get("rows_removed_by_join_filter")));
-		boolean heapWarn = enoughRows && OperatorWarnings.warnHeap(
+		boolean heapWarn = actualDependentEnabled && enoughRows && OperatorWarnings.warnHeap(
 				heapFetches,
 				toDouble(row.get("actual_rows")),
 				toDouble(row.get("rows_removed_by_filter")),
@@ -9106,6 +9136,16 @@ order by id_explain_plan_property;
 	}
 
 	private void enableLineThicknessByAndPercentageByButtons(int idExplainPlan) {
+		enableLineThicknessByAndPercentageByButtons(idExplainPlan, true);
+	}
+
+	/**
+	 * @param preferFirstEnabled when true (plan switch), pick the first enabled Line
+	 *        Thickness in combo order; when false (same-plan rebuild), keep the
+	 *        current selection if it is still enabled.
+	 */
+	private void enableLineThicknessByAndPercentageByButtons(int idExplainPlan,
+			boolean preferFirstEnabled) {
 		String strSQL;
 		JsonObject jsnRow;
 		boolean bolShowProperties = false;
@@ -9117,6 +9157,9 @@ order by id_explain_plan_property;
 				+ "from explain_plan_generated_values where id_explain_plan = " + idExplainPlan; 
 		if (bolShowSQL == true) { System.out.println(strSQL); }
 		jsnRow = Database.row(strSQL);
+		if (jsnRow == null) {
+			return;
+		}
 
 		boolean bolEnableActualRowsButton = Utils.objectToBoolean(jsnRow.get("actual_rows_enabled"));
 		boolean bolEnableEstimatedRowsButton = Utils.objectToBoolean(jsnRow.get("estimated_rows_enabled"));
@@ -9151,7 +9194,6 @@ order by id_explain_plan_property;
 
 			PlanSourcePanel objComponent = (PlanSourcePanel) objCurrentPlanTabs.getComponentAt(0);
 
-			// On first diagram appear for this plan, select the first enabled Line Thickness (combo order)
 			LineThicknesses firstEnabledThickness = null;
 			for (LineThicknesses value : LineThicknesses.values()) {
 				boolean enabled;
@@ -9186,12 +9228,41 @@ order by id_explain_plan_property;
 
 			boolean bolLineThicknessByIsDirty = false;
 			if (firstEnabledThickness != null) {
-				if (getLineThicknessBy() != firstEnabledThickness) {
-					setLineThicknessBy(firstEnabledThickness);
-					planDiagramToolbar.selectAndFireLineThickness(firstEnabledThickness);
+				LineThicknesses current = getLineThicknessBy();
+				boolean currentStillEnabled = false;
+				if (current != null) {
+					switch (current) {
+					case ACTUAL_DATA_MASS:
+						currentStillEnabled = bolEnableActualMassButton;
+						break;
+					case ACTUAL_ROWS:
+						currentStillEnabled = bolEnableActualRowsButton;
+						break;
+					case ACTUAL_VS_ESTIMATED_ROWS_RATIO:
+						currentStillEnabled = bolEnableAVsERowsButton;
+						break;
+					case ACTUAL_VS_ESTIMATED_MASS_RATIO:
+						currentStillEnabled = bolEnableAVsEMassButton;
+						break;
+					case ESTIMATED_DATA_MASS:
+						currentStillEnabled = bolEnableEstimatedMassButton;
+						break;
+					case ESTIMATED_ROWS:
+						currentStillEnabled = bolEnableEstimatedRowsButton;
+						break;
+					default:
+						currentStillEnabled = false;
+						break;
+					}
+				}
+				LineThicknesses chosen = (preferFirstEnabled || !currentStillEnabled)
+						? firstEnabledThickness : current;
+				if (chosen != current) {
+					setLineThicknessBy(chosen);
+					planDiagramToolbar.selectAndFireLineThickness(chosen);
 					bolLineThicknessByIsDirty = true;
 				} else {
-					planDiagramToolbar.setSelectedLineThickness(firstEnabledThickness);
+					planDiagramToolbar.setSelectedLineThickness(chosen);
 				}
 			}
 

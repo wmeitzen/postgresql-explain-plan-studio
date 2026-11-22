@@ -3,6 +3,7 @@ package com.williammeitzen.peps.gui;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
+import java.awt.Container;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
@@ -18,14 +19,19 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
+import java.awt.event.HierarchyEvent;
+import java.awt.event.HierarchyListener;
 import java.util.Hashtable;
 import java.util.function.IntUnaryOperator;
 
+import javax.swing.Box;
+import javax.swing.BoxLayout;
 import javax.swing.ButtonGroup;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JRadioButton;
 import javax.swing.JSlider;
+import javax.swing.JViewport;
 import javax.swing.Scrollable;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
@@ -46,9 +52,22 @@ public class SliderPanel extends JPanel implements Scrollable {
 
 	private static final int SLIDER_PREFERRED_WIDTH = 600;
 	private static final int SLIDER_PREFERRED_HEIGHT = 72;
-	private static final int PANEL_MINIMUM_WIDTH = 320;
+	/** Room for tick labels + track/thumb + current-value column in portrait. */
+	private static final int SLIDER_VERTICAL_PREFERRED_WIDTH = 168;
+	/** Do not let the side dock shrink past the vertical thumb/labels. */
+	public static final int PANEL_MINIMUM_WIDTH = 168;
 	private static final int PANEL_COMPACT_HEIGHT = 140;
 	private static final int THUMB_VALUE_TRACK_HEIGHT = 18;
+	private static final int THUMB_VALUE_TRACK_WIDTH = 52;
+	private static final String TIME_MODE_LABEL_FULL = "Time Difference Slider";
+	private static final String COST_MODE_LABEL_FULL = "Cost Slider";
+	/** Longest → shortest radio labels; pick the longest pair that fits the row. */
+	private static final String[][] MODE_LABEL_TIERS = {
+			{ "Time Difference Slider", "Cost Slider" },
+			{ "Time Difference", "Cost Slider" },
+			{ "Time Diff", "Cost" },
+			{ "Time", "Cost" },
+	};
 	
 	private JLabel timeSliderLabel;
 	private JLabel costSliderLabel;
@@ -58,11 +77,22 @@ public class SliderPanel extends JPanel implements Scrollable {
 	private JLabel thumbValueLabel;
 	private JPanel thumbValueTrack;
 	private JPanel sliderHost;
+	private JPanel radioRow;
 	private JLabel propertiesDetails;
 	private JRadioButton timeSliderRB;
 	private JRadioButton costSliderRB;
 	/** Selected operator caption beside the radio buttons, e.g. "(35) Hash Join w/Filter". */
 	private JLabel selectedOperatorLabel;
+	private boolean modeLabelListenerInstalled;
+	private boolean updatingSliderChrome;
+	private int lastSliderOrientation = -1;
+	private JViewport watchedViewport;
+	private final ComponentAdapter viewportResizeListener = new ComponentAdapter() {
+		@Override
+		public void componentResized(ComponentEvent e) {
+			updateSliderChrome();
+		}
+	};
 	private Integer selectedOperatorId;
 	/** Absolute start/end on the active slider scale (ms or cost units). */
 	private Double selectedSpanStart;
@@ -95,6 +125,8 @@ public class SliderPanel extends JPanel implements Scrollable {
 		
 		//layoutComponents_OLD();
 		layoutComponents();
+		installModeLabelResizeListener();
+		SwingUtilities.invokeLater(this::updateSliderChrome);
 	}
 
 	public void setPlanGraphPanel(PlanGraphPanel graphPanel) {
@@ -149,6 +181,8 @@ public class SliderPanel extends JPanel implements Scrollable {
 		this.removeAll();
 		createComponents();
 		layoutComponents();
+		lastSliderOrientation = -1;
+		updateSliderChrome();
 		repaint();
 	}
 
@@ -167,10 +201,10 @@ public class SliderPanel extends JPanel implements Scrollable {
 				? planGraphPanel.getIdExplainPlan().intValue() : -1;
 
 		ButtonGroup sliderLabelButtonGroup = new ButtonGroup();
-		//JRadioButton timeSliderRB = new JRadioButton("Time Difference Slider");
-		timeSliderRB = new JRadioButton("Time Difference Slider");
-		//JRadioButton costSliderRB = new JRadioButton("Cost Slider");
-		costSliderRB = new JRadioButton("Cost Slider");
+		timeSliderRB = new JRadioButton(TIME_MODE_LABEL_FULL);
+		costSliderRB = new JRadioButton(COST_MODE_LABEL_FULL);
+		timeSliderRB.setToolTipText(TIME_MODE_LABEL_FULL);
+		costSliderRB.setToolTipText(COST_MODE_LABEL_FULL);
 
 		boolean bolEnableCost = false;
 		boolean bolEnableExclusiveTime = false;
@@ -209,8 +243,8 @@ public class SliderPanel extends JPanel implements Scrollable {
 		sliderLabelButtonGroup.add(timeSliderRB);
 		sliderLabelButtonGroup.add(costSliderRB);
 		
-		timeSliderLabel = new JLabel("Time Difference Slider");
-		costSliderLabel = new JLabel("Cost Slider");
+		timeSliderLabel = new JLabel(TIME_MODE_LABEL_FULL);
+		costSliderLabel = new JLabel(COST_MODE_LABEL_FULL);
 
 		if (costSliderRB.isEnabled() == false) {
 			costSliderLabel.setEnabled(false);
@@ -364,13 +398,9 @@ public class SliderPanel extends JPanel implements Scrollable {
 		gc.insets = new Insets(4, 8, 0, 8);
 		gc.anchor = GridBagConstraints.FIRST_LINE_START;
 
-		JPanel radioRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 16, 0));
+		radioRow = new JPanel();
 		radioRow.setOpaque(false);
-		radioRow.add(timeSliderRB);
-		radioRow.add(costSliderRB);
-		if (selectedOperatorLabel != null) {
-			radioRow.add(selectedOperatorLabel);
-		}
+		rebuildRadioRowLayout(isPortraitLayout());
 		add(radioRow, gc);
 		
 		clearSliderComponent(costSlider);
@@ -393,20 +423,20 @@ public class SliderPanel extends JPanel implements Scrollable {
 
 		if (activeSlider != null) {
 			spanSlider = activeSlider;
-			spanSlider.setPreferredSize(new Dimension(SLIDER_PREFERRED_WIDTH, SLIDER_PREFERRED_HEIGHT));
-			spanSlider.setMinimumSize(new Dimension(PANEL_MINIMUM_WIDTH, SLIDER_PREFERRED_HEIGHT));
 			installSpanAwareSliderUI(spanSlider);
-
-			sliderHost = new JPanel(new BorderLayout());
-			sliderHost.setOpaque(false);
-			sliderHost.add(thumbValueTrack, BorderLayout.NORTH);
-			sliderHost.add(spanSlider, BorderLayout.CENTER);
+			rebuildSliderHost(isPortraitLayout());
 
 			gc.gridy++;
-			gc.fill = GridBagConstraints.HORIZONTAL;
-			gc.weightx = 1;
-			gc.weighty = 0; // keep content packed; dock height stays short
 			gc.insets = new Insets(2, 8, 6, 8);
+			if (isPortraitLayout()) {
+				gc.fill = GridBagConstraints.BOTH;
+				gc.weightx = 1;
+				gc.weighty = 1;
+			} else {
+				gc.fill = GridBagConstraints.HORIZONTAL;
+				gc.weightx = 1;
+				gc.weighty = 0; // keep content packed; dock height stays short
+			}
 			add(sliderHost, gc);
 
 			spanSlider.addComponentListener(new ComponentAdapter() {
@@ -437,6 +467,246 @@ public class SliderPanel extends JPanel implements Scrollable {
 			operatorToShow = planGraphPanel.getSelectedOperatorId();
 		}
 		showSelectedOperator(operatorToShow);
+		updateSliderModeLabels();
+		if (spanSlider != null) {
+			repositionThumbValueLabel(spanSlider);
+		}
+	}
+
+	private void installModeLabelResizeListener() {
+		if (modeLabelListenerInstalled) {
+			return;
+		}
+		modeLabelListenerInstalled = true;
+		addComponentListener(new ComponentAdapter() {
+			@Override
+			public void componentResized(ComponentEvent e) {
+				updateSliderChrome();
+			}
+
+			@Override
+			public void componentShown(ComponentEvent e) {
+				attachViewportListener();
+				updateSliderChrome();
+			}
+		});
+		addHierarchyListener(new HierarchyListener() {
+			@Override
+			public void hierarchyChanged(HierarchyEvent e) {
+				if ((e.getChangeFlags() & HierarchyEvent.PARENT_CHANGED) != 0) {
+					attachViewportListener();
+					updateSliderChrome();
+				}
+			}
+		});
+		attachViewportListener();
+	}
+
+	private void attachViewportListener() {
+		Container parent = getParent();
+		JViewport viewport = parent instanceof JViewport ? (JViewport) parent : null;
+		if (viewport == watchedViewport) {
+			return;
+		}
+		if (watchedViewport != null) {
+			watchedViewport.removeComponentListener(viewportResizeListener);
+		}
+		watchedViewport = viewport;
+		if (watchedViewport != null) {
+			watchedViewport.addComponentListener(viewportResizeListener);
+		}
+	}
+
+	/**
+	 * Use the enclosing viewport/dock size — not this panel's preferred height.
+	 * Otherwise a short landscape preferred size never flips to portrait when
+	 * side-docked (panel stays ~140px tall inside a tall viewport).
+	 */
+	private Dimension layoutHostSize() {
+		attachViewportListener();
+		if (watchedViewport != null) {
+			Dimension d = watchedViewport.getExtentSize();
+			if (d.width > 0 && d.height > 0) {
+				return d;
+			}
+			d = watchedViewport.getSize();
+			if (d.width > 0 && d.height > 0) {
+				return d;
+			}
+		}
+		Container parent = getParent();
+		if (parent != null) {
+			Dimension d = parent.getSize();
+			if (d.width > 0 && d.height > 0) {
+				return d;
+			}
+		}
+		int width = getWidth();
+		int height = getHeight();
+		if (width > 0 && height > 0) {
+			return new Dimension(width, height);
+		}
+		return getPreferredSize();
+	}
+
+	/** Portrait (taller than wide) → vertical slider like Zoom; landscape → horizontal. */
+	private boolean isPortraitLayout() {
+		Dimension host = layoutHostSize();
+		return host.height > host.width;
+	}
+
+	private void updateSliderChrome() {
+		if (updatingSliderChrome || timeSliderRB == null || costSliderRB == null) {
+			return;
+		}
+		boolean portrait = isPortraitLayout();
+		int orientation = portrait ? SwingConstants.VERTICAL : SwingConstants.HORIZONTAL;
+		if (orientation != lastSliderOrientation) {
+			updatingSliderChrome = true;
+			try {
+				lastSliderOrientation = orientation;
+				applySliderOrientation(timeSlider, orientation);
+				applySliderOrientation(costSlider, orientation);
+				removeAll();
+				layoutComponents();
+			} finally {
+				updatingSliderChrome = false;
+			}
+			revalidate();
+			repaint();
+			return;
+		}
+		updateSliderModeLabels();
+		if (spanSlider != null) {
+			repositionThumbValueLabel(spanSlider);
+		}
+	}
+
+	private void applySliderOrientation(JSlider slider, int orientation) {
+		if (slider == null) {
+			return;
+		}
+		if (slider.getOrientation() != orientation) {
+			int value = slider.getValue();
+			slider.setOrientation(orientation);
+			slider.setValue(value);
+		}
+		if (slider == spanSlider) {
+			installSpanAwareSliderUI(slider);
+		}
+	}
+
+	private void rebuildRadioRowLayout(boolean portrait) {
+		if (radioRow == null) {
+			return;
+		}
+		radioRow.removeAll();
+		if (portrait) {
+			radioRow.setLayout(new BoxLayout(radioRow, BoxLayout.Y_AXIS));
+			radioRow.add(timeSliderRB);
+			radioRow.add(Box.createVerticalStrut(2));
+			radioRow.add(costSliderRB);
+			if (selectedOperatorLabel != null) {
+				radioRow.add(Box.createVerticalStrut(4));
+				selectedOperatorLabel.setAlignmentX(LEFT_ALIGNMENT);
+				radioRow.add(selectedOperatorLabel);
+			}
+			timeSliderRB.setAlignmentX(LEFT_ALIGNMENT);
+			costSliderRB.setAlignmentX(LEFT_ALIGNMENT);
+		} else {
+			radioRow.setLayout(new FlowLayout(FlowLayout.LEFT, 16, 0));
+			radioRow.add(timeSliderRB);
+			radioRow.add(costSliderRB);
+			if (selectedOperatorLabel != null) {
+				radioRow.add(selectedOperatorLabel);
+			}
+		}
+	}
+
+	private void rebuildSliderHost(boolean portrait) {
+		if (spanSlider == null || thumbValueTrack == null) {
+			return;
+		}
+		if (sliderHost == null) {
+			sliderHost = new JPanel(new BorderLayout());
+			sliderHost.setOpaque(false);
+		}
+		sliderHost.removeAll();
+		if (portrait) {
+			spanSlider.setPreferredSize(new Dimension(SLIDER_VERTICAL_PREFERRED_WIDTH, SLIDER_PREFERRED_WIDTH));
+			spanSlider.setMinimumSize(new Dimension(PANEL_MINIMUM_WIDTH - THUMB_VALUE_TRACK_WIDTH, 120));
+			thumbValueTrack.setPreferredSize(new Dimension(THUMB_VALUE_TRACK_WIDTH, 10));
+			sliderHost.add(thumbValueTrack, BorderLayout.EAST);
+			sliderHost.add(spanSlider, BorderLayout.CENTER);
+			setMinimumSize(new Dimension(PANEL_MINIMUM_WIDTH, PANEL_COMPACT_HEIGHT));
+			setPreferredSize(new Dimension(SLIDER_VERTICAL_PREFERRED_WIDTH, SLIDER_PREFERRED_WIDTH));
+		} else {
+			spanSlider.setPreferredSize(new Dimension(SLIDER_PREFERRED_WIDTH, SLIDER_PREFERRED_HEIGHT));
+			spanSlider.setMinimumSize(new Dimension(PANEL_MINIMUM_WIDTH, SLIDER_PREFERRED_HEIGHT));
+			thumbValueTrack.setPreferredSize(new Dimension(SLIDER_PREFERRED_WIDTH, THUMB_VALUE_TRACK_HEIGHT));
+			sliderHost.add(thumbValueTrack, BorderLayout.NORTH);
+			sliderHost.add(spanSlider, BorderLayout.CENTER);
+			setMinimumSize(new Dimension(PANEL_MINIMUM_WIDTH, PANEL_COMPACT_HEIGHT));
+			setPreferredSize(new Dimension(SLIDER_PREFERRED_WIDTH, PANEL_COMPACT_HEIGHT));
+		}
+		sliderHost.revalidate();
+	}
+
+	private void updateSliderModeLabels() {
+		if (timeSliderRB == null || costSliderRB == null) {
+			return;
+		}
+		timeSliderRB.setToolTipText(TIME_MODE_LABEL_FULL);
+		costSliderRB.setToolTipText(COST_MODE_LABEL_FULL);
+
+		int available = getWidth();
+		if (available <= 0) {
+			available = getPreferredSize().width;
+		}
+		Insets insets = getInsets();
+		int inner = available - (insets != null ? insets.left + insets.right : 0) - 16;
+		if (selectedOperatorLabel != null) {
+			String op = selectedOperatorLabel.getText();
+			if (op != null && !op.isBlank() && !" ".equals(op) && !isPortraitLayout()) {
+				inner -= selectedOperatorLabel.getPreferredSize().width + 16;
+			}
+		}
+
+		String timeText = MODE_LABEL_TIERS[MODE_LABEL_TIERS.length - 1][0];
+		String costText = MODE_LABEL_TIERS[MODE_LABEL_TIERS.length - 1][1];
+		Font font = timeSliderRB.getFont();
+		for (String[] tier : MODE_LABEL_TIERS) {
+			int need = measureRadioWidth(tier[0], font) + measureRadioWidth(tier[1], font) + 16;
+			if (isPortraitLayout()) {
+				// Stacked radios: each label only needs to fit the strip width.
+				need = Math.max(measureRadioWidth(tier[0], font), measureRadioWidth(tier[1], font));
+			}
+			if (inner <= 0 || need <= inner) {
+				timeText = tier[0];
+				costText = tier[1];
+				break;
+			}
+		}
+		if (!timeText.equals(timeSliderRB.getText())) {
+			timeSliderRB.setText(timeText);
+		}
+		if (!costText.equals(costSliderRB.getText())) {
+			costSliderRB.setText(costText);
+		}
+		if (timeSliderLabel != null) {
+			timeSliderLabel.setText(timeText);
+		}
+		if (costSliderLabel != null) {
+			costSliderLabel.setText(costText);
+		}
+	}
+
+	private static int measureRadioWidth(String text, Font font) {
+		JRadioButton probe = new JRadioButton(text);
+		if (font != null) {
+			probe.setFont(font);
+		}
+		return probe.getPreferredSize().width;
 	}
 
 	private void repositionThumbValueLabel(JSlider slider) {
@@ -444,12 +714,23 @@ public class SliderPanel extends JPanel implements Scrollable {
 			return;
 		}
 		thumbValueLabel.setSize(thumbValueLabel.getPreferredSize());
-		int thumbCenterX = xPositionForSliderValue(slider, slider.getValue());
-		Point trackPoint = SwingUtilities.convertPoint(slider, new Point(thumbCenterX, 0), thumbValueTrack);
-		int x = trackPoint.x - thumbValueLabel.getWidth() / 2;
-		int maxX = Math.max(0, thumbValueTrack.getWidth() - thumbValueLabel.getWidth());
-		x = Math.max(0, Math.min(x, maxX));
-		thumbValueLabel.setLocation(x, Math.max(0, (THUMB_VALUE_TRACK_HEIGHT - thumbValueLabel.getHeight()) / 2));
+		boolean vertical = slider.getOrientation() == SwingConstants.VERTICAL;
+		if (vertical) {
+			int thumbCenterY = yPositionForSliderValue(slider, slider.getValue());
+			Point trackPoint = SwingUtilities.convertPoint(slider, new Point(0, thumbCenterY), thumbValueTrack);
+			int y = trackPoint.y - thumbValueLabel.getHeight() / 2;
+			int maxY = Math.max(0, thumbValueTrack.getHeight() - thumbValueLabel.getHeight());
+			y = Math.max(0, Math.min(y, maxY));
+			int x = Math.max(0, (thumbValueTrack.getWidth() - thumbValueLabel.getWidth()) / 2);
+			thumbValueLabel.setLocation(x, y);
+		} else {
+			int thumbCenterX = xPositionForSliderValue(slider, slider.getValue());
+			Point trackPoint = SwingUtilities.convertPoint(slider, new Point(thumbCenterX, 0), thumbValueTrack);
+			int x = trackPoint.x - thumbValueLabel.getWidth() / 2;
+			int maxX = Math.max(0, thumbValueTrack.getWidth() - thumbValueLabel.getWidth());
+			x = Math.max(0, Math.min(x, maxX));
+			thumbValueLabel.setLocation(x, Math.max(0, (THUMB_VALUE_TRACK_HEIGHT - thumbValueLabel.getHeight()) / 2));
+		}
 		thumbValueTrack.repaint();
 	}
 
@@ -458,7 +739,6 @@ public class SliderPanel extends JPanel implements Scrollable {
 			BasicSliderUI ui = (BasicSliderUI) slider.getUI();
 			int low = 0;
 			int high = Math.max(slider.getWidth() - 1, 0);
-			// valueForXPosition is public; binary-search the matching x
 			while (low < high) {
 				int mid = (low + high) / 2;
 				if (ui.valueForXPosition(mid) < value) {
@@ -478,6 +758,33 @@ public class SliderPanel extends JPanel implements Scrollable {
 		int left = insets.left + 8;
 		int right = slider.getWidth() - insets.right - 8;
 		return left + (int) Math.round(fraction * Math.max(right - left, 0));
+	}
+
+	private static int yPositionForSliderValue(JSlider slider, int value) {
+		if (slider.getUI() instanceof BasicSliderUI) {
+			BasicSliderUI ui = (BasicSliderUI) slider.getUI();
+			// Vertical track: larger Y → smaller value (max at top).
+			int low = 0;
+			int high = Math.max(slider.getHeight() - 1, 0);
+			while (low < high) {
+				int mid = (low + high) / 2;
+				if (ui.valueForYPosition(mid) > value) {
+					low = mid + 1;
+				} else {
+					high = mid;
+				}
+			}
+			return low;
+		}
+		int range = slider.getMaximum() - slider.getMinimum();
+		if (range <= 0) {
+			return slider.getHeight() / 2;
+		}
+		double fraction = (slider.getMaximum() - value) / (double) range;
+		Insets insets = slider.getInsets();
+		int top = insets.top + 8;
+		int bottom = slider.getHeight() - insets.bottom - 8;
+		return top + (int) Math.round(fraction * Math.max(bottom - top, 0));
 	}
 
 	/** Numeric part uses 3 significant digits (e.g. 1.50 sec, 399 ms). */
@@ -559,7 +866,9 @@ public class SliderPanel extends JPanel implements Scrollable {
 
 	@Override
 	public boolean getScrollableTracksViewportHeight() {
-		return false;
+		// Portrait side dock: fill the tall viewport so the vertical slider can stretch.
+		// Must key off viewport size (not this panel) or we never leave the short preferred height.
+		return isPortraitLayout();
 	}
 	
 	private void clearSliderComponent(Component component)
@@ -721,6 +1030,7 @@ public class SliderPanel extends JPanel implements Scrollable {
 			selectedOperatorLabel.setText(label);
 			selectedOperatorLabel.setToolTipText(label);
 		}
+		updateSliderModeLabels();
 
 		if (spanSlider != null) {
 			spanSlider.repaint();
@@ -861,12 +1171,11 @@ public class SliderPanel extends JPanel implements Scrollable {
 	}
 
 	/**
-	 * Paint span using the UI's own xPositionForValue + trackRect so X lands on the track
-	 * (binary-search helpers can return x=0, left of the track inset).
+	 * Paint span using the UI's own position-for-value + trackRect so the bar lands on the track.
 	 */
 	private static void paintSpanOnTrack(Graphics g, JSlider slider, Rectangle trackRect,
-			IntUnaryOperator xForValue, Double startAbs, Double endAbs, Double total, Color fill) {
-		if (g == null || slider == null || trackRect == null || xForValue == null
+			IntUnaryOperator positionForValue, Double startAbs, Double endAbs, Double total, Color fill) {
+		if (g == null || slider == null || trackRect == null || positionForValue == null
 				|| startAbs == null || endAbs == null || total == null || total <= 0
 				|| slider.getMaximum() <= 0 || fill == null) {
 			return;
@@ -874,27 +1183,35 @@ public class SliderPanel extends JPanel implements Scrollable {
 		try {
 			int v1 = absoluteToSliderValue(startAbs, total, slider);
 			int v2 = absoluteToSliderValue(endAbs, total, slider);
-			int x1 = xForValue.applyAsInt(v1);
-			int x2 = xForValue.applyAsInt(v2);
-			int left = Math.min(x1, x2);
-			int right = Math.max(x1, x2);
-			// Keep the bar inside the track; short spans still get a visible width.
-			left = Math.max(trackRect.x, left);
-			right = Math.min(trackRect.x + trackRect.width, right);
-			int width = Math.max(right - left, Math.min(8, trackRect.width));
-			if (left + width > trackRect.x + trackRect.width) {
-				left = Math.max(trackRect.x, trackRect.x + trackRect.width - width);
-			}
-
-			// Shorter than the thumb (FlatLaf thumb is typically ~12–16px), but easy to see.
-			int barHeight = 5;
-			int y = trackRect.y + (trackRect.height - barHeight) / 2;
+			int p1 = positionForValue.applyAsInt(v1);
+			int p2 = positionForValue.applyAsInt(v2);
+			boolean vertical = slider.getOrientation() == SwingConstants.VERTICAL;
 
 			Graphics2D g2 = (Graphics2D) g.create();
 			try {
 				g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 				g2.setColor(fill);
-				g2.fillRoundRect(left, y, width, barHeight, 2, 2);
+				if (vertical) {
+					int top = Math.max(trackRect.y, Math.min(p1, p2));
+					int bottom = Math.min(trackRect.y + trackRect.height, Math.max(p1, p2));
+					int height = Math.max(bottom - top, Math.min(8, trackRect.height));
+					if (top + height > trackRect.y + trackRect.height) {
+						top = Math.max(trackRect.y, trackRect.y + trackRect.height - height);
+					}
+					int barWidth = 5;
+					int x = trackRect.x + (trackRect.width - barWidth) / 2;
+					g2.fillRoundRect(x, top, barWidth, height, 2, 2);
+				} else {
+					int left = Math.max(trackRect.x, Math.min(p1, p2));
+					int right = Math.min(trackRect.x + trackRect.width, Math.max(p1, p2));
+					int width = Math.max(right - left, Math.min(8, trackRect.width));
+					if (left + width > trackRect.x + trackRect.width) {
+						left = Math.max(trackRect.x, trackRect.x + trackRect.width - width);
+					}
+					int barHeight = 5;
+					int y = trackRect.y + (trackRect.height - barHeight) / 2;
+					g2.fillRoundRect(left, y, width, barHeight, 2, 2);
+				}
 			} finally {
 				g2.dispose();
 			}
@@ -918,7 +1235,10 @@ public class SliderPanel extends JPanel implements Scrollable {
 			if (slider == null || trackRect == null || range == null) {
 				return;
 			}
-			paintSpanOnTrack(g, slider, trackRect, this::xPositionForValue, range[0], range[1],
+			IntUnaryOperator position = slider.getOrientation() == SwingConstants.VERTICAL
+					? this::yPositionForValue
+					: this::xPositionForValue;
+			paintSpanOnTrack(g, slider, trackRect, position, range[0], range[1],
 					panel.selectedSpanTotal(), panel.selectedSpanBarColor());
 		}
 	}
@@ -939,7 +1259,10 @@ public class SliderPanel extends JPanel implements Scrollable {
 			if (slider == null || trackRect == null || range == null) {
 				return;
 			}
-			paintSpanOnTrack(g, slider, trackRect, this::xPositionForValue, range[0], range[1],
+			IntUnaryOperator position = slider.getOrientation() == SwingConstants.VERTICAL
+					? this::yPositionForValue
+					: this::xPositionForValue;
+			paintSpanOnTrack(g, slider, trackRect, position, range[0], range[1],
 					panel.selectedSpanTotal(), panel.selectedSpanBarColor());
 		}
 	}

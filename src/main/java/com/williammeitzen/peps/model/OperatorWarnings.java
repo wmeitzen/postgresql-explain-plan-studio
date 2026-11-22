@@ -27,7 +27,7 @@ public final class OperatorWarnings {
 	/** Default Filter chip: removed share ≥ this percent (Settings-overridable). */
 	public static final double FILTER_WARNING_PERCENT = 50.0;
 
-	/** Default shared gate: indicators require Actual calculated rows ≥ this (Settings-overridable). */
+	/** Default shared gate: indicators require calculated rows ≥ this (Settings-overridable). */
 	public static final double WARNING_MIN_ACTUAL_ROWS = 500.0;
 
 	/** @deprecated use {@link #WARNING_MIN_ACTUAL_ROWS} */
@@ -38,6 +38,14 @@ public final class OperatorWarnings {
 	public static final String MASS_UNIT_KB = "kB";
 	public static final String MASS_UNIT_MB = "MB";
 	public static final String MASS_UNIT_GB = "GB";
+
+	/** Gate uses Actual calculated rows/mass (default). */
+	public static final String BASIS_ACTUAL = "actual";
+	/** Gate uses Estimate calculated rows/mass. */
+	public static final String BASIS_ESTIMATE = "estimate";
+
+	public static final String BASIS_LABEL_ACTUAL = "Actual calculated";
+	public static final String BASIS_LABEL_ESTIMATE = "Estimate calculated";
 
 	/** Default Cost chip: among the top N by Cost % (Settings-overridable). */
 	public static final int COST_WARNING_TOP_N = 2;
@@ -77,18 +85,50 @@ public final class OperatorWarnings {
 	}
 
 	/**
-	 * Shared Settings gate: Actual calculated rows, or Actual calculated mass
-	 * (bytes ≥ amount × unit).
+	 * Shared Settings gate: calculated rows, or calculated mass
+	 * (bytes ≥ amount × unit). Caller supplies Actual or Estimate values.
 	 */
-	public static boolean meetsMinCalculated(String metric, Double totalActualRows,
-			Double actualDataSizeBytes, double minAmount, String massUnit) {
+	public static boolean meetsMinCalculated(String metric, Double totalRows,
+			Double dataSizeBytes, double minAmount, String massUnit) {
 		if (METRIC_MASS.equalsIgnoreCase(metric)) {
-			if (actualDataSizeBytes == null) {
+			if (dataSizeBytes == null) {
 				return false;
 			}
-			return actualDataSizeBytes.doubleValue() >= minAmount * massUnitToBytes(massUnit);
+			return dataSizeBytes.doubleValue() >= minAmount * massUnitToBytes(massUnit);
 		}
-		return meetsMinActualRows(totalActualRows, minAmount);
+		return meetsMinActualRows(totalRows, minAmount);
+	}
+
+	/**
+	 * Shared Settings gate choosing Actual or Estimate columns per
+	 * {@code basis} ({@link #BASIS_ACTUAL} / {@link #BASIS_ESTIMATE}).
+	 */
+	public static boolean meetsMinCalculated(String basis, String metric,
+			Double totalActualRows, Double actualDataSizeBytes,
+			Double totalEstimatedRows, Double estimatedDataSizeBytes,
+			double minAmount, String massUnit) {
+		if (BASIS_ESTIMATE.equalsIgnoreCase(basis)) {
+			return meetsMinCalculated(metric, totalEstimatedRows, estimatedDataSizeBytes,
+					minAmount, massUnit);
+		}
+		return meetsMinCalculated(metric, totalActualRows, actualDataSizeBytes,
+				minAmount, massUnit);
+	}
+
+	public static boolean isEstimateBasis(String basis) {
+		return BASIS_ESTIMATE.equalsIgnoreCase(basis);
+	}
+
+	public static String normalizeBasis(String basis) {
+		return isEstimateBasis(basis) ? BASIS_ESTIMATE : BASIS_ACTUAL;
+	}
+
+	public static String basisLabel(String basis) {
+		return isEstimateBasis(basis) ? BASIS_LABEL_ESTIMATE : BASIS_LABEL_ACTUAL;
+	}
+
+	public static String basisFromLabel(String label) {
+		return BASIS_LABEL_ESTIMATE.equals(label) ? BASIS_ESTIMATE : BASIS_ACTUAL;
 	}
 
 	/** Actual vs Estimated ratio for rows or mass (same factor math). */

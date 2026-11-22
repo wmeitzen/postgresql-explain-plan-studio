@@ -47,6 +47,21 @@ class OperatorWarningsTest {
 		assertTrue(OperatorWarnings.meetsMinCalculated(OperatorWarnings.METRIC_MASS,
 				1.0, 2.0 * 1024.0 * 1024.0, 2.0, OperatorWarnings.MASS_UNIT_MB));
 		assertTrue(OperatorWarnings.warnEstimateRatio(100.0, 10.0, 10.0));
+		// Actual basis ignores estimated columns; Estimate basis ignores actuals.
+		assertFalse(OperatorWarnings.meetsMinCalculated(OperatorWarnings.BASIS_ACTUAL,
+				OperatorWarnings.METRIC_ROWS, 100.0, null, 5000.0, null, 500.0,
+				OperatorWarnings.MASS_UNIT_MB));
+		assertTrue(OperatorWarnings.meetsMinCalculated(OperatorWarnings.BASIS_ESTIMATE,
+				OperatorWarnings.METRIC_ROWS, 100.0, null, 5000.0, null, 500.0,
+				OperatorWarnings.MASS_UNIT_MB));
+		assertTrue(OperatorWarnings.meetsMinCalculated(OperatorWarnings.BASIS_ESTIMATE,
+				OperatorWarnings.METRIC_MASS, null, 1024.0, null, 3.0 * 1024.0 * 1024.0, 2.0,
+				OperatorWarnings.MASS_UNIT_MB));
+		assertFalse(OperatorWarnings.meetsMinCalculated(OperatorWarnings.BASIS_ACTUAL,
+				OperatorWarnings.METRIC_MASS, null, 1024.0, null, 3.0 * 1024.0 * 1024.0, 2.0,
+				OperatorWarnings.MASS_UNIT_MB));
+		assertTrue(OperatorWarnings.isEstimateBasis(OperatorWarnings.BASIS_ESTIMATE));
+		assertFalse(OperatorWarnings.isEstimateBasis(OperatorWarnings.BASIS_ACTUAL));
 	}
 
 	@Test

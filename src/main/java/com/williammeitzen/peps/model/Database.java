@@ -534,6 +534,7 @@ public final class Database {
 		// Existing DBs created before color_scheme: add the column if missing
 		ensureConfigColumn("color_scheme", "varchar(32) not null default 'dark'");
 		ensureConfigColumn("docking_layout", "text");
+		ensureConfigColumn("diagram_docking_layout", "text");
 		ensureConfigColumn("plan_source_mode", "varchar(32) not null default 'paste'");
 		ensureConfigColumn("selected_plan_name", "text");
 		ensureConfigColumn("selected_plan_id", "integer");
@@ -560,6 +561,8 @@ public final class Database {
 				"varchar(16) not null default '" + OperatorWarnings.METRIC_ROWS + "'");
 		ensureConfigColumn("warning_min_mass_unit",
 				"varchar(8) not null default '" + OperatorWarnings.MASS_UNIT_MB + "'");
+		ensureConfigColumn("warning_min_basis",
+				"varchar(16) not null default '" + OperatorWarnings.BASIS_ACTUAL + "'");
 		ensureConfigColumn("warning_ratio_metric",
 				"varchar(16) not null default '" + OperatorWarnings.METRIC_ROWS + "'");
 		ensureConfigColumn("diagram_zoom_percent", "int not null default 100");
@@ -1614,6 +1617,38 @@ south_1_fontmetrics_width = null;
 		return value;
 	}
 
+	/** Persist Plan Diagram nested docking XML (Graph / Zoom / Properties / Sliders). */
+	public static void saveDiagramDockingLayout(String layoutXml) {
+		if (objConnection == null) {
+			return;
+		}
+		String sql = "update config set diagram_docking_layout = ?";
+		try (PreparedStatement ps = objConnection.prepareStatement(sql)) {
+			if (layoutXml == null || layoutXml.isBlank()) {
+				ps.setNull(1, Types.VARCHAR);
+			} else {
+				ps.setString(1, layoutXml);
+			}
+			ps.executeUpdate();
+		} catch (SQLException ex) {
+			System.out.println("function Database.saveDiagramDockingLayout()");
+			ex.printStackTrace();
+		}
+	}
+
+	/** Load Plan Diagram nested docking XML, or null if missing. */
+	public static String loadDiagramDockingLayout() {
+		JsonObject row = row("select diagram_docking_layout from config;");
+		if (row == null || row.get("diagram_docking_layout") == null) {
+			return null;
+		}
+		String value = String.valueOf(row.get("diagram_docking_layout"));
+		if (value.isBlank() || "null".equalsIgnoreCase(value)) {
+			return null;
+		}
+		return value;
+	}
+
 	/** Remember which Plans-list entry was highlighted (restored on next launch). */
 	public static void saveSelectedPlanName(String planName) {
 		if (objConnection == null) {
@@ -1782,23 +1817,37 @@ south_1_fontmetrics_width = null;
 		return OperatorWarnings.MASS_UNIT_MB;
 	}
 
+	/** Warning gate basis: {@link OperatorWarnings#BASIS_ACTUAL} or {@link OperatorWarnings#BASIS_ESTIMATE}. */
+	public static String loadWarningMinBasis() {
+		return OperatorWarnings.normalizeBasis(
+				loadConfigString("warning_min_basis", OperatorWarnings.BASIS_ACTUAL));
+	}
+
 	public static void saveWarningMinPreferences(String metric, double minAmount, String massUnit) {
+		saveWarningMinPreferences(OperatorWarnings.BASIS_ACTUAL, metric, minAmount, massUnit);
+	}
+
+	public static void saveWarningMinPreferences(String basis, String metric, double minAmount,
+			String massUnit) {
 		if (objConnection == null) {
 			return;
 		}
+		String basisValue = OperatorWarnings.normalizeBasis(basis);
 		String metricValue = OperatorWarnings.METRIC_MASS.equalsIgnoreCase(metric)
 				? OperatorWarnings.METRIC_MASS : OperatorWarnings.METRIC_ROWS;
 		String unitValue = OperatorWarnings.MASS_UNIT_KB.equals(massUnit)
 				|| OperatorWarnings.MASS_UNIT_GB.equals(massUnit)
 				? massUnit : OperatorWarnings.MASS_UNIT_MB;
 		long amount = Math.round(Math.max(0.0, minAmount));
-		String sql = "update config set warning_min_metric = ?, warning_min_actual_rows = ?"
-				+ ", warning_filter_min_actual_rows = ?, warning_min_mass_unit = ?";
+		String sql = "update config set warning_min_basis = ?, warning_min_metric = ?"
+				+ ", warning_min_actual_rows = ?, warning_filter_min_actual_rows = ?"
+				+ ", warning_min_mass_unit = ?";
 		try (PreparedStatement ps = objConnection.prepareStatement(sql)) {
-			ps.setString(1, metricValue);
-			ps.setLong(2, amount);
+			ps.setString(1, basisValue);
+			ps.setString(2, metricValue);
 			ps.setLong(3, amount);
-			ps.setString(4, unitValue);
+			ps.setLong(4, amount);
+			ps.setString(5, unitValue);
 			ps.executeUpdate();
 		} catch (SQLException ex) {
 			System.out.println("function Database.saveWarningMinPreferences()");

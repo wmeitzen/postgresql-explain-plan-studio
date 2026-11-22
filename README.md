@@ -4,6 +4,9 @@ Graphical viewer for PostgreSQL `EXPLAIN` plans.
 
 ## Download
 
+I've tested on Windows 10, Windows 11, Ubuntu 20, 22, 24, and 26 LTS, and an older macOSX version 10.15. I've also tested on several versions between PostgreSQL 12 through 19.<br />
+I haven't tested every combination of the above, so please submit an issue if you see something wrong or out of place. Thanks!
+
 <ul>
 <li>
 <img src="docs/readme-icons/windows.svg" width="16" height="16" alt="Windows" /> Windows installer: <a href="https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-1.0.0-windows-x64-installer.exe">PostgreSQLExplainPlanStudio-1.0.0-windows-x64-installer.exe</a>
@@ -44,6 +47,11 @@ To install the <code>.deb</code> on Linux:
 </ul>
 </li>
 </ul>
+
+### macOS support is experimental.
+
+If it works or fails for you, I'd be grateful if you could tell me your MacOS version. Thanks!
+
 
 <ul>
 <li>
