@@ -80,7 +80,8 @@ To install the <code>x64.zip</code> on macOS:
 <br/>
 To install the <code>jar.zip</code> on macOS:
 <ul>
-<li>Install <a href="https://adoptium.net/temurin/releases/?version=17">Java 17 or later</a> (choose Intel or Apple Silicon, Temurin or any JRE/JDK)</li>
+<li>Install <a href="https://adoptium.net/temurin/releases/?version=17">Java 17 or later</a> (choose Intel or Apple Silicon, Temurin or any JRE/JDK)
+<ul>
 <li>On <strong>macOS Catalina 10.15</strong>, current Temurin 17 builds break the GUI (<code>JavaRuntimeSupport</code>). Use Temurin <strong>17.0.8</strong> Intel instead:
 <ul>
 <li>Download <a href="https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.8%2B7/OpenJDK17U-jdk_x64_mac_hotspot_17.0.8_7.pkg">OpenJDK17U-jdk_x64_mac_hotspot_17.0.8_7.pkg</a></li>
@@ -89,6 +90,8 @@ To install the <code>jar.zip</code> on macOS:
 <code>export JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-17.jdk/Contents/Home</code><br/>
 <code>export PATH="$JAVA_HOME/bin:$PATH"</code></li>
 <li>Confirm: <code>java -version</code> shows <code>17.0.8</code></li>
+</ul>
+</li>
 </ul>
 </li>
 <li>Unzip the <code>jar.zip</code> file</li>
