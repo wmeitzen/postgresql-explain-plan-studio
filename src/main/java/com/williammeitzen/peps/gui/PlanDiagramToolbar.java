@@ -6,6 +6,10 @@ import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.Polygon;
+import java.awt.RenderingHints;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
 import java.util.EnumMap;
@@ -27,7 +31,9 @@ import javax.swing.UIManager;
 import javax.swing.border.EmptyBorder;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
+import javax.swing.plaf.basic.BasicSliderUI;
 
+import com.formdev.flatlaf.FlatLaf;
 import com.williammeitzen.peps.gui.Utils.LineThicknesses;
 import com.williammeitzen.peps.gui.Utils.PercentageBy;
 
@@ -255,6 +261,8 @@ public class PlanDiagramToolbar extends JPanel {
 		add(new JLabel("  Percentage By:"));
 		add(percentageByCombo);
 		add(findCheckBox);
+		// Default/GTK starts with a fat trough; normalize before first paint.
+		reinstallZoomSliderUI();
 	}
 
 	/** Vertical zoom slider strip for the right edge of the Graph pane. */
@@ -697,39 +705,134 @@ public class PlanDiagramToolbar extends JPanel {
 		if (zoomSliderSidePanel != null) {
 			zoomSliderSidePanel.setOpaque(true);
 			zoomSliderSidePanel.setBackground(UiTheme.uiColor(UiTheme.surfaceColor()));
-			for (Component child : zoomSliderSidePanel.getComponents()) {
-				if (child instanceof JLabel) {
-					Color tick = UIManager.getColor("Slider.tickColor");
-					if (tick == null) {
-						tick = UIManager.getColor("Label.foreground");
-					}
-					if (tick != null) {
-						child.setForeground(tick);
-					}
-				}
-				if (child instanceof JSlider) {
-					child.setBackground(UiTheme.uiColor(UiTheme.surfaceColor()));
-					Color tick = UIManager.getColor("Slider.foreground");
-					if (tick != null) {
-						child.setForeground(tick);
-					}
-					// Tick labels are often plain JLabels in the slider's label table.
-					java.util.Dictionary<?, ?> labels = ((JSlider) child).getLabelTable();
-					if (labels != null) {
-						Color labelFg = UIManager.getColor("Label.foreground");
-						java.util.Enumeration<?> labelValues = labels.elements();
-						while (labelValues.hasMoreElements()) {
-							Object label = labelValues.nextElement();
-							if (label instanceof JLabel && labelFg != null) {
-								((JLabel) label).setForeground(labelFg);
-							}
-						}
-					}
+		}
+		reinstallZoomSliderUI();
+		revalidate();
+		repaint();
+	}
+
+	/**
+	 * Reinstall Zoom slider LAF UI after scheme swaps. Dark→Default→Dark otherwise
+	 * can leave ticks/labels without the FlatLaf track line.
+	 * <p>
+	 * FlatLaf (Light/Dark): use the LAF slider UI, and do not setBackground —
+	 * FlatSliderUI paints the track with the component background whenever it is
+	 * not the same object as {@code Slider.background} (invisible on the Zoom pane).
+	 * <p>
+	 * System LAF (Default on Linux GTK): GTK draws a fat trough + circle thumb.
+	 * Install a thin-track BasicSliderUI so Zoom matches Light/Dark.
+	 */
+	public void reinstallZoomSliderUI() {
+		if (zoomSlider == null) {
+			return;
+		}
+		int orientation = zoomSlider.getOrientation();
+		int value = zoomSlider.getValue();
+		if (UIManager.getLookAndFeel() instanceof FlatLaf) {
+			zoomSlider.updateUI();
+		} else {
+			zoomSlider.setUI(new ThinTrackZoomSliderUI(zoomSlider));
+		}
+		zoomSlider.setOrientation(orientation);
+		zoomSlider.setValue(value);
+		zoomSlider.setOpaque(false);
+		applyZoomSliderPercentLabels();
+		Color labelFg = UIManager.getColor("Label.foreground");
+		java.util.Dictionary<?, ?> labels = zoomSlider.getLabelTable();
+		if (labels != null && labelFg != null) {
+			java.util.Enumeration<?> labelValues = labels.elements();
+			while (labelValues.hasMoreElements()) {
+				Object label = labelValues.nextElement();
+				if (label instanceof JLabel) {
+					((JLabel) label).setForeground(labelFg);
 				}
 			}
 		}
-		revalidate();
-		repaint();
+		zoomSlider.revalidate();
+		zoomSlider.repaint();
+		if (zoomSliderSidePanel != null) {
+			zoomSliderSidePanel.revalidate();
+			zoomSliderSidePanel.repaint();
+		}
+	}
+
+	/**
+	 * Thin track + arrow thumb for system LAFs (notably Linux GTK Default), matching
+	 * the FlatLaf Zoom chrome used in Light/Dark.
+	 */
+	private static final class ThinTrackZoomSliderUI extends BasicSliderUI {
+		private static final int TRACK_THICKNESS = 3;
+		private static final int THUMB_LENGTH = 12;
+		private static final int THUMB_DEPTH = 8;
+
+		ThinTrackZoomSliderUI(JSlider slider) {
+			super(slider);
+		}
+
+		@Override
+		public void paintTrack(Graphics g) {
+			if (trackRect == null) {
+				return;
+			}
+			Graphics2D g2 = (Graphics2D) g.create();
+			try {
+				g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+				Color track = UIManager.getColor("Slider.trackColor");
+				if (track == null) {
+					track = UIManager.getColor("Slider.foreground");
+				}
+				if (track == null) {
+					track = UIManager.getColor("Label.foreground");
+				}
+				if (track == null) {
+					track = Color.GRAY;
+				}
+				g2.setColor(track);
+				if (slider.getOrientation() == SwingConstants.VERTICAL) {
+					int x = trackRect.x + (trackRect.width - TRACK_THICKNESS) / 2;
+					g2.fillRect(x, trackRect.y, TRACK_THICKNESS, trackRect.height);
+				} else {
+					int y = trackRect.y + (trackRect.height - TRACK_THICKNESS) / 2;
+					g2.fillRect(trackRect.x, y, trackRect.width, TRACK_THICKNESS);
+				}
+			} finally {
+				g2.dispose();
+			}
+		}
+
+		@Override
+		public void paintThumb(Graphics g) {
+			if (thumbRect == null) {
+				return;
+			}
+			Graphics2D g2 = (Graphics2D) g.create();
+			try {
+				g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+				Color thumb = UIManager.getColor("Slider.thumbColor");
+				if (thumb == null) {
+					thumb = UIManager.getColor("Slider.foreground");
+				}
+				if (thumb == null) {
+					thumb = new Color(0x3B, 0x82, 0xF6);
+				}
+				g2.setColor(thumb);
+				int cx = thumbRect.x + thumbRect.width / 2;
+				int cy = thumbRect.y + thumbRect.height / 2;
+				Polygon arrow = new Polygon();
+				if (slider.getOrientation() == SwingConstants.VERTICAL) {
+					arrow.addPoint(cx - THUMB_DEPTH, cy - THUMB_LENGTH / 2);
+					arrow.addPoint(cx - THUMB_DEPTH, cy + THUMB_LENGTH / 2);
+					arrow.addPoint(cx + THUMB_DEPTH / 2, cy);
+				} else {
+					arrow.addPoint(cx - THUMB_LENGTH / 2, cy - THUMB_DEPTH);
+					arrow.addPoint(cx + THUMB_LENGTH / 2, cy - THUMB_DEPTH);
+					arrow.addPoint(cx, cy + THUMB_DEPTH / 2);
+				}
+				g2.fillPolygon(arrow);
+			} finally {
+				g2.dispose();
+			}
+		}
 	}
 
 	private final class EnumComboRenderer<E> extends DefaultListCellRenderer {

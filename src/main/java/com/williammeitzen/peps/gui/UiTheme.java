@@ -76,7 +76,9 @@ public final class UiTheme {
 			"TabbedPane.showTabSeparators", "TabbedPane.tabSeparatorsFullHeight",
 			"TabbedPane.tabType", "TabbedPane.hasFullBorder", "TabbedPane.cardTabArc",
 			"TitlePane.menuBarEmbedded", "TitlePane.foreground", "TitlePane.background",
-			"Slider.tickColor", "Slider.foreground", "ToolTip.background", "ToolTip.foreground"
+			"Slider.tickColor", "Slider.foreground",
+			"Slider.trackColor", "Slider.trackValueColor", "Slider.disabledTrackColor",
+			"ToolTip.background", "ToolTip.foreground"
 	};
 
 	private static ColorUIResource ui(Color color) {
@@ -354,6 +356,10 @@ public final class UiTheme {
 		UIManager.put("TabbedPane.cardTabArc", 8);
 		UIManager.put("Slider.foreground", fg);
 		UIManager.put("Slider.tickColor", fg);
+		// Visible track after Dark↔Default LAF swaps (FlatLaf reads these in FlatSliderUI).
+		UIManager.put("Slider.trackColor", separator);
+		UIManager.put("Slider.trackValueColor", fg);
+		UIManager.put("Slider.disabledTrackColor", elevated);
 	}
 
 	public static void applyAndRefresh(Scheme scheme, Window window) {

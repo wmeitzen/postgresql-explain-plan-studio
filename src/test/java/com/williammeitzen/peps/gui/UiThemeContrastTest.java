@@ -25,6 +25,7 @@ import javax.swing.JPanel;
 import javax.swing.JRadioButton;
 import javax.swing.JRadioButtonMenuItem;
 import javax.swing.JScrollPane;
+import javax.swing.JSlider;
 import javax.swing.JTabbedPane;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
@@ -32,6 +33,8 @@ import javax.swing.UIManager;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
+import com.formdev.flatlaf.FlatLaf;
 
 /**
  * Iterates Default / Light / Dark and asserts readable fg/bg contrast on:
@@ -151,6 +154,55 @@ class UiThemeContrastTest {
 				assertNoLingeringDarkChrome("after->" + scheme.id());
 			}
 		}
+	}
+
+	@Test
+	void zoomSliderKeepsVisibleTrackAfterDarkDefaultDarkRoundTrip() throws Exception {
+		applyScheme(UiTheme.Scheme.DARK);
+		applyScheme(UiTheme.Scheme.DEFAULT);
+		applyScheme(UiTheme.Scheme.DARK);
+		onEdt(() -> {
+			JSlider zoom = findZoomSlider();
+			assertTrue(zoom != null, "Zoom slider missing from diagram toolbar side panel");
+			assertTrue(UIManager.getLookAndFeel() instanceof FlatLaf, "expected FlatLaf after Dark");
+			assertTrue(zoom.getUI().getClass().getName().contains("FlatSliderUI"),
+					"Zoom slider UI after Dark↔Default should be FlatSliderUI, was "
+							+ zoom.getUI().getClass().getName());
+			Color track = UIManager.getColor("Slider.trackColor");
+			Color panel = UIManager.getColor("Panel.background");
+			Color sliderBg = zoom.getBackground();
+			Color sliderBgDefault = UIManager.getColor("Slider.background");
+			assertTrue(track != null, "Slider.trackColor must be set in Dark chrome");
+			assertTrue(panel != null, "Panel.background must be set");
+			// FlatSliderUI.getTrackColor() returns component background when it is not the
+			// same object as Slider.background — that made the track match the Zoom pane.
+			if (sliderBg != null && sliderBg != sliderBgDefault
+					&& contrastRatio(sliderBg, panel) < 1.15) {
+				fail(String.format(
+						"Zoom slider background overrides track to near-panel color after Dark↔Default: sliderBg=%s panel=%s Slider.background=%s",
+						rgb(sliderBg), rgb(panel),
+						sliderBgDefault == null ? "null" : rgb(sliderBgDefault)));
+			}
+			double ratio = contrastRatio(track, panel);
+			if (ratio < 1.2) {
+				fail(String.format(
+						"Zoom track nearly invisible after Dark↔Default: track=%s panel=%s contrast=%.2f",
+						rgb(track), rgb(panel), ratio));
+			}
+		});
+	}
+
+	private JSlider findZoomSlider() {
+		JPanel side = diagramToolbar.getZoomSliderSidePanel();
+		if (side == null) {
+			return null;
+		}
+		for (Component child : side.getComponents()) {
+			if (child instanceof JSlider) {
+				return (JSlider) child;
+			}
+		}
+		return null;
 	}
 
 	@Test
