@@ -68,7 +68,6 @@ To install the <code>x64.zip</code> on macOS:
 <ul>
 <li>Unzip file</li>
 <li>Drag <code>PostgreSQL Explain Plan Studio.app</code> to Applications</li>
-<li>No separate Java install needed (JRE is bundled)</li>
 <li>First launch of an unsigned build: right-click the app in Applications / Open / Open</li>
 <li>If macOS says the app is <strong>damaged</strong> (Gatekeeper quarantine on unsigned downloads), hit Cancel (not Move to Trash), then in a terminal, run:<br/><code>xattr -dr com.apple.quarantine "/Applications/PostgreSQL Explain Plan Studio.app"</code><br/>then open the app again</li>
 </ul>
@@ -81,8 +80,18 @@ To install the <code>x64.zip</code> on macOS:
 <br/>
 To install the <code>jar.zip</code> on macOS:
 <ul>
-<li>Install <a href="https://adoptium.net/temurin/releases/?version=17">Java 17 or later</a> (Temurin or any JRE/JDK)</li>
-<li>Unzip file</li>
+<li>Install <a href="https://adoptium.net/temurin/releases/?version=17">Java 17 or later</a> (choose Intel or Apple Silicon, Temurin or any JRE/JDK)</li>
+<li>On <strong>macOS Catalina 10.15</strong>, current Temurin 17 builds break the GUI (<code>JavaRuntimeSupport</code>). Use Temurin <strong>17.0.8</strong> Intel instead:
+<ul>
+<li>Download <a href="https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.8%2B7/OpenJDK17U-jdk_x64_mac_hotspot_17.0.8_7.pkg">OpenJDK17U-jdk_x64_mac_hotspot_17.0.8_7.pkg</a></li>
+<li>Install the <code>.pkg</code></li>
+<li>In Terminal, put Temurin ahead of macOS's <code>java</code> stub:<br/>
+<code>export JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-17.jdk/Contents/Home</code><br/>
+<code>export PATH="$JAVA_HOME/bin:$PATH"</code></li>
+<li>Confirm: <code>java -version</code> shows <code>17.0.8</code></li>
+</ul>
+</li>
+<li>Unzip the <code>jar.zip</code> file</li>
 <li>Open a terminal</li>
 <li>Navigate to the unzipped file's new directory</li>
 <li><code>chmod +x peps.sh</code></li>

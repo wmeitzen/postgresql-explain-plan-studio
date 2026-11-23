@@ -301,8 +301,18 @@ $macIcon macOS (JAR): <a href="$base/$macJar">$macJar</a>
 <br/>
 To install the <code>jar.zip</code> on macOS:
 <ul>
-<li>Install <a href="https://adoptium.net/temurin/releases/?version=17">Java 17 or later</a> (Temurin or any JRE/JDK)</li>
-<li>Unzip file</li>
+<li>Install <a href="https://adoptium.net/temurin/releases/?version=17">Java 17 or later</a> (choose Intel or Apple Silicon, Temurin or any JRE/JDK)</li>
+<li>On <strong>macOS Catalina 10.15</strong>, current Temurin 17 builds break the GUI (<code>JavaRuntimeSupport</code>). Use Temurin <strong>17.0.8</strong> Intel instead:
+<ul>
+<li>Download <a href="https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.8%2B7/OpenJDK17U-jdk_x64_mac_hotspot_17.0.8_7.pkg">OpenJDK17U-jdk_x64_mac_hotspot_17.0.8_7.pkg</a></li>
+<li>Install the <code>.pkg</code></li>
+<li>In Terminal, put Temurin ahead of macOS's <code>java</code> stub:<br/>
+<code>export JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-17.jdk/Contents/Home</code><br/>
+<code>export PATH=`"`$JAVA_HOME/bin:`$PATH`"</code></li>
+<li>Confirm: <code>java -version</code> shows <code>17.0.8</code></li>
+</ul>
+</li>
+<li>Unzip the <code>jar.zip</code> file</li>
 <li>Open a terminal</li>
 <li>Navigate to the unzipped file's new directory</li>
 <li><code>chmod +x peps.sh</code></li>
@@ -1307,6 +1317,7 @@ $macAppNotes
 - Asset: ``$MacJarName``
 - Requires JDK 17+ on the Mac
 - Unzip, then: ``chmod +x peps.sh && ./peps.sh``
+- Catalina 10.15: use Temurin **17.0.8** (not current 17.x); set ``JAVA_HOME`` / ``PATH`` to the Temurin ``bin`` before ``./peps.sh``
 - User data: ``~/.local/share/postgresql-explain-plan-studio/`` (or ``PEPS_DATA_DIR`` / ``-Dpeps.data.dir``)
 "@
 	} else {
@@ -1342,6 +1353,7 @@ $macAppNotes
 ### macOS (JAR)
 - Asset: ``$MacJarName``
 - Unzip, ``chmod +x peps.sh``, install JDK 17+, then ``./peps.sh``
+- Catalina 10.15: use Temurin **17.0.8** (not current 17.x); set ``JAVA_HOME`` / ``PATH`` to the Temurin ``bin`` before ``./peps.sh``
 "@
 	}
 

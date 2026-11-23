@@ -6,6 +6,14 @@ PostgreSQL Explain Plan Studio — macOS packaging
    → target/PostgreSQLExplainPlanStudio-<ver>-mac-jar.zip
    On the Mac: unzip, chmod +x peps.sh, ./peps.sh
 
+   Catalina 10.15: current Temurin 17 builds break the GUI (JavaRuntimeSupport).
+   Install Temurin 17.0.8 Intel instead:
+     https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.8%2B7/OpenJDK17U-jdk_x64_mac_hotspot_17.0.8_7.pkg
+   Then put it on PATH (macOS may still point java at a stub):
+     export JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-17.jdk/Contents/Home
+     export PATH="$JAVA_HOME/bin:$PATH"
+   Confirm: java -version shows 17.0.8
+
 2) Native .app / DMG (drag into Applications; bundled JRE)
    Must be built ON a Mac (Intel → mac-x64, Apple Silicon → mac-arm64):
 
