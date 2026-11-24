@@ -462,14 +462,16 @@ public class FormPanel extends JPanel {
 		refreshDocumentsEmptyState();
 	}
 
-	/** Empty-state: create a plan filled with a large sample JSON EXPLAIN (plan text only). */
+	/** Empty-state: create a plan filled with sample JSON EXPLAIN output and its EXPLAIN SQL. */
 	public void addSampleJsonPlan() {
-		addPlanWithContent("Sample JSON plan", null, SampleExplainPlans.jsonPlanText());
+		addPlanWithContent("Sample JSON plan", SampleExplainPlans.jsonExplainSql(),
+				SampleExplainPlans.jsonPlanText());
 	}
 
-	/** Empty-state: create a plan filled with a large sample text EXPLAIN (plan text only). */
+	/** Empty-state: create a plan filled with sample text EXPLAIN output and its EXPLAIN SQL. */
 	public void addSampleTextPlan() {
-		addPlanWithContent("Sample text plan", null, SampleExplainPlans.textPlanText());
+		addPlanWithContent("Sample text plan", SampleExplainPlans.textExplainSql(),
+				SampleExplainPlans.textPlanText());
 	}
 
 	// ------------------------------------------------------------------

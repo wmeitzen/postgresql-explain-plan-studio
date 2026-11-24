@@ -7,20 +7,24 @@ import java.nio.charset.StandardCharsets;
 /**
  * Built-in sample EXPLAIN plan text for the Documents empty-state landing screen.
  * Offline stand-ins so new users can open a diagram without a live Postgres connection.
- * The EXPLAIN SQL field is left empty (no database to run against).
+ * Sample JSON and text plans ship the EXPLAIN SQL that produced each capture.
  */
 public final class SampleExplainPlans {
 
-	private static final String JSON_SAMPLE_RESOURCE = "/samples/gxd_genotype_summary_view-explain.json";
-	private static final String TEXT_SAMPLE_RESOURCE = "/samples/gxd_genotype_summary_view-explain.txt";
+	private static final String JSON_SAMPLE_RESOURCE = "/samples/sample-json-explain.json";
+	private static final String JSON_EXPLAIN_SQL_RESOURCE = "/samples/sample-json-explain.sql";
+	private static final String TEXT_SAMPLE_RESOURCE = "/samples/sample-text-explain.txt";
+	private static final String TEXT_EXPLAIN_SQL_RESOURCE = "/samples/sample-text-explain.sql";
 
 	private static volatile String cachedJsonPlan;
+	private static volatile String cachedJsonExplainSql;
 	private static volatile String cachedTextPlan;
+	private static volatile String cachedTextExplainSql;
 
 	private SampleExplainPlans() {
 	}
 
-	/** Real JSON EXPLAIN ANALYZE output for {@code gxd_genotype_summary_view}. */
+	/** Real JSON EXPLAIN ANALYZE output for the {@code all_cellline} view query. */
 	public static String jsonPlanText() {
 		String cached = cachedJsonPlan;
 		if (cached != null) {
@@ -34,7 +38,21 @@ public final class SampleExplainPlans {
 		}
 	}
 
-	/** Real text EXPLAIN ANALYZE output for {@code gxd_genotype_summary_view}. */
+	/** EXPLAIN SQL shown with the Sample JSON plan ({@code all_cellline} view query). */
+	public static String jsonExplainSql() {
+		String cached = cachedJsonExplainSql;
+		if (cached != null) {
+			return cached;
+		}
+		synchronized (SampleExplainPlans.class) {
+			if (cachedJsonExplainSql == null) {
+				cachedJsonExplainSql = loadClasspathUtf8(JSON_EXPLAIN_SQL_RESOURCE);
+			}
+			return cachedJsonExplainSql;
+		}
+	}
+
+	/** Real text EXPLAIN ANALYZE output for the {@code all_cellline} view query. */
 	public static String textPlanText() {
 		String cached = cachedTextPlan;
 		if (cached != null) {
@@ -45,6 +63,20 @@ public final class SampleExplainPlans {
 				cachedTextPlan = loadClasspathUtf8(TEXT_SAMPLE_RESOURCE);
 			}
 			return cachedTextPlan;
+		}
+	}
+
+	/** EXPLAIN SQL shown with the Sample text plan ({@code all_cellline} view query). */
+	public static String textExplainSql() {
+		String cached = cachedTextExplainSql;
+		if (cached != null) {
+			return cached;
+		}
+		synchronized (SampleExplainPlans.class) {
+			if (cachedTextExplainSql == null) {
+				cachedTextExplainSql = loadClasspathUtf8(TEXT_EXPLAIN_SQL_RESOURCE);
+			}
+			return cachedTextExplainSql;
 		}
 	}
 
