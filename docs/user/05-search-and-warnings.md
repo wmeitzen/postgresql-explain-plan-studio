@@ -22,12 +22,7 @@ When nothing matches, the query field uses a high-contrast no-match style so it 
 
 Indicators appear north of some operators. Hover over an indicator to see its value.
 
-- **Actual vs Estimate ratio** (balance scale) — operators where estimated and actual values differ by orders of magnitude.
-
-**Screenshot:** Actual vs Estimate ratio warning indicator
-
-![Actual vs Estimate ratio](images/ss-warning-actual-vs-estimate.png)
-
+- ![Actual vs Estimate ratio icon](images/ss-warning-icon-actual-vs-estimate.png) **Actual vs Estimate ratio** (balance scale) — operators where estimated and actual values differ by orders of magnitude.
 - **Cost %** (dollar sign) — the operators with the highest individual cost. Usually only the top two are marked; more appear only when their percentages are equal.
 - **Filter removes rows** (funnel) — operators that discard a significant amount of data (mass or rows) before emitting the rest.
 - **Heap fetch** — index-only scans that still had to visit the table heap for a high share of rows, which usually means the visibility map is out of date. Consider running VACUUM on that table.
@@ -35,9 +30,9 @@ Indicators appear north of some operators. Hover over an indicator to see its va
 
 **Screenshot:** Warning indicators on a diagram
 
-![Warning indicators](images/ss-warning-indicators.png)
+**Screenshot:** Actual vs Estimate ratio warning indicator
 
-<!-- Drop file at docs/user/images/ss-warning-indicators.png -->
+![Actual vs Estimate ratio](images/ss-warning-actual-vs-estimate.png)
 
 ## Warning thresholds
 
