@@ -18,7 +18,7 @@ While Anonymize is on:
 
 **Anonymize aliases** controls whether aliases for tables, views, columns, subqueries, and so on are masked too. Leave it off when aliases are not sensitive and keeping them will help the other person analyze the plan.
 
-**Screenshot:** Anonymize off vs on (SQL and plan text become masked and read-only)
+**Screenshot:** Anonymize off vs on
 
 ![Anonymize](images/ss-anonymize.png)
 
@@ -33,8 +33,6 @@ When the other party sends back their analysis, translate it to your real names:
 **Screenshot:** Translate tab
 
 ![Translate tab](images/ss-translate.png)
-
-<!-- Drop file at docs/user/images/ss-translate.png -->
 
 ## Next
 
