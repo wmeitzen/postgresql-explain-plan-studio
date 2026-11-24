@@ -22,6 +22,10 @@ While Anonymize is on:
 
 ![Anonymize](images/ss-anonymize.png)
 
+**Screenshot:** Plan Diagram with Anonymize on
+
+![Anonymized plan diagram](images/ss-anonymize-diagram.png)
+
 ## Translate
 
 When the other party sends back their analysis, translate it to your real names:
