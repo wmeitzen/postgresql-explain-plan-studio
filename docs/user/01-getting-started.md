@@ -11,11 +11,9 @@ Open PEPS and create your first plan diagram from a sample or a blank document.
    - **Sample text plan** — loads a built-in text `EXPLAIN` sample and shows the diagram.
 3. Or use **Add Plan** in the Plans toolbar to create a document and open **Plan Source**.
 
-**Screenshot:** Get Started landing with the three actions
+**Screenshot:** Get Started landing with the three actions (the arrow points from **New blank plan** to the matching **Add Plan** control in the Plans toolbar)
 
 ![Get Started landing](images/ss-get-started.png)
-
-<!-- Drop file at docs/user/images/ss-get-started.png -->
 
 **Screenshot:** First Plan Diagram after Sample JSON
 
