@@ -77,7 +77,7 @@ To install the <code>x64.zip</code> on macOS:
 
 <ul>
 <li>
-Portable JAR (any OS with Java 17+): <a href="https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-1.0.0-jar.zip">PostgreSQLExplainPlanStudio-1.0.0-jar.zip</a>
+Portable JAR (any OS with Java 17+): <a href="https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-1.0.0-mac-jar.zip">PostgreSQLExplainPlanStudio-1.0.0-mac-jar.zip</a>
 <br/>
 To install the portable <code>jar.zip</code>:
 <ul>

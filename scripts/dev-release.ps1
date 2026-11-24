@@ -1318,67 +1318,15 @@ try {
 	Write-Host "Assets to publish:"
 	$assets | ForEach-Object { Write-Host "  $_" }
 
-	$macAppNotes = if (Test-Path $MacAppZip) {
-		$dmgLine = if (Test-Path $MacDmg) {
-			"- DMG (optional): ``$MacDmgName`` — open and drag ``PostgreSQL Explain Plan Studio.app`` to Applications`n"
-		} else { "" }
-		@"
-### macOS app (bundled JRE)
-- App zip: ``$MacAppZipName`` — unzip and drag ``PostgreSQL Explain Plan Studio.app`` to Applications
-$dmgLine- First launch of an unsigned build: right-click the app in Applications / Open / Open
-- If macOS says the app is **damaged** (Gatekeeper quarantine): ``xattr -dr com.apple.quarantine "/Applications/PostgreSQL Explain Plan Studio.app"`` then open again
-"@
-	} else { "" }
-
 	$title = if ($IsPrerelease) { "v$Version (Pre-release)" } else { "v$Version" }
-	if ($MacOnlyRelease) {
-		$notes = @"
-## PostgreSQL Explain Plan Studio v$Version$(if ($IsPrerelease) { ' (Pre-release)' } else { '' })
-
-TEMPORARY Mac-only release iteration (Windows/Linux assets not rebuilt this run).
-
-$macAppNotes
-### Portable JAR
-- Asset: ``$MacJarName``
-- Requires JDK/JRE 17+ on any OS
-- Unzip, then: ``java -jar postgresql-explain-plan-studio-$Version.jar`` (or on macOS/Unix: ``chmod +x peps.sh && ./peps.sh``)
-- Catalina 10.15: use Temurin **17.0.8** (not current 17.x); set ``JAVA_HOME`` / ``PATH`` to the Temurin ``bin`` before launch
-- User data: ``~/.local/share/postgresql-explain-plan-studio/`` (or ``PEPS_DATA_DIR`` / ``-Dpeps.data.dir``)
+	# Title-only body; install instructions live in README.md.
+	$notes = if ($IsPrerelease) {
+		@"
+## PostgreSQL Explain Plan Studio v$Version (Pre-release)
 "@
 	} else {
-		$exeNotes = if (Test-Path $WindowsExe) {
-			@"
-- Installer: ``$WindowsExeName`` (Program Files setup; upgrades keep your plans)
-- Portable: ``$WindowsZipName`` — unzip and run ``PostgreSQLExplainPlanStudio\PostgreSQLExplainPlanStudio.exe``
-"@
-		} else {
-			@"
-- Portable: ``$WindowsZipName`` — unzip and run ``PostgreSQLExplainPlanStudio\PostgreSQLExplainPlanStudio.exe``
-"@
-		}
-		$notes = @"
-## PostgreSQL Explain Plan Studio v$Version$(if ($IsPrerelease) { ' (Pre-release)' } else { '' })
-
-Bundled Java runtime included (Windows/Linux/macOS app). Portable JAR zip requires a system JDK/JRE 17+.
-
-User data (SQLite plans) lives outside the app install tree:
-- Windows: ``%APPDATA%\PostgreSQLExplainPlanStudio\``
-- Linux: ``~/.local/share/postgresql-explain-plan-studio/``
-- macOS: ``~/.local/share/postgresql-explain-plan-studio/``
-
-### Windows
-$exeNotes
-
-### Ubuntu / Linux
-- Installer (Ubuntu/Debian): ``$LinuxDebName`` — ``sudo apt install ./$LinuxDebName``
-- Portable: ``$LinuxZipName`` — unzip and run ``PostgreSQLExplainPlanStudio/bin/PostgreSQLExplainPlanStudio``
-- Upgrades: replace the app / reinstall the ``.deb``; leave the data directory above alone
-
-$macAppNotes
-### Portable JAR
-- Asset: ``$MacJarName``
-- Unzip, install JDK/JRE 17+, then ``java -jar postgresql-explain-plan-studio-$Version.jar`` (or on macOS/Unix: ``chmod +x peps.sh && ./peps.sh``)
-- Catalina 10.15: use Temurin **17.0.8** (not current 17.x); set ``JAVA_HOME`` / ``PATH`` to the Temurin ``bin`` before launch
+		@"
+## PostgreSQL Explain Plan Studio v$Version
 "@
 	}
 
