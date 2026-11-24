@@ -19,8 +19,6 @@ Open PEPS and create your first plan diagram from a sample or a blank document.
 
 ![Sample JSON diagram](images/ss-sample-json-diagram.png)
 
-<!-- Drop file at docs/user/images/ss-sample-json-diagram.png -->
-
 ## Next
 
 - [Managing plans](02-managing-plans.md)
