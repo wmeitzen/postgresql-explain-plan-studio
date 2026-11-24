@@ -1,10 +1,18 @@
-PostgreSQL Explain Plan Studio — macOS packaging
-================================================
+PostgreSQL Explain Plan Studio — portable JAR + macOS app packaging
+===================================================================
 
-1) JAR zip (any Mac + JDK 17+)
-   Built on Windows: .\scripts\pack-mac-jar.ps1
-   → target/PostgreSQLExplainPlanStudio-<ver>-mac-jar.zip
-   On the Mac: unzip, chmod +x peps.sh, ./peps.sh
+1) Portable JAR zip (any OS with JDK/JRE 17+)
+   Built on Windows: .\scripts\pack-jar.ps1
+   → target/PostgreSQLExplainPlanStudio-<ver>-jar.zip
+
+   Contents: shaded postgresql-explain-plan-studio-<ver>.jar + peps.sh + this README.
+
+   Launch (any OS):
+     java -jar postgresql-explain-plan-studio-<ver>.jar
+
+   On macOS / Unix you can also use the helper script:
+     chmod +x peps.sh
+     ./peps.sh
 
    Catalina 10.15: current Temurin 17 builds break the GUI (JavaRuntimeSupport).
    Install Temurin 17.0.8 Intel instead:

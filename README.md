@@ -77,13 +77,13 @@ To install the <code>x64.zip</code> on macOS:
 
 <ul>
 <li>
-<img src="docs/readme-icons/apple.svg" width="16" height="16" alt="macOS" /> macOS (JAR): <a href="https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-1.0.0-mac-jar.zip">PostgreSQLExplainPlanStudio-1.0.0-mac-jar.zip</a>
+Portable JAR (any OS with Java 17+): <a href="https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-1.0.0-jar.zip">PostgreSQLExplainPlanStudio-1.0.0-jar.zip</a>
 <br/>
-To install the <code>jar.zip</code> on macOS:
+To install the portable <code>jar.zip</code>:
 <ul>
-<li>Install <a href="https://adoptium.net/temurin/releases/?version=17">Java 17 or later</a> (choose Intel or Apple Silicon, Temurin or any JRE/JDK)
+<li><strong>macOS Catalina 10.15</strong>
 <ul>
-<li>On <strong>macOS Catalina 10.15</strong>, current Temurin 17 builds break the GUI (<code>JavaRuntimeSupport</code>). Use Temurin <strong>17.0.8</strong> Intel instead:
+<li>Current Temurin 17 builds break the GUI (<code>JavaRuntimeSupport</code>). Use Temurin <strong>17.0.8</strong> Intel instead:
 <ul>
 <li>Download <a href="https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.8%2B7/OpenJDK17U-jdk_x64_mac_hotspot_17.0.8_7.pkg">OpenJDK17U-jdk_x64_mac_hotspot_17.0.8_7.pkg</a></li>
 <li>Install the <code>.pkg</code></li>
@@ -93,13 +93,38 @@ To install the <code>jar.zip</code> on macOS:
 <li>Confirm: <code>java -version</code> shows <code>17.0.8</code></li>
 </ul>
 </li>
+<li>Unzip the <code>jar.zip</code> file</li>
+<li>Open a terminal and navigate to the unzipped directory</li>
+<li><code>chmod +x peps.sh</code> then <code>./peps.sh</code></li>
+<li>Or, <code>java -jar postgresql-explain-plan-studio-1.0.0.jar</code></li>
 </ul>
 </li>
+<li><strong>Other macOS</strong>
+<ul>
+<li>Install <a href="https://adoptium.net/temurin/releases/?version=17">Java 17 or later</a> (Intel or Apple Silicon)</li>
 <li>Unzip the <code>jar.zip</code> file</li>
-<li>Open a terminal</li>
-<li>Navigate to the unzipped file's new directory</li>
-<li><code>chmod +x peps.sh</code></li>
-<li>To launch: <code>./peps.sh</code></li>
+<li>Open a terminal and navigate to the unzipped directory</li>
+<li><code>chmod +x peps.sh</code> then <code>./peps.sh</code></li>
+<li>Or, <code>java -jar postgresql-explain-plan-studio-1.0.0.jar</code></li>
+</ul>
+</li>
+<li><strong>Windows</strong>
+<ul>
+<li>Install <a href="https://adoptium.net/temurin/releases/?version=17">Java 17 or later</a></li>
+<li>Unzip the <code>jar.zip</code> file</li>
+<li>Open Command Prompt or PowerShell and navigate to the unzipped directory</li>
+<li><code>java -jar postgresql-explain-plan-studio-1.0.0.jar</code></li>
+</ul>
+</li>
+<li><strong>Linux</strong>
+<ul>
+<li>Install <a href="https://adoptium.net/temurin/releases/?version=17">Java 17 or later</a></li>
+<li>Unzip the <code>jar.zip</code> file</li>
+<li>Open a terminal and navigate to the unzipped directory</li>
+<li><code>chmod +x peps.sh</code> then <code>./peps.sh</code></li>
+<li>Or, <code>java -jar postgresql-explain-plan-studio-1.0.0.jar</code></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>

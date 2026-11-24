@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Launch PEPS from the shaded jar sitting next to this script.
-# Works on Intel and Apple Silicon Macs — needs JDK/JRE 17+ on PATH (no native .app).
+# Optional Unix/macOS helper for the portable JAR zip (same folder as the shaded jar).
+# Works on Intel and Apple Silicon Macs and other Unix hosts — needs JDK/JRE 17+ on PATH.
+# On any OS you can also run: java -jar postgresql-explain-plan-studio-*.jar
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -17,7 +18,8 @@ if [[ -z "${jar}" || ! -f "${jar}" ]]; then
   exit 1
 fi
 
-# -Xdock:name sets the Dock label; apple.awt.application.name is also set in main().
+# -Xdock:name sets the Dock label on macOS; ignored elsewhere.
+# apple.awt.application.name is also set in main().
 exec java \
   -Xdock:name="PostgreSQL Explain Plan Studio" \
   -jar "$jar" "$@"

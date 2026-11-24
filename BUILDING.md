@@ -108,15 +108,21 @@ objdump -T target/jpackage/PostgreSQLExplainPlanStudio/bin/PostgreSQLExplainPlan
   | grep -oE 'GLIBC_[0-9.]+' | sort -Vu
 ```
 
-### macOS — JAR zip (any Mac + JDK 17+)
+### Portable JAR zip (any OS + JDK 17+)
 
-One JAR works on Intel and Apple Silicon when a JDK is installed. Build on Windows (no Mac required):
+Shaded JAR that runs anywhere Java 17+ is installed (Windows, Linux, macOS — Intel or Apple Silicon). Build on Windows (no Mac required):
 
 ```powershell
-.\scripts\pack-mac-jar.ps1
+.\scripts\pack-jar.ps1
 ```
 
-On the Mac: unzip `target/PostgreSQLExplainPlanStudio-<version>-mac-jar.zip`, then `chmod +x peps.sh && ./peps.sh`.
+Unzip `target/PostgreSQLExplainPlanStudio-<version>-jar.zip`, then:
+
+```bash
+java -jar postgresql-explain-plan-studio-<version>.jar
+```
+
+On macOS/Unix you can also `chmod +x peps.sh && ./peps.sh`.
 
 ### macOS — `.app` / `.dmg` (bundled JRE)
 

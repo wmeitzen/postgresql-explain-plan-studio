@@ -51,7 +51,7 @@
   Skip Ubuntu zip/.deb
 
 .PARAMETER SkipMacApp
-  Skip macOS .app zip/DMG remote build (still builds mac-jar.zip unless -SkipBuild)
+  Skip macOS .app zip/DMG remote build (still builds portable jar.zip unless -SkipBuild)
 
 .PARAMETER SkipGit
   Do not commit, tag, or push
@@ -89,7 +89,7 @@ $MacOnlyRelease = $false
 if ($MacOnlyRelease) {
 	$SkipUbuntu = $true
 	Write-Host "[dev-release] TEMPORARY Mac-only mode: Windows jpackage + Ubuntu zip/.deb are skipped."
-	Write-Host "[dev-release] Mac assets: JAR zip (Windows) + .app zip/DMG (SSH to Mac VM)."
+	Write-Host "[dev-release] Mac assets: portable JAR zip (Windows) + .app zip/DMG (SSH to Mac VM)."
 }
 
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
@@ -215,7 +215,7 @@ function Update-ReadmeDownloads([string]$NewVersion) {
 	$winIcon = '<img src="docs/readme-icons/windows.svg" width="16" height="16" alt="Windows" />'
 	$linuxIcon = '<img src="docs/readme-icons/linux.svg" width="16" height="16" alt="Linux" />'
 	$macIcon = '<img src="docs/readme-icons/apple.svg" width="16" height="16" alt="macOS" />'
-	$macJar = "PostgreSQLExplainPlanStudio-$NewVersion-mac-jar.zip"
+	$macJar = "PostgreSQLExplainPlanStudio-$NewVersion-jar.zip"
 	# Catalina Intel release VM produces mac-x64; arm64 can be added later if built.
 	$macAppZip = "PostgreSQLExplainPlanStudio-$NewVersion-mac-x64.zip"
 	$macDmg = "PostgreSQLExplainPlanStudio-$NewVersion-mac-x64.dmg"
@@ -297,13 +297,13 @@ To install the <code>x64.zip</code> on macOS:
 
 <ul>
 <li>
-$macIcon macOS (JAR): <a href="$base/$macJar">$macJar</a>
+Portable JAR (any OS with Java 17+): <a href="$base/$macJar">$macJar</a>
 <br/>
-To install the <code>jar.zip</code> on macOS:
+To install the portable <code>jar.zip</code>:
 <ul>
-<li>Install <a href="https://adoptium.net/temurin/releases/?version=17">Java 17 or later</a> (choose Intel or Apple Silicon, Temurin or any JRE/JDK)
+<li><strong>macOS Catalina 10.15</strong>
 <ul>
-<li>On <strong>macOS Catalina 10.15</strong>, current Temurin 17 builds break the GUI (<code>JavaRuntimeSupport</code>). Use Temurin <strong>17.0.8</strong> Intel instead:
+<li>Current Temurin 17 builds break the GUI (<code>JavaRuntimeSupport</code>). Use Temurin <strong>17.0.8</strong> Intel instead:
 <ul>
 <li>Download <a href="https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.8%2B7/OpenJDK17U-jdk_x64_mac_hotspot_17.0.8_7.pkg">OpenJDK17U-jdk_x64_mac_hotspot_17.0.8_7.pkg</a></li>
 <li>Install the <code>.pkg</code></li>
@@ -313,13 +313,35 @@ To install the <code>jar.zip</code> on macOS:
 <li>Confirm: <code>java -version</code> shows <code>17.0.8</code></li>
 </ul>
 </li>
+<li>Unzip the <code>jar.zip</code> file</li>
+<li>Open a terminal and navigate to the unzipped directory</li>
+<li><code>chmod +x peps.sh</code> then <code>./peps.sh</code> (or <code>java -jar postgresql-explain-plan-studio-$NewVersion.jar</code>)</li>
 </ul>
 </li>
+<li><strong>Other macOS</strong>
+<ul>
+<li>Install <a href="https://adoptium.net/temurin/releases/?version=17">Java 17 or later</a> (Intel or Apple Silicon)</li>
 <li>Unzip the <code>jar.zip</code> file</li>
-<li>Open a terminal</li>
-<li>Navigate to the unzipped file's new directory</li>
-<li><code>chmod +x peps.sh</code></li>
-<li>To launch: <code>./peps.sh</code></li>
+<li>Open a terminal and navigate to the unzipped directory</li>
+<li><code>chmod +x peps.sh</code> then <code>./peps.sh</code> (or <code>java -jar postgresql-explain-plan-studio-$NewVersion.jar</code>)</li>
+</ul>
+</li>
+<li><strong>Windows</strong>
+<ul>
+<li>Install <a href="https://adoptium.net/temurin/releases/?version=17">Java 17 or later</a></li>
+<li>Unzip the <code>jar.zip</code> file</li>
+<li>Open Command Prompt or PowerShell and navigate to the unzipped directory</li>
+<li><code>java -jar postgresql-explain-plan-studio-$NewVersion.jar</code></li>
+</ul>
+</li>
+<li><strong>Linux</strong>
+<ul>
+<li>Install <a href="https://adoptium.net/temurin/releases/?version=17">Java 17 or later</a></li>
+<li>Unzip the <code>jar.zip</code> file</li>
+<li>Open a terminal and navigate to the unzipped directory</li>
+<li><code>java -jar postgresql-explain-plan-studio-$NewVersion.jar</code> (or <code>chmod +x peps.sh</code> then <code>./peps.sh</code>)</li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>
@@ -1055,7 +1077,7 @@ $WindowsZipName = "PostgreSQLExplainPlanStudio-$Version-windows-x64.zip"
 $WindowsExeName = "PostgreSQLExplainPlanStudio-$Version-windows-x64-installer.exe"
 $LinuxZipName = "PostgreSQLExplainPlanStudio-$Version-linux-x64.zip"
 $LinuxDebName = "PostgreSQLExplainPlanStudio-$Version-linux-x64.deb"
-$MacJarName = "PostgreSQLExplainPlanStudio-$Version-mac-jar.zip"
+$MacJarName = "PostgreSQLExplainPlanStudio-$Version-jar.zip"
 # Default Intel Catalina names; Build-MacAppPackage may produce mac-arm64 instead.
 $MacAppZipName = "PostgreSQLExplainPlanStudio-$Version-mac-x64.zip"
 $MacDmgName = "PostgreSQLExplainPlanStudio-$Version-mac-x64.dmg"
@@ -1107,14 +1129,14 @@ Write-Host "This will:"
 Write-Host "  - Action: $ReleaseAction$(if ($IsPrerelease) { ' (GitHub Pre-release)' } elseif ($IsStableChannel) { ' (Stable / Latest)' } else { '' })"
 Write-Host "  - $(if ($SkipGit) { 'Skip git commit/tag/push' } else { "Commit/tag/push $Tag" })"
 if ($MacOnlyRelease) {
-	Write-Host "  - $(if ($SkipBuild) { 'Skip Mac JAR zip build' } else { 'Build macOS JAR zip (pack-mac-jar.ps1)' })  [TEMPORARY Mac-only]"
+	Write-Host "  - $(if ($SkipBuild) { 'Skip portable JAR zip build' } else { 'Build portable JAR zip (pack-jar.ps1)' })  [TEMPORARY Mac-only]"
 	Write-Host "  - $(if ($SkipBuild -or $SkipMacApp) { 'Skip Mac .app build' } else { "Build macOS .app zip/DMG on $MacSsh" })  [TEMPORARY Mac-only]"
 	Write-Host "  - Skip Windows jpackage  [TEMPORARY]"
 	Write-Host "  - Skip Ubuntu zip/.deb  [TEMPORARY]"
 } else {
 	Write-Host "  - $(if ($SkipBuild) { 'Skip Windows build' } else { 'Build Windows jpackage zip (+ .exe installer if WiX is available)' })"
 	Write-Host "  - $(if ($SkipBuild -or $SkipUbuntu) { 'Skip Ubuntu build' } else { "Build Ubuntu jpackage zip + .deb on $UbuntuSsh" })"
-	Write-Host "  - $(if ($SkipBuild) { 'Skip Mac JAR zip' } else { 'Build macOS JAR zip (pack-mac-jar.ps1)' })"
+	Write-Host "  - $(if ($SkipBuild) { 'Skip portable JAR zip' } else { 'Build portable JAR zip (pack-jar.ps1)' })"
 	Write-Host "  - $(if ($SkipBuild -or $SkipMacApp) { 'Skip Mac .app build' } else { "Build macOS .app zip/DMG on $MacSsh" })"
 }
 Write-Host "  - Upload available release assets to GitHub release $Tag"
@@ -1139,12 +1161,12 @@ $progressSteps = @()
 if (-not $SkipGit) { $progressSteps += "Commit, tag, and push $Tag" }
 if (-not $SkipBuild) {
 	if ($MacOnlyRelease) {
-		$progressSteps += "Build macOS JAR zip"
+		$progressSteps += "Build portable JAR zip"
 		if (-not $SkipMacApp) { $progressSteps += "Build macOS .app zip/DMG" }
 	} else {
 		$progressSteps += "Build Windows jpackage packages"
 		if (-not $SkipUbuntu) { $progressSteps += "Build Ubuntu zip + .deb" }
-		$progressSteps += "Build macOS JAR zip"
+		$progressSteps += "Build portable JAR zip"
 		if (-not $SkipMacApp) { $progressSteps += "Build macOS .app zip/DMG" }
 	}
 }
@@ -1187,14 +1209,14 @@ try {
 
 	if (-not $SkipBuild) {
 		if ($MacOnlyRelease) {
-			Update-ReleaseProgress "Build macOS JAR zip"
-			$packMac = Join-Path $PSScriptRoot "pack-mac-jar.ps1"
-			& $packMac
+			Update-ReleaseProgress "Build portable JAR zip"
+			$packJar = Join-Path $PSScriptRoot "pack-jar.ps1"
+			& $packJar
 			if ($LASTEXITCODE -ne 0) {
-				throw "pack-mac-jar.ps1 failed with exit $LASTEXITCODE"
+				throw "pack-jar.ps1 failed with exit $LASTEXITCODE"
 			}
 			if (-not (Test-Path $MacJar)) {
-				throw "Missing Mac JAR zip: $MacJar"
+				throw "Missing portable JAR zip: $MacJar"
 			}
 
 			if (-not $SkipMacApp) {
@@ -1232,14 +1254,14 @@ try {
 					-DestZip $LinuxZip -DestDeb $LinuxDeb
 			}
 
-			Update-ReleaseProgress "Build macOS JAR zip"
-			$packMac = Join-Path $PSScriptRoot "pack-mac-jar.ps1"
-			& $packMac -SkipBuild
+			Update-ReleaseProgress "Build portable JAR zip"
+			$packJar = Join-Path $PSScriptRoot "pack-jar.ps1"
+			& $packJar -SkipBuild
 			if ($LASTEXITCODE -ne 0) {
-				throw "pack-mac-jar.ps1 failed with exit $LASTEXITCODE"
+				throw "pack-jar.ps1 failed with exit $LASTEXITCODE"
 			}
 			if (-not (Test-Path $MacJar)) {
-				throw "Missing Mac JAR zip: $MacJar"
+				throw "Missing portable JAR zip: $MacJar"
 			}
 
 			if (-not $SkipMacApp) {
@@ -1287,7 +1309,7 @@ try {
 		}
 	}
 	if (-not (Test-Path $MacJar)) {
-		throw "Mac JAR zip missing: $MacJar"
+		throw "Portable JAR zip missing: $MacJar"
 	}
 	if (-not $SkipMacApp -and -not $SkipBuild -and -not (Test-Path $MacAppZip)) {
 		throw "Mac .app zip missing: $MacAppZip"
@@ -1316,11 +1338,11 @@ $dmgLine- First launch of an unsigned build: right-click the app in Applications
 TEMPORARY Mac-only release iteration (Windows/Linux assets not rebuilt this run).
 
 $macAppNotes
-### macOS (JAR)
+### Portable JAR
 - Asset: ``$MacJarName``
-- Requires JDK 17+ on the Mac
-- Unzip, then: ``chmod +x peps.sh && ./peps.sh``
-- Catalina 10.15: use Temurin **17.0.8** (not current 17.x); set ``JAVA_HOME`` / ``PATH`` to the Temurin ``bin`` before ``./peps.sh``
+- Requires JDK/JRE 17+ on any OS
+- Unzip, then: ``java -jar postgresql-explain-plan-studio-$Version.jar`` (or on macOS/Unix: ``chmod +x peps.sh && ./peps.sh``)
+- Catalina 10.15: use Temurin **17.0.8** (not current 17.x); set ``JAVA_HOME`` / ``PATH`` to the Temurin ``bin`` before launch
 - User data: ``~/.local/share/postgresql-explain-plan-studio/`` (or ``PEPS_DATA_DIR`` / ``-Dpeps.data.dir``)
 "@
 	} else {
@@ -1337,7 +1359,7 @@ $macAppNotes
 		$notes = @"
 ## PostgreSQL Explain Plan Studio v$Version$(if ($IsPrerelease) { ' (Pre-release)' } else { '' })
 
-Bundled Java runtime included (Windows/Linux/macOS app). macOS JAR zip requires a system JDK 17+.
+Bundled Java runtime included (Windows/Linux/macOS app). Portable JAR zip requires a system JDK/JRE 17+.
 
 User data (SQLite plans) lives outside the app install tree:
 - Windows: ``%APPDATA%\PostgreSQLExplainPlanStudio\``
@@ -1353,10 +1375,10 @@ $exeNotes
 - Upgrades: replace the app / reinstall the ``.deb``; leave the data directory above alone
 
 $macAppNotes
-### macOS (JAR)
+### Portable JAR
 - Asset: ``$MacJarName``
-- Unzip, ``chmod +x peps.sh``, install JDK 17+, then ``./peps.sh``
-- Catalina 10.15: use Temurin **17.0.8** (not current 17.x); set ``JAVA_HOME`` / ``PATH`` to the Temurin ``bin`` before ``./peps.sh``
+- Unzip, install JDK/JRE 17+, then ``java -jar postgresql-explain-plan-studio-$Version.jar`` (or on macOS/Unix: ``chmod +x peps.sh && ./peps.sh``)
+- Catalina 10.15: use Temurin **17.0.8** (not current 17.x); set ``JAVA_HOME`` / ``PATH`` to the Temurin ``bin`` before launch
 "@
 	}
 

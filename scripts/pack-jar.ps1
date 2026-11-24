@@ -1,13 +1,13 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-  Build the shaded PEPS jar on Windows and zip it with the macOS launcher.
+  Build the shaded PEPS jar on Windows and zip it as a portable deliverable.
 
 .DESCRIPTION
-  Easiest Mac deliverable: plain JAR + packaging/mac/peps.sh.
+  Portable JAR for any OS with JDK/JRE 17+: shaded jar + packaging/mac/peps.sh helper.
   No Mac host, no Intel/Apple/universal native build, no jpackage .app.
 
-  Output: target/PostgreSQLExplainPlanStudio-<version>-mac-jar.zip
+  Output: target/PostgreSQLExplainPlanStudio-<version>-jar.zip
 #>
 [CmdletBinding()]
 param(
@@ -53,15 +53,15 @@ $launcher = Join-Path $macDir 'peps.sh'
 $macReadme = Join-Path $macDir 'README.txt'
 foreach ($required in @($launcher, $macReadme)) {
 	if (-not (Test-Path -LiteralPath $required)) {
-		throw "Missing Mac packaging file: $required"
+		throw "Missing packaging file: $required"
 	}
 }
 
-$stage = Join-Path $RepoRoot 'target\mac-jar-stage'
-$zipName = "PostgreSQLExplainPlanStudio-$version-mac-jar.zip"
+$stage = Join-Path $RepoRoot 'target\jar-stage'
+$zipName = "PostgreSQLExplainPlanStudio-$version-jar.zip"
 $zipPath = Join-Path $RepoRoot "target\$zipName"
 
-Write-Status "Staging Mac JAR zip…"
+Write-Status "Staging portable JAR zip…"
 if (Test-Path -LiteralPath $stage) {
 	Remove-Item -LiteralPath $stage -Recurse -Force
 }
@@ -77,4 +77,5 @@ if (Test-Path -LiteralPath $zipPath) {
 Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zipPath -Force
 
 Write-Status "Wrote $zipPath"
-Write-Host "On a Mac: unzip, chmod +x peps.sh, install JDK 17+, then ./peps.sh"
+Write-Host "Any OS: unzip, install JDK 17+, then java -jar postgresql-explain-plan-studio-$version.jar"
+Write-Host "macOS/Unix helper: chmod +x peps.sh && ./peps.sh"
