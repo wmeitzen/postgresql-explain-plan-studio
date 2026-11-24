@@ -8788,15 +8788,18 @@ order by id_explain_plan_property;
 		}
 		// Match diagram north Cost % (PEV2): exclusive_cost / max(total_cost), not
 		// inclusive total_cost / sum(all totals).
+		Double exclusiveCost = toDouble(row.get("exclusive_cost"));
+		Double totalCost = toDouble(row.get("total_cost"));
 		Double costPercent = Pev2Metrics.costPercentOfPlan(
-				toDouble(row.get("exclusive_cost")),
-				toDouble(row.get("total_cost")),
-				toDouble(row.get("max_total_cost")));
+				exclusiveCost, totalCost, toDouble(row.get("max_total_cost")));
+		// Same numerator as Cost % (exclusive, else inclusive Total Cost).
+		Double operatorCost = exclusiveCost != null ? exclusiveCost : totalCost;
 
 		CalculatedRowsBuilder rows = new CalculatedRowsBuilder();
 		if (!warningWords.isEmpty()) {
 			rows.add("Warnings", warningWords, true);
 		}
+		appendCalculatedCost(rows, "Operator cost", operatorCost, costWarn);
 		appendCalculatedPercentOfHundred(rows, "Cost %", costPercent, costWarn);
 		appendCalculatedElapsed(rows, "Operator time", exclusiveTimeMs, timeWarn);
 		appendCalculatedPercent(rows, "Operator time %", exclusiveTimeMs, executionTimeMs, timeWarn);
@@ -8931,6 +8934,14 @@ order by id_explain_plan_property;
 		appendCalculatedPercent(rows, "  Of total rows %", actualRows, actualRowsDenom, actualRowsHighlight);
 		appendCalculatedBytes(rows, "  Actual mass", actualMassBytes, actualMassHighlight);
 		appendCalculatedPercent(rows, "  Of total mass %", actualMassBytes, actualMassDenomBytes, actualMassHighlight);
+	}
+
+	private static void appendCalculatedCost(CalculatedRowsBuilder rows, String name, Double cost,
+			boolean highlight) {
+		if (cost == null || !Double.isFinite(cost.doubleValue())) {
+			return;
+		}
+		rows.add(name, Utils.roundValueRequirePrecision(cost.doubleValue(), 2), highlight);
 	}
 
 	private static void appendCalculatedElapsed(CalculatedRowsBuilder rows, String name, Double milliseconds,
