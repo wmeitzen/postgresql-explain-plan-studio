@@ -16,8 +16,6 @@ This mode hides the server, authentication, and SQL command fields. Use it when 
 
 ![Plan text only](images/ss-plan-text-only.png)
 
-<!-- Drop file at docs/user/images/ss-plan-text-only.png -->
-
 ## Connection info and plan
 
 1. Choose **Connection info and plan**.
@@ -31,8 +29,6 @@ Switch back to **Plan text only** at any time to hide the connection and SQL fie
 **Screenshot:** Connection info form
 
 ![Connection info](images/ss-connection-info.png)
-
-<!-- Drop file at docs/user/images/ss-connection-info.png -->
 
 ## Next
 
