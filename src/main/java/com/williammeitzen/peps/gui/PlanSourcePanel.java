@@ -520,10 +520,15 @@ public class PlanSourcePanel extends JPanel {
 				if (!canOpenPlanDiagramTab()) {
 					return;
 				}
+				// Wait cursor must be cleared here: paintComponent only clears when a
+				// rebuild runs, so a cached diagram would otherwise leave WAIT stuck.
 				PlanGraphPanel.setDiagramBusyCursor(PlanSourcePanel.this, true);
-				setPlanSourceButtonClicked(SHOW_JSON_PLAN_DIAGRAM);
-
-				selectPlanDiagramTab();
+				try {
+					setPlanSourceButtonClicked(SHOW_JSON_PLAN_DIAGRAM);
+					selectPlanDiagramTab();
+				} finally {
+					PlanGraphPanel.setDiagramBusyCursor(PlanSourcePanel.this, false);
+				}
 				if (bolShowTiming == true) { System.out.println("after PlanSourcePanel.showPlanGraphButton.addActionListener(): " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
 			}
 		});

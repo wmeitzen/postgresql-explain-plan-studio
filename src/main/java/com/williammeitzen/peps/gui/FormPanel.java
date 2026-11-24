@@ -203,7 +203,9 @@ public class FormPanel extends JPanel {
 				if (button == null) {
 					planSource.setPlanSourceButtonClicked(PlanSourcePanel.SHOW_JSON_PLAN_DIAGRAM);
 				}
-				PlanGraphPanel.setDiagramBusyCursor(tabPaneToLink, true);
+				// Do not set WAIT here: repaint() is async, and paintComponent only clears
+				// WAIT when it actually rebuilds — leaving WAIT stuck on a cached diagram.
+				// paintComponent owns the busy cursor for real rebuild work.
 				repaintPlanGraphPanels(tabPaneToLink.getComponentAt(PLAN_DIAGRAM_TAB));
 			}
 		});
@@ -3639,7 +3641,9 @@ public class FormPanel extends JPanel {
 		PlanEvent pEvent = primaryPlan == null ? null : plansMapper.get(primaryPlan.getPlanId());
 		PlanSourcePanel source = pEvent == null ? null : pEvent.getPlanSourcePanel();
 		boolean singlePlan = isSinglePlanSelected();
-		boolean enableDiagram = primaryPlan != null
+		// Plan Diagram is single-plan only (multi-select uses Compare Plans).
+		boolean enableDiagram = singlePlan
+				&& primaryPlan != null
 				&& source != null
 				&& source.hasUsableJsonPlan();
 		tabPaneToLink.setEnabledAt(diagramIdx, enableDiagram);
