@@ -33,7 +33,3 @@ When the other party sends back their analysis, translate it to your real names:
 **Screenshot:** Translate tab
 
 ![Translate tab](images/ss-translate-tab.png)
-
-## Next
-
-- [Customize the UI](08-customize-ui.md)
