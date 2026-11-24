@@ -2,7 +2,7 @@
 
 Graphical viewer for PostgreSQL `EXPLAIN` plans.
 
-## Download
+## Download and Install
 
 <ul>
 <li>

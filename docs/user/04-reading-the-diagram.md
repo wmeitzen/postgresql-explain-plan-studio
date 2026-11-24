@@ -16,8 +16,10 @@ For a selected plan you typically see **Plan Source**, optional **Translate**, *
 
 1. Open **Plan Diagram**.
 2. Click an operator to load **Properties** (property / value table).
-3. Use **Expand all** and **Calculated properties** when you need more detail.
-4. Watch for warning chips on operators (time, cost, rows, filter, heap) — see [Search and warnings](05-search-and-warnings.md).
+3. If an operator has workers, it shows a triangle you can toggle to expand or collapse them; each worker's properties also appear in the Properties pane.
+4. Use **Expand all** and **Calculated properties** when you need more detail.
+5. Watch for warning indicators on operators (time, cost, rows, filter, heap) — see [Warning indicators](05-search-and-warnings.md#warning-indicators).
+6. Use **Line Thickness** and **Percentage By** to choose what the diagram emphasizes — see [Metrics and compare](06-metrics-and-compare.md).
 
 **Screenshot:** Diagram with Properties dock
 
@@ -27,6 +29,7 @@ For a selected plan you typically see **Plan Source**, optional **Translate**, *
 
 ## Zoom and pan
 
+- Drag the diagram to pan.
 - Toolbar: **−** / **+** / **100%** / **Fit**.
 - Optional **Zoom** slider dock.
 - **Ctrl+wheel** (or **Cmd+wheel** on macOS) to zoom.

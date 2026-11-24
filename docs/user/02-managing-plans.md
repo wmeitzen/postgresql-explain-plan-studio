@@ -18,7 +18,7 @@ Organize plans in the **Plans** tree: folders, drag-and-drop, sort, and document
 
 ## Context menu and drag-and-drop
 
-Right-click a plan or folder for the same actions, plus **Compare Plans** and **Sort Now A→Z / Z→A**. Drag plans into folders (or reorder when Manual order is enabled).
+Right-click in the Plans pane (or on a plan or folder) to create a new plan or folder, duplicate plans, and use **Compare Plans** to compare plan values operator by operator. The menu also has **Sort Now A→Z / Z→A**. Drag plans into folders (or reorder when Manual order is enabled).
 
 **Screenshot:** Plans tree with folders
 
