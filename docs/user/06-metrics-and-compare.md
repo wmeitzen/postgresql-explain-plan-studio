@@ -12,7 +12,7 @@ On the diagram toolbar / **Sliders** dock:
 - **Percentage By** — chooses the value shown north of each operator: cost, operator time, or time difference (options depend on plan data). The highest value is red on yellow and the second highest is yellow on dark red, so hotspots stand out.
 - Sliders emphasize hotspots (for example time difference vs cost).
 
-**Screenshot:** Line Thickness set to Actual Rows (the arrow points from the dropdown to a thick edge scaled by that metric)
+**Screenshot:** Line Thickness set to Actual Rows
 
 ![Line Thickness](images/ss-metrics-sliders.png)
 
@@ -24,8 +24,6 @@ On the diagram toolbar / **Sliders** dock:
 **Screenshot:** Compare Plans table
 
 ![Compare Plans](images/ss-compare-plans.png)
-
-<!-- Drop file at docs/user/images/ss-compare-plans.png -->
 
 ## Next
 
