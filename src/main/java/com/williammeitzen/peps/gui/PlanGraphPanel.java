@@ -8065,7 +8065,7 @@ order by id_explain_plan_property;
 						.append(String.format(java.util.Locale.US, "%.0f", heapPct.doubleValue()))
 						.append("% of rows examined)");
 			}
-			block.append("; visibility map may be stale — VACUUM often helps.\n");
+			block.append("; visibility map may be stale -- VACUUM often helps.\n");
 		}
 
 		if (block.length() == 0) {

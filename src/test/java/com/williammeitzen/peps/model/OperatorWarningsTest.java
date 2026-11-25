@@ -125,7 +125,7 @@ class OperatorWarningsTest {
 				OperatorWarnings.tooltipFor(OperatorWarnings.TAG_ROWS));
 		assertEquals("Filter removes high % of rows",
 				OperatorWarnings.tooltipFor(OperatorWarnings.TAG_FILTER));
-		assertEquals("Heap fetch % is high, consider VACUUM",
+		assertEquals("Heap fetch % is high",
 				OperatorWarnings.tooltipFor(OperatorWarnings.TAG_HEAP));
 		assertEquals("Opr time 23%",
 				OperatorWarnings.tooltipFor(OperatorWarnings.TAG_TIME, "23", null, null, null, null, null));
@@ -139,7 +139,7 @@ class OperatorWarningsTest {
 		assertEquals("Filter removes 90% of mass",
 				OperatorWarnings.tooltipFor(OperatorWarnings.TAG_FILTER, null, null, null, "90",
 						OperatorWarnings.METRIC_MASS, null));
-		assertEquals("Heap fetch 12%, consider VACUUM",
+		assertEquals("Heap fetch 12%",
 				OperatorWarnings.tooltipFor(OperatorWarnings.TAG_HEAP, null, null, null, null, null, "12"));
 		assertEquals(null, OperatorWarnings.tooltipFor(""));
 		assertEquals(null, OperatorWarnings.tooltipFor(null));

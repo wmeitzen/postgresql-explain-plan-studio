@@ -12,11 +12,13 @@ import java.awt.event.ComponentEvent;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JCheckBox;
+import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSeparator;
 import javax.swing.JTextArea;
+import javax.swing.JTextField;
 import javax.swing.JViewport;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
@@ -25,6 +27,7 @@ import javax.swing.border.EmptyBorder;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
 import javax.swing.table.JTableHeader;
+import javax.swing.text.JTextComponent;
 import javax.swing.text.View;
 
 /**
@@ -121,8 +124,8 @@ public class OperatorDetailsPanel extends JPanel {
 		calculatedHeading.setOpaque(true);
 		calculatedHeading.setAlignmentX(LEFT_ALIGNMENT);
 
-		redTextNotesSection = new NoteSection("Red Text Notes:");
-		notesSection = new NoteSection("Notes:");
+		redTextNotesSection = new NoteSection("Red Text Notes:", true);
+		notesSection = new NoteSection("Notes:", false);
 
 		// BoxLayout (not BorderLayout.CENTER) so the grid keeps its column preferred
 		// widths — BorderLayout stretches the table and made the Property/Value
@@ -377,24 +380,46 @@ public class OperatorDetailsPanel extends JPanel {
 	/** Heading + wrapped text area that stays viewport-width even when the grid is wider. */
 	private static final class NoteSection {
 		final JPanel block;
-		final JLabel heading;
+		final JComponent heading;
 		final JTextArea area;
 
-		NoteSection(String title) {
-			heading = new JLabel(title);
-			heading.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 12));
-			heading.setBorder(new EmptyBorder(8, 8, 2, 8));
-			heading.setOpaque(true);
+		/**
+		 * @param selectable when true, heading and body stay read-only but can be
+		 *        selected/copied. Appearance stays label-like aside from the system
+		 *        selection highlight while dragging.
+		 */
+		NoteSection(String title, boolean selectable) {
+			Font headingFont = new Font(Font.SANS_SERIF, Font.BOLD, 12);
+			if (selectable) {
+				JTextField headingField = new JTextField(title);
+				headingField.setEditable(false);
+				headingField.setFocusable(true);
+				headingField.setFont(headingFont);
+				headingField.setBorder(new EmptyBorder(8, 8, 2, 8));
+				headingField.setOpaque(true);
+				headingField.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.TEXT_CURSOR));
+				heading = headingField;
+			} else {
+				JLabel headingLabel = new JLabel(title);
+				headingLabel.setFont(headingFont);
+				headingLabel.setBorder(new EmptyBorder(8, 8, 2, 8));
+				headingLabel.setOpaque(true);
+				heading = headingLabel;
+			}
 
 			area = new JTextArea();
 			area.setEditable(false);
-			area.setFocusable(false);
+			area.setFocusable(selectable);
 			area.setLineWrap(true);
 			area.setWrapStyleWord(true);
 			area.setOpaque(true);
 			area.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
 			area.setBorder(new EmptyBorder(0, 8, 8, 8));
 			area.setText("");
+			if (selectable) {
+				// I-beam cues selectability without changing colors or padding.
+				area.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.TEXT_CURSOR));
+			}
 
 			block = new JPanel(new BorderLayout());
 			block.setAlignmentX(LEFT_ALIGNMENT);
@@ -420,6 +445,11 @@ public class OperatorDetailsPanel extends JPanel {
 			if (fg != null) {
 				heading.setForeground(fg);
 				area.setForeground(fg);
+				// Non-editable fields often paint with DisabledTextColor — keep label weight.
+				if (heading instanceof JTextComponent) {
+					((JTextComponent) heading).setDisabledTextColor(fg);
+				}
+				area.setDisabledTextColor(fg);
 			}
 		}
 

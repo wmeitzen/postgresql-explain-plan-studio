@@ -18,8 +18,8 @@ public final class OperatorWarnings {
 	 * Requires {@code /fonts/fa-solid-900.ttf} when painting.
 	 */
 	public static final String TAG_FILTER = "\uF0B0";
-	/** Font Awesome {@code fa-recycle} — heap fetches. */
-	public static final String TAG_HEAP = "\uF1B8";
+	/** Font Awesome {@code fa-dog} — heap fetches (play on “fetch”). */
+	public static final String TAG_HEAP = "\uF6D3";
 
 	/** Default Rows chip: Actual vs Estimated factor ≥ this (Settings-overridable). */
 	public static final double ROWS_WARNING_FACTOR = 10.0;
@@ -429,9 +429,9 @@ public final class OperatorWarnings {
 		}
 		if (TAG_HEAP.equals(tag)) {
 			if (heapPercent != null && !heapPercent.isEmpty()) {
-				return "Heap fetch " + heapPercent + "%, consider VACUUM";
+				return "Heap fetch " + heapPercent + "%";
 			}
-			return "Heap fetch % is high, consider VACUUM";
+			return "Heap fetch % is high";
 		}
 		return null;
 	}
