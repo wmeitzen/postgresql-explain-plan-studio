@@ -1350,11 +1350,16 @@ try {
 		if ($IsPrerelease) {
 			$editFlags += "--prerelease"
 		} else {
+			# Existing releases keep their prior Latest pointer unless --latest is set
+			# (PromoteStable on an already-published tag left Latest on an older release).
 			$editFlags += "--prerelease=false"
+			$editFlags += "--latest"
 		}
 		$createFlags = @()
 		if ($IsPrerelease) {
 			$createFlags += "--prerelease"
+		} else {
+			$createFlags += "--latest"
 		}
 		if ($releaseExists) {
 			Write-Status "Release $Tag already exists — replacing assets"

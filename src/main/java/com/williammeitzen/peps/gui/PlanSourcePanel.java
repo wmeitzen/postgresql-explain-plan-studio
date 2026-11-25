@@ -31,6 +31,7 @@ import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import javax.swing.AbstractButton;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
@@ -667,6 +668,16 @@ public class PlanSourcePanel extends JPanel {
 		return gbc;
 	}
 
+	/** Prevent AbstractButton text ellipsis when a parent tries to shrink the control. */
+	private static void lockButtonLabelWidth(AbstractButton button) {
+		if (button == null) {
+			return;
+		}
+		Dimension pref = button.getPreferredSize();
+		button.setMinimumSize(pref);
+		button.setPreferredSize(pref);
+	}
+
 	private void sizeField(Component field, int width) {
 		int height = Math.max(field.getPreferredSize().height, 24);
 		Dimension size = new Dimension(width, height);
@@ -723,12 +734,15 @@ public class PlanSourcePanel extends JPanel {
 		panel.add(planSourceFromQueryPlanNameField, fieldGbc(1, row++, 3));
 
 		panel.add(sourceModeLabel, labelGbc(0, row));
-		JPanel sourceModePanel = new JPanel();
-		sourceModePanel.setLayout(new BoxLayout(sourceModePanel, BoxLayout.X_AXIS));
+		// FlowLayout keeps each radio at its preferred width. BoxLayout.X_AXIS was
+		// willing to shrink them on narrow layouts, which truncated
+		// "Connection info and plan" to "Connection info and pl...".
+		JPanel sourceModePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 0));
 		sourceModePanel.setOpaque(false);
 		sourceModePanel.add(sourceModePasteRadio);
-		sourceModePanel.add(Box.createHorizontalStrut(12));
 		sourceModePanel.add(sourceModeConnectRadio);
+		lockButtonLabelWidth(sourceModePasteRadio);
+		lockButtonLabelWidth(sourceModeConnectRadio);
 		panel.add(sourceModePanel, fieldGbc(1, row++, 3));
 
 		sectionHeaderServer = createSectionHeader("Server");
@@ -1061,15 +1075,29 @@ public class PlanSourcePanel extends JPanel {
 		return planName;
 	}
 */
-/*
-	public int getIdExplainPlan() {
-		return idExplainPlan;
+	/** Draft for Translate tab input; survives Anonymize off/on without a per-keystroke DB write. */
+	private String translateAnonymizedText = "";
+
+	public String getTranslateAnonymizedText() {
+		return translateAnonymizedText == null ? "" : translateAnonymizedText;
 	}
-	
-	public void setIdExplainPlan(int idExplainPlan) {
-		this.idExplainPlan = idExplainPlan;
+
+	public void setTranslateAnonymizedText(String text) {
+		this.translateAnonymizedText = text == null ? "" : text;
 	}
-*/
+
+	/** Same id resolution as anonymize flag persistence ({@code getIdExplainPlan} is unused/commented out). */
+	public Integer resolveOwnPlanId() {
+		FormPanel formPanel = findFormPanel();
+		if (formPanel == null) {
+			return null;
+		}
+		Integer planId = formPanel.findPlanIdForSource(this);
+		if (planId == null) {
+			planId = formPanel.getSelectedPlanId();
+		}
+		return planId;
+	}
 	public String getJsonPlanText() {
 		if (isAnonymizeEnabled()) {
 			return originalPlanText == null ? "" : originalPlanText;

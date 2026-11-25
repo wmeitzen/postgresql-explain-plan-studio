@@ -1149,6 +1149,7 @@ south_1_fontmetrics_width = null;
 		ensureExplainPlansColumn("sort_order", "integer not null default 0");
 		ensureExplainPlansColumn("anonymize", "integer not null default 0");
 		ensureExplainPlansColumn("anonymize_aliases", "integer not null default 1");
+		ensureExplainPlansColumn("translate_anonymized_text", "text");
 		backfillPlanTreeSortOrders(dblDBConfigVersion);
 		Database.dml("create unique index if not exists idx_explain_plans_folder_name\n"
 				+ "on explain_plans (ifnull(folder_id, -1), plan_name);");
@@ -1354,6 +1355,37 @@ south_1_fontmetrics_width = null;
 			ps.executeUpdate();
 		} catch (SQLException ex) {
 			System.out.println("function Database.updateExplainPlanAnonymizeFlags()");
+			ex.printStackTrace();
+		}
+	}
+
+	/** Translate tab input (anonymized text to translate); saved on focus lost, not per keystroke. */
+	public static String loadExplainPlanTranslateText(int idExplainPlan) {
+		if (objConnection == null) {
+			return "";
+		}
+		ensureExplainPlansColumn("translate_anonymized_text", "text");
+		JsonObject row = row("select translate_anonymized_text from explain_plans where id_explain_plan = "
+				+ idExplainPlan);
+		if (row == null || row.get("translate_anonymized_text") == null) {
+			return "";
+		}
+		Object value = row.get("translate_anonymized_text");
+		return value == null ? "" : String.valueOf(value);
+	}
+
+	public static void updateExplainPlanTranslateText(int idExplainPlan, String text) {
+		if (objConnection == null) {
+			return;
+		}
+		ensureExplainPlansColumn("translate_anonymized_text", "text");
+		String sql = "update explain_plans set translate_anonymized_text = ? where id_explain_plan = ?";
+		try (PreparedStatement ps = objConnection.prepareStatement(sql)) {
+			ps.setString(1, nullToEmpty(text));
+			ps.setInt(2, idExplainPlan);
+			ps.executeUpdate();
+		} catch (SQLException ex) {
+			System.out.println("function Database.updateExplainPlanTranslateText()");
 			ex.printStackTrace();
 		}
 	}

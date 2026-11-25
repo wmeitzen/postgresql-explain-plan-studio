@@ -334,6 +334,8 @@ public class FormPanel extends JPanel {
 					Utils.objectToBoolean(jsnRow.get("anonymize")),
 					jsnRow.get("anonymize_aliases") == null
 							|| Utils.objectToBoolean(jsnRow.get("anonymize_aliases")));
+			newPlanSourcePanel.setTranslateAnonymizedText(
+					Database.loadExplainPlanTranslateText(newPlanId.intValue()));
 
 			newPlanGraphPanel.setIDExplainPlan(newPlanId);
 			
@@ -3598,6 +3600,11 @@ public class FormPanel extends JPanel {
 			translatePanel.setPlanSourcePanel(sourcePanel);
 			tabPaneToLink.insertTab(getTranslateTabName(), null, translatePanel, null, 1);
 		} else if (!wantTranslate && translateIdx >= 0) {
+			Component closing = tabPaneToLink.getComponentAt(translateIdx);
+			if (closing instanceof TranslateAnonymizedPanel) {
+				// Tab removal may skip focusLost; flush translate input first.
+				((TranslateAnonymizedPanel) closing).persistInputToDatabase();
+			}
 			if (tabPaneToLink.getSelectedIndex() == translateIdx) {
 				tabPaneToLink.setSelectedIndex(0);
 			}

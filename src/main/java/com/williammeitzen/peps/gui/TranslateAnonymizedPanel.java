@@ -4,6 +4,8 @@ import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Font;
+import java.awt.event.FocusAdapter;
+import java.awt.event.FocusEvent;
 import java.util.List;
 import java.util.Map;
 
@@ -20,6 +22,7 @@ import javax.swing.border.EmptyBorder;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 
+import com.williammeitzen.peps.model.Database;
 import com.williammeitzen.peps.model.PlanAnonymizer;
 
 /**
@@ -47,6 +50,9 @@ public class TranslateAnonymizedPanel extends JPanel {
 	private boolean showingWarning;
 	private PlanSourcePanel planSourcePanel;
 	private boolean syncing;
+	/** Plan id whose translate input is currently shown (null = none loaded yet). */
+	private Integer loadedPlanId;
+	private boolean loadingInput;
 
 	public TranslateAnonymizedPanel() {
 		super(new BorderLayout(0, 8));
@@ -138,6 +144,13 @@ public class TranslateAnonymizedPanel extends JPanel {
 				translateLive();
 			}
 		});
+		// Persist on blur (not every keystroke); also flushed when Anonymize hides this tab.
+		inputArea.addFocusListener(new FocusAdapter() {
+			@Override
+			public void focusLost(FocusEvent e) {
+				persistInputToDatabase();
+			}
+		});
 	}
 
 	private static void sizeFlexibleTextArea(JScrollPane scrollPane) {
@@ -150,11 +163,59 @@ public class TranslateAnonymizedPanel extends JPanel {
 
 	public void setPlanSourcePanel(PlanSourcePanel planSourcePanel) {
 		this.planSourcePanel = planSourcePanel;
+		loadInputIfNeeded();
 		translateLive();
 	}
 
+	/**
+	 * Write the current input to the plan draft + DB. Call before destroying this tab
+	 * (Anonymize off) so focusLost is not the only save path.
+	 */
+	public void persistInputToDatabase() {
+		if (loadingInput || planSourcePanel == null) {
+			return;
+		}
+		String text = inputArea.getText();
+		planSourcePanel.setTranslateAnonymizedText(text);
+		Integer planId = resolvePlanId();
+		if (planId != null) {
+			Database.updateExplainPlanTranslateText(planId.intValue(), text);
+			loadedPlanId = planId;
+		}
+	}
+
+	private Integer resolvePlanId() {
+		return planSourcePanel == null ? null : planSourcePanel.resolveOwnPlanId();
+	}
+
+	private void loadInputIfNeeded() {
+		if (planSourcePanel == null) {
+			return;
+		}
+		Integer planId = resolvePlanId();
+		// Only replace the editor when the plan changes (or first attach). Otherwise a
+		// re-entrant setPlanSourcePanel would wipe unpersisted keystrokes.
+		if (planId != null && loadedPlanId != null && planId.equals(loadedPlanId)) {
+			return;
+		}
+		String draft = planSourcePanel.getTranslateAnonymizedText();
+		if (draft.isEmpty() && planId != null) {
+			draft = Database.loadExplainPlanTranslateText(planId.intValue());
+			planSourcePanel.setTranslateAnonymizedText(draft);
+		}
+		loadingInput = true;
+		syncing = true;
+		try {
+			inputArea.setText(planSourcePanel.getTranslateAnonymizedText());
+			loadedPlanId = planId;
+		} finally {
+			syncing = false;
+			loadingInput = false;
+		}
+	}
+
 	private void translateLive() {
-		if (syncing) {
+		if (syncing || loadingInput) {
 			return;
 		}
 		String input = inputArea.getText();
