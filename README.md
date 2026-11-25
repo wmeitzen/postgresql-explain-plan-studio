@@ -6,19 +6,19 @@ Graphical viewer for PostgreSQL `EXPLAIN` plans.
 
 <ul>
 <li>
-<img src="docs/readme-icons/windows.svg" width="16" height="16" alt="Windows" /> Windows installer: <a href="https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-1.0.0-windows-x64-installer.exe">PostgreSQLExplainPlanStudio-1.0.0-windows-x64-installer.exe</a>
+<img src="docs/readme-icons/windows.svg" width="16" height="16" alt="Windows" /> Windows installer: <a href="https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-1.0.1-windows-x64-installer.exe">PostgreSQLExplainPlanStudio-1.0.1-windows-x64-installer.exe</a>
 </li>
 </ul>
 
 <ul>
 <li>
-<img src="docs/readme-icons/windows.svg" width="16" height="16" alt="Windows" /> Windows zip: <a href="https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-1.0.0-windows-x64.zip">PostgreSQLExplainPlanStudio-1.0.0-windows-x64.zip</a>
+<img src="docs/readme-icons/windows.svg" width="16" height="16" alt="Windows" /> Windows zip: <a href="https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-1.0.1-windows-x64.zip">PostgreSQLExplainPlanStudio-1.0.1-windows-x64.zip</a>
 </li>
 </ul>
 
 <ul>
 <li>
-<img src="docs/readme-icons/linux.svg" width="16" height="16" alt="Linux" /> Linux zip: <a href="https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-1.0.0-linux-x64.zip">PostgreSQLExplainPlanStudio-1.0.0-linux-x64.zip</a>
+<img src="docs/readme-icons/linux.svg" width="16" height="16" alt="Linux" /> Linux zip: <a href="https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-1.0.1-linux-x64.zip">PostgreSQLExplainPlanStudio-1.0.1-linux-x64.zip</a>
 <br/>
 To install the <code>linux-x64.zip</code> on Linux:
 <ul>
@@ -33,12 +33,12 @@ To install the <code>linux-x64.zip</code> on Linux:
 
 <ul>
 <li>
-<img src="docs/readme-icons/linux.svg" width="16" height="16" alt="Linux" /> Linux <code>.deb</code>: <a href="https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-1.0.0-linux-x64.deb">PostgreSQLExplainPlanStudio-1.0.0-linux-x64.deb</a>
+<img src="docs/readme-icons/linux.svg" width="16" height="16" alt="Linux" /> Linux <code>.deb</code>: <a href="https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-1.0.1-linux-x64.deb">PostgreSQLExplainPlanStudio-1.0.1-linux-x64.deb</a>
 <br/>
 To install the <code>.deb</code> on Linux:
 <ul>
 <li>Navigate to the directory with the downloaded <code>.deb</code> file</li>
-<li><code>sudo apt install ./PostgreSQLExplainPlanStudio-1.0.0-linux-x64.deb</code></li>
+<li><code>sudo apt install ./PostgreSQLExplainPlanStudio-1.0.1-linux-x64.deb</code></li>
 <li>If apt prints an <code>N:</code> note about <code>_apt</code> / Permission denied while installing from your home folder (for example <code>Downloads</code>), you can ignore it when the package finishes with <code>Setting up postgresql-explain-plan-studio</code></li>
 <li>To launch: open <strong>PostgreSQL Explain Plan Studio</strong> from the applications menu, or run <code>PostgreSQLExplainPlanStudio</code></li>
 </ul>
@@ -47,7 +47,7 @@ To install the <code>.deb</code> on Linux:
 
 <ul>
 <li>
-<img src="docs/readme-icons/apple.svg" width="16" height="16" alt="macOS" /> macOS disk image: <a href="https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-1.0.0-mac-x64.dmg">PostgreSQLExplainPlanStudio-1.0.0-mac-x64.dmg</a>
+<img src="docs/readme-icons/apple.svg" width="16" height="16" alt="macOS" /> macOS disk image: <a href="https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-1.0.1-mac-x64.dmg">PostgreSQLExplainPlanStudio-1.0.1-mac-x64.dmg</a>
 <br/>
 To install the <code>.dmg</code> on macOS:
 <ul>
@@ -62,7 +62,7 @@ To install the <code>.dmg</code> on macOS:
 
 <ul>
 <li>
-<img src="docs/readme-icons/apple.svg" width="16" height="16" alt="macOS" /> macOS app zip: <a href="https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-1.0.0-mac-x64.zip">PostgreSQLExplainPlanStudio-1.0.0-mac-x64.zip</a>
+<img src="docs/readme-icons/apple.svg" width="16" height="16" alt="macOS" /> macOS app zip: <a href="https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-1.0.1-mac-x64.zip">PostgreSQLExplainPlanStudio-1.0.1-mac-x64.zip</a>
 <br/>
 To install the <code>x64.zip</code> on macOS:
 <ul>
@@ -77,7 +77,7 @@ To install the <code>x64.zip</code> on macOS:
 
 <ul>
 <li>
-Portable JAR (any OS with Java 17+): <a href="https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-1.0.0-mac-jar.zip">PostgreSQLExplainPlanStudio-1.0.0-mac-jar.zip</a>
+Portable JAR (any OS with Java 17+): <a href="https://github.com/wmeitzen/postgresql-explain-plan-studio/releases/latest/download/PostgreSQLExplainPlanStudio-1.0.1-jar.zip">PostgreSQLExplainPlanStudio-1.0.1-jar.zip</a>
 <br/>
 To install the portable <code>jar.zip</code>:
 <ul>
@@ -95,8 +95,7 @@ To install the portable <code>jar.zip</code>:
 </li>
 <li>Unzip the <code>jar.zip</code> file</li>
 <li>Open a terminal and navigate to the unzipped directory</li>
-<li><code>chmod +x peps.sh</code> then <code>./peps.sh</code></li>
-<li>Or, <code>java -jar postgresql-explain-plan-studio-1.0.0.jar</code></li>
+<li><code>chmod +x peps.sh</code> then <code>./peps.sh</code> (or <code>java -jar postgresql-explain-plan-studio-1.0.1.jar</code>)</li>
 </ul>
 </li>
 <li><strong>Other macOS</strong>
@@ -104,8 +103,7 @@ To install the portable <code>jar.zip</code>:
 <li>Install <a href="https://adoptium.net/temurin/releases/?version=17">Java 17 or later</a> (Intel or Apple Silicon)</li>
 <li>Unzip the <code>jar.zip</code> file</li>
 <li>Open a terminal and navigate to the unzipped directory</li>
-<li><code>chmod +x peps.sh</code> then <code>./peps.sh</code></li>
-<li>Or, <code>java -jar postgresql-explain-plan-studio-1.0.0.jar</code></li>
+<li><code>chmod +x peps.sh</code> then <code>./peps.sh</code> (or <code>java -jar postgresql-explain-plan-studio-1.0.1.jar</code>)</li>
 </ul>
 </li>
 <li><strong>Windows</strong>
@@ -113,7 +111,7 @@ To install the portable <code>jar.zip</code>:
 <li>Install <a href="https://adoptium.net/temurin/releases/?version=17">Java 17 or later</a></li>
 <li>Unzip the <code>jar.zip</code> file</li>
 <li>Open Command Prompt or PowerShell and navigate to the unzipped directory</li>
-<li><code>java -jar postgresql-explain-plan-studio-1.0.0.jar</code></li>
+<li><code>java -jar postgresql-explain-plan-studio-1.0.1.jar</code></li>
 </ul>
 </li>
 <li><strong>Linux</strong>
@@ -121,8 +119,7 @@ To install the portable <code>jar.zip</code>:
 <li>Install <a href="https://adoptium.net/temurin/releases/?version=17">Java 17 or later</a></li>
 <li>Unzip the <code>jar.zip</code> file</li>
 <li>Open a terminal and navigate to the unzipped directory</li>
-<li><code>chmod +x peps.sh</code> then <code>./peps.sh</code></li>
-<li>Or, <code>java -jar postgresql-explain-plan-studio-1.0.0.jar</code></li>
+<li><code>java -jar postgresql-explain-plan-studio-1.0.1.jar</code> (or <code>chmod +x peps.sh</code> then <code>./peps.sh</code>)</li>
 </ul>
 </li>
 </ul>

@@ -202,7 +202,7 @@ function Set-ProjectVersion([string]$NewVersion) {
 }
 
 function Update-ReadmeDownloads([string]$NewVersion) {
-	# Keep README ## Download links in sync with release asset names (incl. linux-x64.deb).
+	# Keep README ## Download and Install links in sync with release asset names.
 	$readmePath = Join-Path $RepoRoot "README.md"
 	if (-not (Test-Path -LiteralPath $readmePath)) {
 		throw "Missing README.md at $readmePath"
@@ -222,7 +222,7 @@ function Update-ReadmeDownloads([string]$NewVersion) {
 	# HTML lists (one <ul> per download) keep consistent disc bullets and a modest gap
 	# between major items. Markdown list + <br>/&nbsp; hacks break markers or spacing.
 	$downloadBlock = @"
-## Download
+## Download and Install
 
 <ul>
 <li>
@@ -353,11 +353,12 @@ All [releases](https://github.com/wmeitzen/postgresql-explain-plan-studio/releas
 	$raw = Get-Content -LiteralPath $readmePath -Raw
 	# Normalize newlines for a reliable match, then restore Windows CRLF on write.
 	$normalized = $raw -replace "`r`n", "`n"
-	# Match Download through All releases, plus the Stable/Pre-release blurb when present.
-	$pattern = '(?s)## Download\n.*?All \[releases\]\(https://github\.com/wmeitzen/postgresql-explain-plan-studio/releases\)\.\n(?:\n\*\*Stable\*\* is the GitHub \*\*Latest\*\* release \(links above\)\. \*\*Pre-release\*\* builds are marked Pre-release on the \[releases\]\(https://github\.com/wmeitzen/postgresql-explain-plan-studio/releases\) page and do not replace Latest\.\n)?'
+	# Match "## Download" or "## Download and Install" through All releases, plus the
+	# Stable/Pre-release blurb when present.
+	$pattern = '(?s)## Download(?: and Install)?\n.*?All \[releases\]\(https://github\.com/wmeitzen/postgresql-explain-plan-studio/releases\)\.\n(?:\n\*\*Stable\*\* is the GitHub \*\*Latest\*\* release \(links above\)\. \*\*Pre-release\*\* builds are marked Pre-release on the \[releases\]\(https://github\.com/wmeitzen/postgresql-explain-plan-studio/releases\) page and do not replace Latest\.\n)?'
 	$replacement = ($downloadBlock -replace "`r`n", "`n") + "`n"
 	if ($normalized -notmatch $pattern) {
-		throw "Failed to locate README ## Download section to update for version $NewVersion"
+		throw "Failed to locate README ## Download and Install section to update for version $NewVersion"
 	}
 	$updated = [regex]::Replace($normalized, $pattern, [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $replacement }, 1)
 	$updated = $updated -replace "`n", "`r`n"
