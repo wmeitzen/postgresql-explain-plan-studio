@@ -881,6 +881,22 @@ public class PlanGraphPanel extends JPanel implements MouseListener, MouseMotion
 		}
 		
 		if (objComponent.getLineThicknessByIsDirty() == true || objComponent.getPercentageByIsDirty() == true || objComponent.getPlanTextIsDirty() == true || objComponent.getWorkerIsDirty() == true || objComponent.getZoomPercentageIsDirty() == true) {
+
+			// Zoom-only rebuilds skip plan-text paths that normally refresh warning chips.
+			// Stale chip width/height (e.g. left over from 400%) leave a huge top gap when
+			// zooming out and shift chip centering horizontally — refresh before row layout.
+			if (objComponent.getZoomPercentageIsDirty() == true
+					&& objComponent.getPlanTextIsDirty() == false) {
+				if (bolShowTiming == true) {
+					System.out.println("before updateOperatorWarningTags (zoom): "
+							+ new SimpleDateFormat("kk:mm:ss.S").format(new Date()));
+				}
+				updateOperatorWarningTags(idExplainPlan);
+				if (bolShowTiming == true) {
+					System.out.println("after updateOperatorWarningTags (zoom): "
+							+ new SimpleDateFormat("kk:mm:ss.S").format(new Date()));
+				}
+			}
 			
 			// write box widths, operator widths, column widths, and include toggled worker fontmetrics width info 
 			if (bolShowTiming == true) { System.out.println("before updatePerColumnOperatorAndWorkerWidths: " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
@@ -5239,13 +5255,17 @@ select id_explain_plan_property, x_cart, y_cart, box_height from explain_plan_op
 */
 
 		// set height of each operator, from top edge (probably the top side of the north_1 text)
-		// to the bottom edge (probably the bottom side of south_4 text)
+		// to the bottom edge (probably the bottom side of south_4 text).
+		// Chip gap + outside top margin must match drawWarningTags / drawNorthText (withZoom),
+		// or top-row chips paint above y=0 and clip when zoomed in.
+		int warningChipGapPx = warningChipGap();
+		int outsideBoxTopMarginZoomed = withZoom(loadOutsideBoxTopMargin());
 		strSQL = "update explain_plan_operator_annotations set\n" + 
 				"operator_height = \n" + 
 				"    coalesce(warning_tags_fontmetrics_height, 0)\n" +
-				"    + 3\n" + // gap under reserved warning-chip band (also when tags empty)
+				"    + " + warningChipGapPx + "\n" + // gap under reserved warning-chip band (also when tags empty)
 				"    + north_1_fontmetrics_height\n" + 
-				"    + (select outside_box_top_margin from config)\n" +
+				"    + " + outsideBoxTopMarginZoomed + "\n" +
 				"    + box_height\n" +
 				"    + south_2_fontmetrics_height\n" + 
 				"    + south_3_fontmetrics_height\n" + 
@@ -5343,12 +5363,15 @@ select id_explain_plan_property, x_cart, y_cart, column_boundary_left from expla
 select id_explain_plan_property, x_cart, y_cart, row_height, previous_y_rect, y_rect from explain_plan_operator_annotations order by id_explain_plan_property;
 */
 
-		// set top and bottom side of each operator box 
+		// set top and bottom side of each operator box
+		// Include zoomed outside top margin so north text + chips sit inside the row
+		// (paint subtracts withZoom(outside_box_top_margin) from box_top).
 		strSQL = "update explain_plan_operator_annotations set\n" +
 			"box_top = row_boundary_top\n" +
 			"  + coalesce(warning_tags_fontmetrics_height, 0)\n" +
-			"  + 3\n" + // same reserved gap as operator_height when tags are empty
+			"  + " + warningChipGapPx + "\n" + // same reserved gap as operator_height when tags are empty
 			"  + north_1_fontmetrics_height\n" +
+			"  + " + outsideBoxTopMarginZoomed + "\n" +
 			"where id_explain_plan = " + intIDExplainPlan + ";\n" + 
 			"update explain_plan_operator_annotations set\n" +
 			"box_bottom = box_top + box_height\n" +
@@ -5852,7 +5875,9 @@ order by id_explain_plan_property;
 			return;
 		}
 		int gap = warningChipGap();
-		int textWidth = Math.max(measureWarningTagsWidth(warning_tags), warning_tags_fontmetrics_width);
+		// Center with live width only — max(live, stored) shifted chips when zoom left
+		// stale warning_tags_fontmetrics_width from a higher zoom.
+		int textWidth = Math.max(1, measureWarningTagsWidth(warning_tags));
 		int northBaseline = GRAPH_TOP_MARGIN + north_y_baseline - withZoom(outside_box_top_margin);
 		// Sit just above the north label using live label ascent (same as selection bounds).
 		// Do not stack another north_1_fontmetrics_height subtract — that blew chips upward when zoomed.
@@ -7243,6 +7268,16 @@ order by id_explain_plan_property;
 		this.intYDimension = intYDimension;
 	}
 	
+	/** Config outside_box_top_margin (default 3); used zoomed to match north/chip paint. */
+	private int loadOutsideBoxTopMargin() {
+		JsonObject row = Database.row("select outside_box_top_margin from config");
+		if (row == null || row.get("outside_box_top_margin") == null) {
+			return 3;
+		}
+		Integer value = row.getInteger("outside_box_top_margin");
+		return value == null ? 3 : Math.max(0, value.intValue());
+	}
+
 	public int withZoom(int intValue) {
 		//double fltValueZoomed = (double) intValue * (double) (intZoomPercentage / 100.0);
 		//return (int) fltValueZoomed;
@@ -7553,15 +7588,11 @@ order by id_explain_plan_property;
 		// Include warning chips in selection / hit real estate (same geometry as drawWarningTags).
 		String warningTags = row.getString("warning_tags");
 		if (warningTags != null && !warningTags.trim().isEmpty()) {
-			int warnW = Math.max(measureWarningTagsWidth(warningTags),
-					row.getInteger("warning_tags_fontmetrics_width") == null ? 0
-							: row.getInteger("warning_tags_fontmetrics_width"));
-			int warnH = Math.max(measureWarningTagsHeight(warningTags),
-					row.getInteger("warning_tags_fontmetrics_height") == null ? 0
-							: row.getInteger("warning_tags_fontmetrics_height"));
+			int warnW = Math.max(1, measureWarningTagsWidth(warningTags));
+			int warnH = Math.max(1, measureWarningTagsHeight(warningTags));
 			int gap = warningChipGap();
 			int warnBottom = northTop - gap;
-			int warnTop = warnBottom - Math.max(1, warnH);
+			int warnTop = warnBottom - warnH;
 			left = Math.min(left, xCenter - warnW / 2);
 			right = Math.max(right, xCenter + (warnW + 1) / 2);
 			top = Math.min(top, warnTop);
