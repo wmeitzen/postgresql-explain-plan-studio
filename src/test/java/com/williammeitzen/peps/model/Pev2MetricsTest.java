@@ -52,6 +52,35 @@ class Pev2MetricsTest {
 	}
 
 	@Test
+	void leaderRevisedRows_subtractsWorkerTotals_indexScanCase() {
+		// Node 1×2197; only worker 0 ran 1×2197 → leader share 0
+		assertEquals(0.0, Pev2Metrics.leaderRevisedRows(2197.0, 2197.0));
+	}
+
+	@Test
+	void leaderRevisedRows_parallelSeqScan_residualIsLeader() {
+		// Node avg×loops=1000; workers contributed 700 → leader 300
+		assertEquals(300.0, Pev2Metrics.leaderRevisedRows(1000.0, 700.0));
+	}
+
+	@Test
+	void leaderRevisedRows_clampsWhenWorkersOvershoot() {
+		assertEquals(0.0, Pev2Metrics.leaderRevisedRows(100.0, 105.0));
+	}
+
+	@Test
+	void leaderRevisedRows_nullNode_staysNull() {
+		assertNull(Pev2Metrics.leaderRevisedRows(null, 50.0));
+	}
+
+	@Test
+	void revisedMassBytes_multipliesRowsByWidth() {
+		assertEquals(79092.0, Pev2Metrics.revisedMassBytes(2197.0, 36.0));
+		assertNull(Pev2Metrics.revisedMassBytes(null, 36.0));
+		assertNull(Pev2Metrics.revisedMassBytes(10.0, null));
+	}
+
+	@Test
 	void revisedTotalTime_dividesByWorkersPlusOne() {
 		// time=10, loops=5, workers_launched_by_gather=4 → 10*5/5 = 10
 		assertEquals(10.0, Pev2Metrics.revisedTotalTimeMs(10.0, 5.0, 4.0));

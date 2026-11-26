@@ -2975,41 +2975,55 @@ from explain_plan_operator_annotations
 */
 	public void generateParallelLeadersAnnotationsData(int intIDExplainPlan) {
 		boolean bolShowSQL = false;
-		String strRetrieveSQL;
 		String strSQL = "";
-		JsonArray jsnRows;
-		JsonObject jsnRow;
 		boolean bolShowTiming = false;
 		
 		if (bolShowTiming == true) { System.out.println("before generateParallelLeadersAnnotationsData (1): " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
 
-		// write calculated parallel page / block values
-		strSQL += "update explain_plan_operator_annotations as EPOA set\n" +
-				"parallel_leader_actual_rows = actual_rows\n" +
-				//", parallel_leader_estimated_rows = plan_rows\n" + // NEW
-				"where EPOA.id_explain_plan = " + intIDExplainPlan + " -- id_explain_plan\n" + 
-				";\n" +
-				"\n";
-		
+		// Clear PEPS-derived leader row/mass shares; only operators with Workers get them.
+		strSQL += "update explain_plan_operator_annotations set\n" +
+				"parallel_leader_actual_rows = null\n" +
+				", parallel_leader_actual_data_size_bytes = null\n" +
+				"where id_explain_plan = " + intIDExplainPlan + " -- id_explain_plan\n" +
+				";\n";
 		if (bolShowSQL == true) { System.out.println(strSQL); }
 		if (strSQL != "") { Database.dml(strSQL); strSQL = ""; }
-/*
-select id_explain_plan_property, actual_rows, parallel_leader_actual_rows
-from explain_plan_operator_annotations;
-*/
+
+		// Safer leader rule (Postgres does not publish leader rows): 
+		// leader revised rows = max(0, node total_actual_rows − Σ worker (Actual Rows × Actual Loops)).
+		strSQL += "update explain_plan_operator_annotations as EPOA set\n" +
+				"parallel_leader_actual_rows = cast(round(max(0,\n" +
+				"  coalesce(EPOA.total_actual_rows, 0) - coalesce((\n" +
+				"    select sum(EPOW.actual_rows * 1.0 * coalesce(EPOW.actual_loops, 1))\n" +
+				"    from explain_plan_operator_workers as EPOW\n" +
+				"    where EPOW.id_explain_plan = EPOA.id_explain_plan\n" +
+				"      and EPOW.id_explain_plan_property = EPOA.id_explain_plan_property\n" +
+				"      and EPOW.actual_rows is not null\n" +
+				"  ), 0)\n" +
+				")) as integer)\n" +
+				"where EPOA.id_explain_plan = " + intIDExplainPlan + " -- id_explain_plan\n" +
+				"and exists (\n" +
+				"  select 1 from explain_plan_operator_workers as EPOW\n" +
+				"  where EPOW.id_explain_plan = EPOA.id_explain_plan\n" +
+				"    and EPOW.id_explain_plan_property = EPOA.id_explain_plan_property\n" +
+				"    and EPOW.actual_rows is not null\n" +
+				")\n" +
+				";\n";
+		if (bolShowSQL == true) { System.out.println(strSQL); }
+		if (strSQL != "") { Database.dml(strSQL); strSQL = ""; }
 
 		strSQL += "update explain_plan_operator_annotations as EPOA set\n" +
-				"parallel_leader_actual_data_size_bytes = parallel_leader_actual_rows*1.0 * plan_width*1.0\n" + 
-				"where EPOA.id_explain_plan = " + intIDExplainPlan + " -- id_explain_plan\n" + 
-				";\n" +
+				"parallel_leader_actual_data_size_bytes = case\n" +
+				"  when parallel_leader_actual_rows is null then null\n" +
+				"  when plan_width is null or trim(plan_width) = '' then null\n" +
+				"  else parallel_leader_actual_rows * 1.0 * cast(plan_width as real)\n" +
+				"end\n" +
+				"where EPOA.id_explain_plan = " + intIDExplainPlan + " -- id_explain_plan\n" +
+				"and parallel_leader_actual_rows is not null\n" +
 				";\n";
 		
 		if (bolShowSQL == true) { System.out.println(strSQL); }
 		if (strSQL != "") { Database.dml(strSQL); strSQL = ""; }
-/*
-select id_explain_plan_property, parallel_leader_actual_rows, plan_width, parallel_leader_actual_data_size_bytes
-from explain_plan_operator_annotations;
-*/
 		if (bolShowTiming == true) { System.out.println("after generateParallelLeadersAnnotationsData (1): " + new SimpleDateFormat("kk:mm:ss.S").format(new Date())); }
 	}
 		
@@ -3789,10 +3803,15 @@ from explain_plan_operator_annotations
 				"where id_explain_plan = " + intIDExplainPlan + " -- id_explain_plan\n" +
 				";\n" +
 */				
-				// workers do not have "plan width", so we need to get it from the parallel leader
+				// Worker mass = (Actual Rows × Actual Loops) × plan_width from the parent operator.
+				// Actual Rows is per-loop; without × loops, NL inners look like 1 row / width bytes.
 				"update explain_plan_operator_workers as SET_EPOW set\n" +
 				"actual_data_size_bytes = (select\n" +
-				"  EPOW.actual_rows*1.0 * EPOA.plan_width\n" +
+				"  case\n" +
+				"    when EPOW.actual_rows is null then null\n" +
+				"    when EPOA.plan_width is null or trim(EPOA.plan_width) = '' then null\n" +
+				"    else EPOW.actual_rows * 1.0 * coalesce(EPOW.actual_loops, 1) * cast(EPOA.plan_width as real)\n" +
+				"  end\n" +
 				"  from explain_plan_operator_annotations as EPOA\n" + 
 				"  inner join explain_plan_operator_workers as EPOW on EPOA.id_explain_plan = EPOW.id_explain_plan\n" + 
 				"    and EPOA.id_explain_plan_property = EPOW.id_explain_plan_property\n" + 
@@ -3848,13 +3867,14 @@ from explain_plan_operator_workers order by id_explain_plan_property, worker_num
 				}
 				strSQL += "\n";
 				strSQL += ", actual_rows_units_string = ";
-				if (jsnRow.get("actual_rows") == null) {
+				Double workerRevisedRows = Pev2Metrics.revisedRows(
+						toDouble(jsnRow.get("actual_rows")), toDouble(jsnRow.get("actual_loops")));
+				if (workerRevisedRows == null) {
 					strSQL += "null";
 				} else {
 					strSQL += "'";
-					strSQL += Utils.units(jsnRow.getDouble("actual_rows"));
+					strSQL += Utils.units(workerRevisedRows.doubleValue());
 					strSQL += "'";
-					//strSQL += " -- " + jsnRow.get("actual_rows") + " rows";
 				}
 				strSQL += "\n";
 				strSQL += ", difference_time_units_string = ";
@@ -4053,10 +4073,10 @@ update in explain_plan_operator_workers:
 				"  else cast((EPOW.actual_data_size_bytes*1.0 / EPOA.actual_data_size_bytes) * 100 + 0.5 as integer)\n" + 
 				"end\n" + 
 				", case\n" + 
-				"  when EPOW.actual_rows is null or EPOA.actual_rows = 0 then null\n" + 
-				"  when EPOW.actual_rows*1.0 / EPOA.total_actual_rows < 0.01 then 0\n" + 
-				"  when EPOW.actual_rows*1.0 / EPOA.total_actual_rows < 0.1 then round(EPOW.actual_rows*1.0 / EPOA.total_actual_rows, 3) * 100\n" + 
-				"  else cast((EPOW.actual_rows*1.0 / EPOA.total_actual_rows) * 100 + 0.5 as integer)\n" + 
+				"  when EPOW.actual_rows is null or EPOA.total_actual_rows = 0 or EPOA.total_actual_rows is null then null\n" + 
+				"  when (EPOW.actual_rows * 1.0 * coalesce(EPOW.actual_loops, 1)) / EPOA.total_actual_rows < 0.01 then 0\n" + 
+				"  when (EPOW.actual_rows * 1.0 * coalesce(EPOW.actual_loops, 1)) / EPOA.total_actual_rows < 0.1 then round((EPOW.actual_rows * 1.0 * coalesce(EPOW.actual_loops, 1)) / EPOA.total_actual_rows, 3) * 100\n" + 
+				"  else cast(((EPOW.actual_rows * 1.0 * coalesce(EPOW.actual_loops, 1)) / EPOA.total_actual_rows) * 100 + 0.5 as integer)\n" + 
 				"end\n" +
 				// worker time difference % = worker time difference / operator time difference
 				", case\n" + 
@@ -8753,6 +8773,7 @@ order by id_explain_plan_property;
 				+ ", EPOA.parallel_leader_difference_time_highlight\n"
 				+ ", EPOA.parallel_leader_actual_rows_highlight\n"
 				+ ", EPOA.parallel_leader_actual_data_size_highlight\n"
+				+ ", EPOA.exact_actual_worker_count\n"
 				+ ", EPGV.max_total_cost\n"
 				+ ", EPGV.execution_time_ms\n"
 				+ "from explain_plan_operator_annotations as EPOA\n"
@@ -8861,20 +8882,25 @@ order by id_explain_plan_property;
 			}
 		}
 
-		appendCalculatedParticipant(rows, calculatedParticipantLabel(nodeType, "parallel leader"),
-				toDouble(row.get("parallel_leader_exclusive_time_ms")), exclusiveTimeMs, false,
-				toDouble(row.get("parallel_leader_difference_time_ms")), differenceTimeMs,
-				isHighlightFlag(row.get("parallel_leader_difference_time_highlight")),
-				toDouble(row.get("parallel_leader_actual_rows")), totalActualRows,
-				isHighlightFlag(row.get("parallel_leader_actual_rows_highlight")),
-				toDouble(row.get("parallel_leader_actual_data_size_bytes")), actualDataSizeBytes,
-				isHighlightFlag(row.get("parallel_leader_actual_data_size_highlight")));
+		Integer exactWorkerCount = parseAnnotationInt(row.get("exact_actual_worker_count"));
+		boolean hasWorkers = exactWorkerCount != null && exactWorkerCount.intValue() > 0;
+		if (hasWorkers) {
+			appendCalculatedParticipant(rows, calculatedParticipantLabel(nodeType, "parallel leader"),
+					toDouble(row.get("parallel_leader_exclusive_time_ms")), exclusiveTimeMs, false,
+					toDouble(row.get("parallel_leader_difference_time_ms")), differenceTimeMs,
+					isHighlightFlag(row.get("parallel_leader_difference_time_highlight")),
+					toDouble(row.get("parallel_leader_actual_rows")), totalActualRows,
+					isHighlightFlag(row.get("parallel_leader_actual_rows_highlight")),
+					toDouble(row.get("parallel_leader_actual_data_size_bytes")), actualDataSizeBytes,
+					isHighlightFlag(row.get("parallel_leader_actual_data_size_highlight")));
+		}
 
 		strSQL = "select\n"
 				+ "  worker_number\n"
 				+ ", exclusive_time_ms\n"
 				+ ", difference_time_ms\n"
 				+ ", actual_rows\n"
+				+ ", actual_loops\n"
 				+ ", actual_data_size_bytes\n"
 				+ ", difference_time_highlight_1\n"
 				+ ", actual_rows_highlight_1\n"
@@ -8889,11 +8915,13 @@ order by id_explain_plan_property;
 				JsonObject worker = (JsonObject) workerRows.get(i);
 				Object workerNumber = worker.get("worker_number");
 				String workerSuffix = "Worker #" + (workerNumber == null ? "?" : String.valueOf(workerNumber));
+				Double workerRevisedRows = Pev2Metrics.revisedRows(
+						toDouble(worker.get("actual_rows")), toDouble(worker.get("actual_loops")));
 				appendCalculatedParticipant(rows, calculatedParticipantLabel(nodeType, workerSuffix),
 						toDouble(worker.get("exclusive_time_ms")), exclusiveTimeMs, false,
 						toDouble(worker.get("difference_time_ms")), differenceTimeMs,
 						isHighlightFlag(worker.get("difference_time_highlight_1")),
-						toDouble(worker.get("actual_rows")), totalActualRows,
+						workerRevisedRows, totalActualRows,
 						isHighlightFlag(worker.get("actual_rows_highlight_1")),
 						toDouble(worker.get("actual_data_size_bytes")), actualDataSizeBytes,
 						isHighlightFlag(worker.get("actual_data_size_highlight_1")));

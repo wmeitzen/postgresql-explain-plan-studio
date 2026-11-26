@@ -16,7 +16,7 @@ On the diagram toolbar / **Sliders** dock:
 
 ![Line Thickness](images/ss-metrics-sliders.png)
 
-If a number appears on the west side of each operator, it will either be boldface or plain. Boldface numbers on the west side of operators indicate **exact values**. Plain numbers indicate **approximate values**. If Actual Loops = 1, the value is exact. If Actual Loops > 1, the value is approximate. Workers do not affect this. Parallel plans are already folded into Actual Loops.
+If a number appears on the west side of each operator, it will either be boldface or plain. Boldface numbers indicate **exact values**. Plain numbers indicate **approximate values**. If Actual Loops = 1, the value is exact. If Actual Loops > 1, the value is approximate. Workers do not affect this. Parallel plans are already folded into Actual Loops.
 
 **Screenshot:** Exact Number of Rows (1 x 107445)
 

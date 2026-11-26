@@ -37,6 +37,31 @@ public final class Pev2Metrics {
 	}
 
 	/**
+	 * Parallel-leader share of a node's revised row/mass total after subtracting
+	 * each worker's revised contribution ({@code workerRows × workerLoops}).
+	 * Postgres does not publish a leader row total; PEPS derives it so leader +
+	 * workers reconcile to the node total. Clamps at zero when worker sums
+	 * overshoot slightly due to averaging/rounding.
+	 */
+	public static Double leaderRevisedRows(Double nodeRevisedTotal, double sumWorkerRevisedTotals) {
+		if (nodeRevisedTotal == null) {
+			return null;
+		}
+		double leader = nodeRevisedTotal.doubleValue() - sumWorkerRevisedTotals;
+		return leader > 0.0 ? leader : 0.0;
+	}
+
+	/**
+	 * Mass from revised rows × plan width (bytes). Null when either side is missing.
+	 */
+	public static Double revisedMassBytes(Double revisedRows, Double planWidthBytesPerRow) {
+		if (revisedRows == null || planWidthBytesPerRow == null) {
+			return null;
+		}
+		return revisedRows.doubleValue() * planWidthBytesPerRow.doubleValue();
+	}
+
+	/**
 	 * Workers denominator for revised timing: {@code (Workers Launched By Gather || 0) + 1}.
 	 */
 	public static double workersDenominator(Double workersLaunchedByGather) {
