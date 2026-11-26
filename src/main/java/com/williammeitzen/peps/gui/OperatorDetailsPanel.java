@@ -110,6 +110,8 @@ public class OperatorDetailsPanel extends JPanel {
 		calculatedFieldsCheckbox.addActionListener(e -> {
 			setCalculatedFieldsPreference(calculatedFieldsCheckbox.isSelected());
 			updateCalculatedVisibility();
+			// Parallel-balance Red Text Notes track Calculated Properties visibility.
+			propertiesPanel.refreshNotesFromGraph();
 		});
 
 		optionsBar = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 2));

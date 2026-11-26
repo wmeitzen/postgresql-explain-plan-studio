@@ -7895,7 +7895,12 @@ order by id_explain_plan_property;
 		}
 	}
 
-	public OperatorNotes getOperatorNotes(int intIDExplainPlanProperty) {
+	/**
+	 * @param includeParallelBalanceNotes when true (Calculated Properties visible),
+	 *        include out-of-balance leader/worker expectation lines in Red Text Notes.
+	 *        Not gated on diagram worker expansion.
+	 */
+	public OperatorNotes getOperatorNotes(int intIDExplainPlanProperty, boolean includeParallelBalanceNotes) {
 		if (idExplainPlan == null || intIDExplainPlanProperty < 0) {
 			return OperatorNotes.empty();
 		}
@@ -7960,8 +7965,15 @@ order by id_explain_plan_property;
 
 		StringBuilder redTextNotes = new StringBuilder();
 		appendDashboardWarningNotes(redTextNotes, row);
-		appendParallelParticipantExpectationNotes(redTextNotes, row, intIDExplainPlanProperty);
+		if (includeParallelBalanceNotes) {
+			appendParallelParticipantExpectationNotes(redTextNotes, row, intIDExplainPlanProperty);
+		}
 		return new OperatorNotes(notes.toString().trim(), redTextNotes.toString().trim());
+	}
+
+	/** Convenience: include parallel-balance Red Text Notes. */
+	public OperatorNotes getOperatorNotes(int intIDExplainPlanProperty) {
+		return getOperatorNotes(intIDExplainPlanProperty, true);
 	}
 
 	/** All non-root Cost % values for the open plan (for top-N Cost warnings). */
@@ -8130,20 +8142,13 @@ order by id_explain_plan_property;
 
 	/**
 	 * Shared expectation lines only for metrics that are currently out of
-	 * balance (red on the diagram) for the PL or any worker. Shown only when
-	 * workers are expanded. Exclusive operator time is omitted.
+	 * balance (red in Calculated Properties / diagram worker labels) for the PL
+	 * or any worker. Gated by Calculated Properties visibility at the call site,
+	 * not by whether workers are expanded on the diagram. Exclusive operator
+	 * time is omitted.
 	 */
 	private void appendParallelParticipantExpectationNotes(StringBuilder notes, JsonObject row,
 			int intIDExplainPlanProperty) {
-		JsonObject expandedRow = Database.row(
-				"select count(*) as found\n"
-						+ "from explain_plan_operator_show_workers\n"
-						+ "where id_explain_plan = " + idExplainPlan + "\n"
-						+ "and id_explain_plan_property = " + intIDExplainPlanProperty + "\n");
-		if (expandedRow == null || parseAnnotationInt(expandedRow.get("found")) == null
-				|| parseAnnotationInt(expandedRow.get("found")).intValue() <= 0) {
-			return;
-		}
 		JsonObject countRow = Database.row(
 				"select count(*) as worker_count\n"
 						+ ", max(coalesce(actual_data_size_highlight_1, 0)) as mass_highlight\n"

@@ -601,9 +601,16 @@ public class OperationPropertiesPanel extends JTable {
 		}
 		Object[][] operationData = planGraphPanel.getOperatorProperties(selectedOperatorPropertyId, expandedLists, workersExpanded);
 		setPropertiesDetails(operationData);
-		if (notesListener != null) {
-			notesListener.accept(planGraphPanel.getOperatorNotes(selectedOperatorPropertyId));
+		refreshNotesFromGraph();
+	}
+
+	/** Refresh Red Text Notes / Notes for the selected operator (e.g. when Calculated Properties toggles). */
+	public void refreshNotesFromGraph() {
+		if (notesListener == null || planGraphPanel == null || selectedOperatorPropertyId == Integer.MIN_VALUE) {
+			return;
 		}
+		notesListener.accept(planGraphPanel.getOperatorNotes(selectedOperatorPropertyId,
+				OperatorDetailsPanel.isCalculatedFieldsPreference()));
 	}
 
 	public void setPropertiesDetails(Object[][] data) {
