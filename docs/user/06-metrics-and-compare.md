@@ -16,6 +16,16 @@ On the diagram toolbar / **Sliders** dock:
 
 ![Line Thickness](images/ss-metrics-sliders.png)
 
+If a number appears on the west side of each operator, it will either be boldface or plain. Boldface numbers on the west side of operators indicate **exact values**. Plain numbers indicate **approximate values**. If Actual Loops = 1, the value is exact. If Actual Loops > 1, the value is approximate. Workers do not affect this. Parallel plans are already folded into Actual Loops.
+
+**Screenshot:** Exact Number of Rows (1 x 107445)
+
+![Bold Actual Rows and Properties](images/ss-actual-rows-bold.png)
+
+**Screenshot:** Approximate Number of Rows (3 x 38907.33)
+
+![Plain Actual Rows and Properties](images/ss-actual-rows-plain.png)
+
 ## Compare Plans
 
 1. Multi-select plans in the Plans tree, or use the context menu **Compare Plans**.
