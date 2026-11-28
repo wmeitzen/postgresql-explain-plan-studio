@@ -76,7 +76,7 @@ public class MainFrame extends JFrame {
 	
 	private static final long serialVersionUID = 1L;
 	
-	private static final String APPLICATION_VERSION = "1.0.2";
+	private static final String APPLICATION_VERSION = "1.0.3";
 	private PlanDiagramToolbar planDiagramToolbar;
 	private FormPanel formPanel;
 	//private JFileChooser fileChooser;
