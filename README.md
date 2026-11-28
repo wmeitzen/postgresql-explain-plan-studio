@@ -132,7 +132,7 @@ All [releases](https://github.com/wmeitzen/postgresql-explain-plan-studio/releas
 
 ## Using PEPS
 
-Step-by-step guides (with screenshot placeholders): **[docs/user/](docs/user/README.md)**.
+**[Documentation](docs/user/README.md)**.
 
 ## Build from source
 
