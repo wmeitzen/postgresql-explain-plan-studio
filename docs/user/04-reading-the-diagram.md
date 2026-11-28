@@ -33,7 +33,6 @@ For a selected plan you typically see **Plan Source**, optional **Translate**, *
 - Toolbar: **−** / **+** / **100%** / **Fit**.
 - Optional **Zoom** slider dock.
 - **Ctrl+wheel** (or **Cmd+wheel** on macOS) to zoom.
-- Preferred zoom is remembered across plans and restarts.
 
 **Screenshot:** Zoom toolbar and Fit
 

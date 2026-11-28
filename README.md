@@ -37,6 +37,7 @@ To install the <code>linux-x64.zip</code> on Linux:
 <br/>
 To install the <code>.deb</code> on Linux:
 <ul>
+<li>Open a terminal</li>
 <li>Navigate to the directory with the downloaded <code>.deb</code> file</li>
 <li><code>sudo apt install ./PostgreSQLExplainPlanStudio-1.0.1-linux-x64.deb</code></li>
 <li>If apt prints an <code>N:</code> note about <code>_apt</code> / Permission denied while installing from your home folder (for example <code>Downloads</code>), you can ignore it when the package finishes with <code>Setting up postgresql-explain-plan-studio</code></li>
