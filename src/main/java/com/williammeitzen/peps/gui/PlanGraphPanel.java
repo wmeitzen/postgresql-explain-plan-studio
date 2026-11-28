@@ -8068,22 +8068,6 @@ order by id_explain_plan_property;
 			}
 			block.append(".\n");
 		}
-		if (actualDependentEnabled && Pev2Metrics.isExcessiveEstimateMismatch(actualRows, estimatedRows)) {
-			String ratio = formatCalculatedRatio(actualRows.doubleValue(), estimatedRows.doubleValue());
-			block.append("Actual vs estimated rows ratio is excessive (")
-					.append(ratio == null ? ">" + (int) Pev2Metrics.EXCESSIVE_ESTIMATE_MISMATCH_FACTOR + ":1" : ratio)
-					.append("; threshold ")
-					.append((int) Pev2Metrics.EXCESSIVE_ESTIMATE_MISMATCH_FACTOR)
-					.append(":1).\n");
-		}
-		if (actualDependentEnabled && Pev2Metrics.isExcessiveEstimateMismatch(actualMass, estimatedMass)) {
-			String ratio = formatCalculatedRatio(actualMass.doubleValue(), estimatedMass.doubleValue());
-			block.append("Actual vs estimated mass ratio is excessive (")
-					.append(ratio == null ? ">" + (int) Pev2Metrics.EXCESSIVE_ESTIMATE_MISMATCH_FACTOR + ":1" : ratio)
-					.append("; threshold ")
-					.append((int) Pev2Metrics.EXCESSIVE_ESTIMATE_MISMATCH_FACTOR)
-					.append(":1).\n");
-		}
 
 		Double removed = OperatorWarnings.primaryRemovedRevised(
 				toDouble(row.get("total_rows_removed_by_filter")),
