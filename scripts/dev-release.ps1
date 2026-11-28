@@ -6,7 +6,7 @@
 .DESCRIPTION
   Interactive menu (unless -Action is set):
     (1) Publish Pre-release — GitHub --prerelease; README Download links unchanged
-    (2) Promote to Stable — Latest full release; rewrite README; bump working tree to next patch
+    (2) Promote Pre-release (v N.N.N) to Stable — Latest full release; rewrite README; bump working tree to next patch
     (3) Publish to Stable — Latest full release; rewrite README; keep working version (no bump)
 
   Then: bump version if needed, commit/tag/push (unless -SkipGit), build Windows + Ubuntu +
@@ -432,7 +432,7 @@ function Resolve-ReleaseAction {
 	Write-Host ""
 	Write-Host "Release action:"
 	Write-Host "  (1) Publish Pre-release   — build/upload as GitHub Pre-release (Latest unchanged)"
-	Write-Host "  (2) Promote to Stable     — publish as official Latest; then bump to next patch"
+	Write-Host "  (2) Promote Pre-release (v N.N.N) to Stable — publish as official Latest; then bump to next patch"
 	Write-Host "  (3) Publish to Stable     — publish as official Latest; keep working version (no bump)"
 	$choice = Read-Host "Choose [1/2/3]"
 	switch -Regex ($choice.Trim()) {
