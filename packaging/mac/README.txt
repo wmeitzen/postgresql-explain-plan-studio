@@ -1,4 +1,4 @@
-PostgreSQL Explain Plan Studio — portable JAR + macOS app packaging
+PostgreSQL Explain Plan Studio -- portable JAR + macOS app packaging
 ===================================================================
 
 1) Portable JAR zip (any OS with JDK/JRE 17+)

@@ -28,10 +28,10 @@
 On Windows, from the repo root:
 
 ```powershell
-# Terminal 1 — keep running while developing
+# Terminal 1 -- keep running while developing
 .\scripts\dev-watch.ps1
 
-# Terminal 2 — launch when you want to test
+# Terminal 2 -- launch when you want to test
 .\scripts\dev-run.ps1
 
 # Optional: trigger a rebuild by hand
@@ -110,7 +110,7 @@ objdump -T target/jpackage/PostgreSQLExplainPlanStudio/bin/PostgreSQLExplainPlan
 
 ### Portable JAR zip (any OS + JDK 17+)
 
-Shaded JAR that runs anywhere Java 17+ is installed (Windows, Linux, macOS — Intel or Apple Silicon). Build on Windows (no Mac required):
+Shaded JAR that runs anywhere Java 17+ is installed (Windows, Linux, macOS -- Intel or Apple Silicon). Build on Windows (no Mac required):
 
 ```powershell
 .\scripts\pack-jar.ps1
@@ -124,7 +124,7 @@ java -jar postgresql-explain-plan-studio-<version>.jar
 
 On macOS/Unix you can also `chmod +x peps.sh && ./peps.sh`.
 
-### macOS — `.app` / `.dmg` (bundled JRE)
+### macOS -- `.app` / `.dmg` (bundled JRE)
 
 Must be built **on a Mac** with JDK 17+ (`jpackage`). Prefer a **local** checkout (for example `~/peps`), not a network/HGFS share.
 
@@ -136,7 +136,7 @@ chmod +x scripts/pack-mac-app.sh
 Outputs:
 
 - `target/jpackage-mac/PostgreSQL Explain Plan Studio.app`
-- `target/PostgreSQLExplainPlanStudio-<version>-mac-x64.zip` (or `mac-arm64`) — unzip and drag the `.app` to Applications
+- `target/PostgreSQLExplainPlanStudio-<version>-mac-x64.zip` (or `mac-arm64`) -- unzip and drag the `.app` to Applications
 - matching `.dmg` (hdiutil + Applications symlink; works over SSH, no Xcode CLT)
 
 Unsigned builds may need right-click → Open the first time. If macOS says the app is **damaged**, clear quarantine after installing to Applications:
@@ -157,9 +157,9 @@ Signing/notarization is still deferred.
 
 Interactive menu:
 
-1. **Publish Pre-release** — GitHub Pre-release; does **not** rewrite README Download links (Latest stays on the last Stable).
-2. **Promote to Stable** — full Latest release; rewrites README Download links; then auto-bumps the working tree to the next patch version.
-3. **Publish to Stable** — full Latest release; rewrites README Download links; **keeps** the working version (default prompt `1.0.0`, no bump).
+1. **Publish Pre-release** -- GitHub Pre-release; does **not** rewrite README Download links (Latest stays on the last Stable).
+2. **Promote to Stable** -- full Latest release; rewrites README Download links; then auto-bumps the working tree to the next patch version.
+3. **Publish to Stable** -- full Latest release; rewrites README Download links; **keeps** the working version (default prompt `1.0.0`, no bump).
 
 Non-interactive: `-Action PreRelease`, `-Action PromoteStable`, or `-Action Stable`, plus `-Version`, `-Yes`, and the usual `-Skip*` switches.
 

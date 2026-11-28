@@ -18,8 +18,8 @@ For a selected plan you typically see **Plan Source**, optional **Translate**, *
 2. Click an operator to load **Properties** (property / value table).
 3. If an operator has workers, it shows a triangle you can toggle to expand or collapse them; each worker's properties also appear in the Properties pane.
 4. Use **Expand all** and **Calculated properties** when you need more detail.
-5. Watch for warning indicators on operators (time, cost, rows, filter, heap) — see [Warning indicators](05-search-and-warnings.md#warning-indicators).
-6. Use **Line Thickness** and **Percentage By** to choose what the diagram emphasizes — see [Metrics and compare](06-metrics-and-compare.md).
+5. Watch for warning indicators on operators (time, cost, rows, filter, heap) -- see [Warning indicators](05-search-and-warnings.md#warning-indicators).
+6. Use **Line Thickness** and **Percentage By** to choose what the diagram emphasizes -- see [Metrics and compare](06-metrics-and-compare.md).
 
 **Screenshot:** Diagram with Properties dock
 

@@ -4,11 +4,11 @@ Organize plans in the **Plans** tree: folders, drag-and-drop, sort, and document
 
 ## Toolbar
 
-- **Add Plan** — new plan document.
-- **Add Folder** — group plans.
-- **Delete** — remove the selection (confirm when prompted).
-- **Duplicate** — copy a plan.
-- **Settings** — tree order and grouping.
+- **Add Plan** -- new plan document.
+- **Add Folder** -- group plans.
+- **Delete** -- remove the selection (confirm when prompted).
+- **Duplicate** -- copy a plan.
+- **Settings** -- tree order and grouping.
 
 **Screenshot:** Plans toolbar
 
@@ -30,9 +30,9 @@ Right-click in the Plans pane (or on a plan or folder) to create a new plan or f
 
 Open **Settings** on the Plans toolbar to choose:
 
-- **Order** — by name or manual.
-- **Name order** — A→Z or Z→A when ordering by name.
-- **Grouping** — how plans are grouped in the tree.
+- **Order** -- by name or manual.
+- **Name order** -- A→Z or Z→A when ordering by name.
+- **Grouping** -- how plans are grouped in the tree.
 
 **Screenshot:** Plans Settings dialog
 

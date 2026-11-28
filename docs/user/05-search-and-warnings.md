@@ -5,12 +5,9 @@ Find operators on the diagram and tune when warning chips appear.
 ## Find on the diagram
 
 1. Press **Ctrl+F** (Windows/Linux) or **Cmd+F** (macOS), or enable **Find**.
-2. Type a query; matches update live.
-3. Optionally filter by warning kinds: **Time**, **Cost**, **Rows**, **Filter**, **Heap**.
-4. Use **Next** / **Previous** (or **Enter** / **F3**) to step through matches.
-5. **Esc** closes the find bar.
-
-When nothing matches, the query field uses a high-contrast no-match style so it stays readable.
+2. Optionally filter by warning kinds: **Time**, **Cost**, **Rows**, **Filter**, **Heap**.
+3. Use **Next** / **Previous** (or **Enter** / **F3**) to step through matches.
+4. **Esc** closes the find bar.
 
 **Screenshot:** Find bar with filters
 
@@ -44,7 +41,7 @@ The operators with the highest individual cost. Usually only the top two are mar
 <p>
 <img src="images/ss-warning-icon-filter.png" alt="Filter removes rows icon" width="28" height="28">
 <strong>Filter removes rows</strong><br>
-Operators that discard a significant amount of data (mass or rows) before emitting the rest.
+Operators that discard a significant amount of data before emitting the rest.
 </p>
 
 <p>

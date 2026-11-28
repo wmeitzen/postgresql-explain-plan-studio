@@ -140,4 +140,4 @@ See **[BUILDING.md](BUILDING.md)** for requirements, running from source, packag
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT -- see [LICENSE](LICENSE).

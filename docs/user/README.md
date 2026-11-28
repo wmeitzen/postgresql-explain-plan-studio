@@ -1,6 +1,6 @@
 # Using PostgreSQL Explain Plan Studio
 
-Short guides for everyday use. Screenshots are placeholders until image files are added under [`images/`](images/).
+Short guides for gaining familiarity quickly.
 
 ## Guides
 
