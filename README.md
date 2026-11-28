@@ -138,6 +138,10 @@ All [releases](https://github.com/wmeitzen/postgresql-explain-plan-studio/releas
 
 See **[BUILDING.md](BUILDING.md)** for requirements, running from source, packaging (Windows / Linux / macOS), and maintainer release notes.
 
+## Gratitude
+
+Many thanks from Akila Muthuveeraganapathy, Hubert "depesz" Lubaczewski, Thomas Munro, Stanislav Silin from Upwork, people on IRC channel #postgresql, people on the Postgres slack channel, and others!
+
 ## License
 
 MIT -- see [LICENSE](LICENSE).

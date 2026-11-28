@@ -158,7 +158,7 @@ Signing/notarization is still deferred.
 Interactive menu:
 
 1. **Publish Pre-release** -- GitHub Pre-release; does **not** rewrite README Download links (Latest stays on the last Stable).
-2. **Promote to Stable** -- full Latest release; rewrites README Download links; then auto-bumps the working tree to the next patch version.
+2. **Promote Pre-release (v N.N.N) to Stable** -- full Latest release; rewrites README Download links; then auto-bumps the working tree to the next patch version.
 3. **Publish to Stable** -- full Latest release; rewrites README Download links; **keeps** the working version (default prompt `1.0.0`, no bump).
 
 Non-interactive: `-Action PreRelease`, `-Action PromoteStable`, or `-Action Stable`, plus `-Version`, `-Yes`, and the usual `-Skip*` switches.
