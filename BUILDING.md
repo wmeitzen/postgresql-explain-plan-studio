@@ -161,6 +161,8 @@ Interactive menu:
 2. **Promote Pre-release (v N.N.N) to Stable** -- full Latest release; rewrites README Download links; then auto-bumps the working tree to the next patch version.
 3. **Publish to Stable** -- full Latest release; rewrites README Download links; **keeps** the working version (default prompt `1.0.0`, no bump).
 
+Re-publishing the same version replaces assets but **keeps existing GitHub release notes** (only the title heading is normalized for Pre-release vs Stable). New releases still start with a title-only body; add Improvements bullets afterward with `gh release edit`, or they will survive the next promote/re-upload.
+
 Non-interactive: `-Action PreRelease`, `-Action PromoteStable`, or `-Action Stable`, plus `-Version`, `-Yes`, and the usual `-Skip*` switches.
 
 SSH targets and last version default from gitignored `scripts/dev-release.local.ps1` (`$PepsUbuntuSsh`, `$PepsMacSsh`, `$PepsLastVersion`), or `-UbuntuSsh` / `-MacSsh` / environment variables `PEPS_UBUNTU_SSH` / `PEPS_MAC_SSH`. Linux jpackage for published zips/`.deb` should run on **Ubuntu 20.04**.

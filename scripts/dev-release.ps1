@@ -18,7 +18,9 @@
   (gitignored). The version prompt defaults to the current pom.xml version.
   Linux jpackage for published assets should run on Ubuntu 20.04.
 
-  Existing git tags / GitHub releases for the same version are overwritten.
+  Existing git tags / GitHub release assets for the same version are overwritten.
+  Release notes bodies are preserved on edit (Promote/re-upload); only the title heading
+  is normalized for Pre-release vs Stable. New releases still start title-only.
 
 .PARAMETER Action
   PreRelease, PromoteStable, or Stable. Prompted via menu if omitted.
@@ -1320,15 +1322,13 @@ try {
 	$assets | ForEach-Object { Write-Host "  $_" }
 
 	$title = if ($IsPrerelease) { "v$Version (Pre-release)" } else { "v$Version" }
-	# Title-only body; install instructions live in README.md.
-	$notes = if ($IsPrerelease) {
-		@"
-## PostgreSQL Explain Plan Studio v$Version (Pre-release)
-"@
+	# Heading only by default (install steps live in README.md). When editing an
+	# existing release, keep the prior body (Improvements, etc.) and only rewrite
+	# the first ## heading for Pre-release vs Stable.
+	$notesHeading = if ($IsPrerelease) {
+		"## PostgreSQL Explain Plan Studio v$Version (Pre-release)"
 	} else {
-		@"
-## PostgreSQL Explain Plan Studio v$Version
-"@
+		"## PostgreSQL Explain Plan Studio v$Version"
 	}
 
 	Update-ReleaseProgress "Publish GitHub release $Tag"
@@ -1337,6 +1337,30 @@ try {
 	$existing = gh release view $Tag 2>$null
 	$releaseExists = ($LASTEXITCODE -eq 0)
 	$ErrorActionPreference = $prevEa
+
+	$notes = "$notesHeading`n"
+	if ($releaseExists) {
+		$prevBody = gh release view $Tag --json body -q .body 2>$null
+		if (-not [string]::IsNullOrWhiteSpace($prevBody)) {
+			$prevLines = $prevBody -split "`r?`n", -1
+			$restStart = 0
+			if ($prevLines.Count -gt 0 -and $prevLines[0] -match '^##\s+') {
+				$restStart = 1
+				if ($restStart -lt $prevLines.Count -and [string]::IsNullOrWhiteSpace($prevLines[$restStart])) {
+					$restStart++
+				}
+			}
+			$rest = ""
+			if ($restStart -lt $prevLines.Count) {
+				$rest = (($prevLines[$restStart..($prevLines.Count - 1)]) -join "`n").TrimEnd()
+			}
+			if (-not [string]::IsNullOrWhiteSpace($rest)) {
+				$notes = "$notesHeading`n`n$rest`n"
+				Write-Status "Keeping existing release notes for $Tag (heading updated)"
+			}
+		}
+	}
+
 	# PowerShell passes each line of a multiline string as a separate native argv
 	# entry, so `gh ... --notes $notes` becomes "accepts 1 arg(s), received N".
 	# Always use --notes-file instead.
